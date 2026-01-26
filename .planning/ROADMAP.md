@@ -11,6 +11,7 @@ Jarvis 3.1 transforms a 4-node Proxmox homelab cluster into an AI-operated comma
 - [ ] **Phase 3: AI Chat & Claude Integration** - Chat interface, Claude API tool calling, JARVIS personality, action confirmation UX
 - [ ] **Phase 4: Autonomous Monitoring & Remediation** - Background monitoring loop, threshold alerts, auto-remediation runbooks, activity feed, email reports
 - [ ] **Phase 5: Hybrid LLM Intelligence & Persistent Memory** - Qwen routing, unified LLM abstraction, persistent memory with TTLs, cost tracking, context management
+- [ ] **Phase 6: HUD & Feed Data Pipeline** - Wire temperature to HUD, seed feed with history, chat events to feed, health heartbeat, storage alerts
 
 ---
 
@@ -296,6 +297,54 @@ Plans:
 
 ---
 
+### Phase 6: HUD & Feed Data Pipeline
+
+**Goal**: The HUD globe display and ActivityFeed actually show live, meaningful data -- temperature flows to NodeCards, the feed is populated with event history on load, chat tool executions appear as feed events, and the monitor emits periodic health heartbeats and storage capacity alerts instead of running placeholder no-ops.
+
+**Depends on**: Phase 2 (HUD components), Phase 3 (chat system), Phase 4 (monitor + events namespace)
+
+**Features addressed**:
+- Wire temperature data from backend emitter through to frontend HUD and NodeCards
+- Seed ActivityFeed with DB event history on page load (not starting blank)
+- Chat tool executions emit events to the /events feed
+- Startup event and periodic health heartbeat from monitor routine poll
+- Background poll storage capacity alerts
+- DB event → JarvisEvent mapping for frontend consumption
+
+**Research-derived requirements**:
+- REQ-TEMP-FLOW: Temperature data emitted by backend must reach frontend NodeCard via useClusterSocket hook
+- REQ-FEED-SEED: On WebSocket connect, frontend fetches recent events from REST API to seed ActivityFeed
+- REQ-CHAT-EVENTS: Chat tool use/result callbacks emit events to /events namespace for feed visibility
+- REQ-HEARTBEAT: Routine poll (5min) checks node status + critical services, emits health status event
+- REQ-STORAGE-ALERT: Background poll (30min) emits warnings for storage pools above 85% capacity
+- REQ-STARTUP-EVENT: Backend emits "JARVIS Online" event on server start
+
+**Success Criteria** (what must be TRUE):
+1. NodeCards display temperature data (degrees C) from thermal zones after backend starts
+2. Opening the dashboard shows recent events in the ActivityFeed immediately (not blank)
+3. Sending a chat message that triggers tool calls shows those actions in the ActivityFeed
+4. A "JARVIS Online" event appears in the feed when the backend starts
+5. Every 5 minutes, a "Systems Nominal" or "Cluster Degraded" heartbeat event appears in the feed
+6. Storage pools above 85% generate warning events every 30 minutes
+
+**Estimated Complexity**: LOW -- All infrastructure exists. This is wiring and filling in placeholder implementations.
+
+**Research Flags**:
+- SKIP: All APIs, sockets, and components exist. No new technology needed.
+
+**Pitfalls to address**:
+- DB events use `summary` field; frontend JarvisEvent uses `title`/`message` -- mapping required
+- Chat tool events should not spam the feed (one event per tool execution, not per token)
+- Heartbeat events should be info-level to avoid false alarm fatigue
+
+**Plans**: 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md -- Backend event pipeline: chat tool events to /events, startup event, health heartbeat, storage alerts
+- [ ] 06-02-PLAN.md -- Frontend data wiring: temperature socket listener, event history seeding, DB-to-JarvisEvent mapping
+
+---
+
 ## Feature-to-Phase Mapping
 
 Every active requirement from PROJECT.md is mapped to exactly one phase.
@@ -313,8 +362,9 @@ Every active requirement from PROJECT.md is mapped to exactly one phase.
 | JARVIS personality (Iron Man -- witty, formal, British butler humor) | Phase 3 | REQ-PERSONALITY |
 | Hybrid LLM backend (Claude API for complex tasks, local Qwen for routine ops) | Phase 3 (Claude only) + Phase 5 (hybrid) | REQ-CLAUDE, REQ-ROUTER, REQ-QWEN |
 | Autonomous monitoring and remediation (act + report) | Phase 4 | REQ-MONITOR, REQ-AUTONOMY, REQ-RUNBOOKS, REQ-GUARDRAILS |
+| HUD & Feed data pipeline (temperature, event history, chat events, heartbeat) | Phase 6 | REQ-TEMP-FLOW, REQ-FEED-SEED, REQ-CHAT-EVENTS, REQ-HEARTBEAT, REQ-STORAGE-ALERT, REQ-STARTUP-EVENT |
 
-**Coverage**: 11/11 active requirements mapped. No orphans.
+**Coverage**: 12/12 active requirements mapped. No orphans.
 
 ---
 
@@ -334,6 +384,9 @@ Phase 4: Autonomous Monitoring & Remediation
     |
     v
 Phase 5: Hybrid LLM Intelligence & Persistent Memory
+    |
+    v
+Phase 6: HUD & Feed Data Pipeline
 ```
 
 All phases are strictly sequential. Each phase depends on all prior phases.
@@ -344,6 +397,7 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 3. Phase 3 needs Phase 1's MCP tools for Claude to call and Phase 2's dashboard for the chat panel
 4. Phase 4 needs Phase 3's proven AI pipeline and Phase 2's dashboard for the activity feed
 5. Phase 5 needs Phase 4's operational audit log data and Phase 3's Claude pipeline to add Qwen alongside
+6. Phase 6 needs Phase 2's HUD components, Phase 3's chat system, and Phase 4's events namespace
 
 ---
 
@@ -356,6 +410,7 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 | Phase 3 | SKIP | Claude tool use is extensively documented |
 | Phase 4 | RECOMMENDED | Autonomous remediation safety testing against real cluster |
 | Phase 5 | RECOMMENDED | Qwen 2.5 7B tool-calling reliability, Vercel AI SDK 5 provider config |
+| Phase 6 | SKIP | All infrastructure exists, wiring only |
 
 ---
 
@@ -376,12 +431,13 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 
 ## Progress
 
-**Execution Order:** Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5
+**Execution Order:** Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
 | 1. Backend Foundation & Safety Layer | 4/4 | Complete | 2026-01-26 |
 | 2. Real-Time Dashboard & eDEX-UI | 6/6 | Complete | 2026-01-26 |
-| 3. AI Chat & Claude Integration | 0/3 | Planning complete | - |
-| 4. Autonomous Monitoring & Remediation | 0/3 | Planning complete | - |
-| 5. Hybrid LLM Intelligence & Persistent Memory | 0/3 | Not started | - |
+| 3. AI Chat & Claude Integration | 3/3 | Complete (built outside GSD) | 2026-01-26 |
+| 4. Autonomous Monitoring & Remediation | 3/3 | Complete | 2026-01-26 |
+| 5. Hybrid LLM Intelligence & Persistent Memory | 3/3 | Complete (built outside GSD) | 2026-01-26 |
+| 6. HUD & Feed Data Pipeline | 0/2 | Planned | - |
