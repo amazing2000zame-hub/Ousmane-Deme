@@ -21,6 +21,8 @@ interface ClusterState {
   setConnected: (connected: boolean) => void;
   isStale: (key: string, maxAgeMs: number) => boolean;
   setMonitorStatus: (status: MonitorStatus) => void;
+  setTemperatures: (temps: Array<{ node: string; zones: Record<string, number> }>) => void;
+  setEvents: (events: JarvisEvent[]) => void;
   setKillSwitch: (active: boolean) => void;
 }
 
@@ -76,6 +78,26 @@ export const useClusterStore = create<ClusterState>()(
 
       setConnected: (connected) =>
         set({ connected }, false, 'cluster/setConnected'),
+
+      setTemperatures: (temps) =>
+        set(
+          (state) => ({
+            nodes: state.nodes.map((n) => {
+              const match = temps.find((t) => t.node === n.node);
+              return match ? { ...n, temperatures: match.zones } : n;
+            }),
+            lastUpdate: { ...state.lastUpdate, temperature: Date.now() },
+          }),
+          false,
+          'cluster/setTemperatures',
+        ),
+
+      setEvents: (events) =>
+        set(
+          { events: events.slice(0, 100), lastUpdate: { ...get().lastUpdate, events: Date.now() } },
+          false,
+          'cluster/setEvents',
+        ),
 
       setMonitorStatus: (status) =>
         set({ monitorStatus: status }, false, 'cluster/setMonitorStatus'),

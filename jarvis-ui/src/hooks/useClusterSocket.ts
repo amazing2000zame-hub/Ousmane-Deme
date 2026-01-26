@@ -19,6 +19,7 @@ export function useClusterSocket(): void {
   const setVMs = useClusterStore((s) => s.setVMs);
   const setStorage = useClusterStore((s) => s.setStorage);
   const setQuorum = useClusterStore((s) => s.setQuorum);
+  const setTemperatures = useClusterStore((s) => s.setTemperatures);
   const setConnected = useClusterStore((s) => s.setConnected);
 
   useEffect(() => {
@@ -52,6 +53,10 @@ export function useClusterSocket(): void {
       setQuorum(data);
     }
 
+    function onTemperature(data: Array<{ node: string; zones: Record<string, number> }>) {
+      setTemperatures(data);
+    }
+
     function onConnectError(err: Error) {
       const msg = err.message.toLowerCase();
       if (msg.includes('token') || msg.includes('expired') || msg.includes('unauthorized')) {
@@ -65,6 +70,7 @@ export function useClusterSocket(): void {
     socket.on('vms', onVMs);
     socket.on('storage', onStorage);
     socket.on('quorum', onQuorum);
+    socket.on('temperature', onTemperature);
     socket.on('connect_error', onConnectError);
 
     socket.connect();
@@ -76,9 +82,10 @@ export function useClusterSocket(): void {
       socket.off('vms', onVMs);
       socket.off('storage', onStorage);
       socket.off('quorum', onQuorum);
+      socket.off('temperature', onTemperature);
       socket.off('connect_error', onConnectError);
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [token, logout, setNodes, setVMs, setStorage, setQuorum, setConnected]);
+  }, [token, logout, setNodes, setVMs, setStorage, setQuorum, setTemperatures, setConnected]);
 }
