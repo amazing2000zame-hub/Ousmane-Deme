@@ -1,14 +1,14 @@
-# Architecture Patterns: Milestone Integration
+# Architecture Patterns: File Operations, Project Intelligence & Voice Retraining
 
-**Domain:** Hybrid LLM routing, persistent memory, Docker deployment, and E2E testing for Jarvis 3.1
+**Domain:** MCP tool integration for file management, project analysis, and TTS voice pipeline
 **Researched:** 2026-01-26
-**Overall Confidence:** HIGH (verified against existing codebase, current ecosystem patterns, and official documentation)
+**Overall Confidence:** HIGH (verified against existing codebase -- every source file read and analyzed)
 
 ---
 
-## Existing Architecture (As-Built)
+## Existing Architecture (As-Built, Verified)
 
-Before detailing how new features integrate, here is the precise current state based on full codebase analysis.
+The following is the precise current state from reading every source file in the codebase.
 
 ### Current Module Map
 
@@ -18,987 +18,984 @@ jarvis-backend/src/
   config.ts             -- Centralized config from env vars
 
   ai/
-    claude.ts           -- Anthropic SDK client singleton (claudeClient, claudeAvailable flag)
-    local-llm.ts        -- OpenAI-compatible SSE streaming against llama-server
-    loop.ts             -- Agentic tool-calling loop (Claude-only, streams + tool_use blocks)
+    claude.ts           -- Anthropic SDK client singleton
+    local-llm.ts        -- OpenAI-compatible SSE streaming (Qwen)
+    loop.ts             -- Agentic tool-calling loop (streams + tool_use blocks)
+    router.ts           -- Intent-based LLM provider routing (keyword + entity + follow-up)
+    providers.ts        -- LLMProvider interface barrel
+    providers/
+      claude-provider.ts -- Claude provider implementation
+      qwen-provider.ts   -- Qwen provider implementation
     system-prompt.ts    -- JARVIS personality + live cluster context injection
-    tools.ts            -- 18 Anthropic tool definitions (hardcoded, not auto-generated)
+    tools.ts            -- 18 Anthropic tool definitions (hardcoded for optimal descriptions)
+    tts.ts              -- TTS provider abstraction (local XTTS > ElevenLabs > OpenAI)
+    cost-tracker.ts     -- Token cost accumulation + daily budget enforcement
+    memory-extractor.ts -- Extract memories from conversations
+    memory-context.ts   -- Build memory context for LLM
+    memory-recall.ts    -- Recall relevant memories
 
   mcp/
-    server.ts           -- McpServer instance + executeTool() pipeline (sanitize -> safety -> execute -> log)
+    server.ts           -- McpServer instance + executeTool() pipeline
+                           Pipeline: sanitize -> checkSafety -> execute handler -> log
     tools/
-      cluster.ts        -- 9 GREEN-tier read-only tools
-      lifecycle.ts       -- 6 RED-tier VM/CT start/stop/restart tools
-      system.ts          -- 3 YELLOW-tier operational tools (SSH, service restart, WOL)
+      cluster.ts        -- 9 GREEN-tier read-only monitoring tools
+      lifecycle.ts      -- 6 RED/YELLOW-tier VM/CT start/stop/restart tools
+      system.ts         -- 3 YELLOW-tier operational tools (SSH, service restart, WOL)
 
   safety/
     tiers.ts            -- 4-tier ActionTier enum (GREEN/YELLOW/RED/BLACK) + checkSafety()
     protected.ts        -- Protected resource guard (VMID 103, Docker daemon)
-    sanitize.ts         -- Input sanitization for tool arguments
+    sanitize.ts         -- Input sanitization + command allowlist/blocklist
     context.ts          -- Override context thread-local state
 
   db/
     index.ts            -- better-sqlite3 + Drizzle ORM init (WAL mode)
-    schema.ts           -- 5 tables: events, conversations, cluster_snapshots, preferences, autonomy_actions
-    memory.ts           -- memoryStore API: events, messages, snapshots, preferences, autonomy actions
-    migrate.ts          -- Dual-path migration (Drizzle folder OR direct SQL)
-
-  monitor/
-    index.ts            -- Tiered polling lifecycle (start/stop, 4 intervals)
-    poller.ts           -- pollCritical(12s), pollImportant(32s), pollRoutine(5m), pollBackground(30m)
-    state-tracker.ts    -- State change detection for nodes/VMs
-    thresholds.ts       -- Threshold violation detection
-    runbooks.ts         -- Autonomous remediation execution
-    guardrails.ts       -- Kill switch, autonomy levels, rate limiting
-    reporter.ts         -- Email notification support
-    types.ts            -- StateChange, ThresholdViolation, Incident types
-
-  realtime/
-    socket.ts           -- Socket.IO server setup, 4 namespaces, JWT auth middleware
-    chat.ts             -- /chat namespace: smart routing (needsTools() keyword check), session management
-    emitter.ts          -- /cluster namespace: 5 polling loops pushing data to clients
-    terminal.ts         -- /terminal namespace: SSH PTY via xterm.js
+    schema.ts           -- 6 tables: events, conversations, cluster_snapshots,
+                           preferences, memories, autonomy_actions
+    memory.ts           -- memoryStore API
+    memories.ts         -- Memory tier operations
+    migrate.ts          -- Schema migrations
 
   clients/
     proxmox.ts          -- ProxmoxClient class (REST over HTTPS:8006, API token auth)
     ssh.ts              -- SSH connection pool (node-ssh, key-based, lazy connect)
 
-  api/
-    routes.ts           -- Express Router: /api/health, /api/auth, /api/memory/*, /api/tools/*, /api/monitor/*
-    health.ts           -- Health check endpoint
-
-  auth/
-    jwt.ts              -- JWT sign/verify + login handler
+  monitor/              -- Tiered polling, state tracking, runbooks, guardrails
+  realtime/             -- Socket.IO: /cluster, /events, /chat, /terminal namespaces
+  api/                  -- Express routes: health, auth, memory, tools, monitor, cost, tts
+  auth/                 -- JWT sign/verify + login
 ```
 
-### Current Communication Flow
+### TTS Service (Separate Process)
 
 ```
-Frontend (React 19 + Zustand + Socket.IO client)
+/opt/jarvis-tts/
+  app/server.py         -- FastAPI XTTS v2 server (POST /synthesize, GET /health, GET /voices)
+  docker-compose.yml    -- Docker container config (port 5050, 8GB mem limit, 14 CPU limit)
+  Dockerfile            -- Python env with TTS, torch, torchaudio
+  voices/jarvis/        -- 10 reference WAV clips (22050Hz, mono, 16-bit PCM)
+  training/
+    dataset/
+      metadata.csv      -- LJSpeech-format: 10 entries with transcriptions
+      wavs/             -- Training audio clips
+    finetune_xtts.py    -- GPT decoder fine-tuning (6 epochs, lr=5e-6, batch=1)
+    compute_speaker_embedding.py -- Pre-compute speaker conditioning latents
+    extract_gpt_weights.py       -- Extract fine-tuned GPT weights from checkpoint
+    output/
+      jarvis_speaker.pth         -- Pre-computed speaker embedding
+      gpt_finetuned_weights.pth  -- Fine-tuned GPT decoder weights
+      mel_stats.pth              -- Mel normalization statistics
+  extract-voice.sh      -- Helper: extract audio clips from video via ffmpeg
+  prepare-audio.sh      -- Helper: convert audio to XTTS v2 format (22050Hz/mono/PCM)
+```
+
+### Current Tool Registration Pattern
+
+This is the critical integration pattern that new tools must follow:
+
+```
+1. Define handler in src/mcp/tools/<domain>.ts
+   - Export a registerXxxTools(server: McpServer) function
+   - Each tool: server.tool(name, description, zodSchema, handler)
+   - Handler returns { content: [{ type: 'text', text: ... }], isError?: boolean }
+
+2. Register in src/mcp/server.ts
+   - Import registerXxxTools
+   - Call registerXxxTools(mcpServer)
+   - The monkey-patched mcpServer.tool() captures handler references automatically
+
+3. Add safety tier in src/safety/tiers.ts
+   - Add entry to TOOL_TIERS record: toolName: ActionTier.GREEN/YELLOW/RED/BLACK
+
+4. Add Claude tool definition in src/ai/tools.ts
+   - Hardcoded Anthropic.Tool object with optimized description for Claude
+   - The confirmed parameter is NOT included (handled by safety pipeline)
+
+5. (If needed) Add sanitization in src/safety/sanitize.ts
+   - Add allowlist entries for new SSH commands
+   - Add blocklist entries for dangerous patterns
+
+6. (If needed) Update router in src/ai/router.ts
+   - Add keywords/patterns so the router sends relevant messages to Claude
+```
+
+### Current Data Flow: Tool Execution
+
+```
+User message -> chat.ts -> router.routeMessage() -> Claude provider
      |
-     | HTTP REST + Socket.IO (4 namespaces)
      v
-Express 5 + Socket.IO Server (:4000)
+Claude responds with tool_use block
      |
-     +-- /cluster NS --> emitter.ts --> proxmox.ts (REST) + ssh.ts (temperatures)
-     +-- /events  NS --> poller.ts --> proxmox.ts + state-tracker + runbooks
-     +-- /chat    NS --> chat.ts --> ai/loop.ts (Claude) OR ai/local-llm.ts (Qwen)
-     +-- /terminal NS --> terminal.ts --> ssh.ts (PTY)
-     |
-     +-- mcp/server.ts --> executeTool() --> tools/*.ts --> proxmox.ts / ssh.ts
-     +-- db/memory.ts --> SQLite (better-sqlite3 + Drizzle)
-```
-
-### Current Smart Routing (chat.ts)
-
-The existing routing is keyword-based, already functional:
-
-```typescript
-// If message contains tool-related keywords AND Claude is available:
-//   -> Claude (full agentic loop with tool_use)
-// Else:
-//   -> Qwen local (text-only, no tools)
-```
-
-This is the **exact integration point** for the hybrid LLM upgrade.
-
-### Existing Docker Setup
-
-Both Dockerfiles exist and are functional:
-- `jarvis-backend/Dockerfile` -- Multi-stage Node 22-slim, prebuild-install for better-sqlite3
-- `jarvis-ui/Dockerfile` -- Multi-stage Node 20-alpine build, Nginx serve
-- `docker-compose.yml` at root -- Backend service defined; frontend commented out
-- Backend Dockerfile already handles SSH key mount, data volume, and native module build
-
----
-
-## Integration Architecture: Four New Features
-
-### Overview
-
-Each new feature targets a specific layer of the existing architecture. The key insight is that the existing code already has the **seams** where these features plug in.
-
-```
-+-------------------------------------------------------------------+
-|  FEATURE 1: Hybrid LLM Router                                     |
-|  Replaces: ai/claude.ts + ai/local-llm.ts + chat.ts routing       |
-|  New files: ai/router.ts, ai/providers.ts, ai/cost-tracker.ts     |
-+-------------------------------------------------------------------+
-|  FEATURE 2: Persistent Memory TTL Tiers                            |
-|  Extends: db/schema.ts + db/memory.ts + ai/system-prompt.ts       |
-|  New files: db/context-builder.ts, db/consolidator.ts              |
-+-------------------------------------------------------------------+
-|  FEATURE 3: Docker Deployment                                      |
-|  Modifies: docker-compose.yml, Dockerfiles, nginx.conf             |
-|  New: .env.production, deploy.sh                                   |
-+-------------------------------------------------------------------+
-|  FEATURE 4: E2E Testing                                            |
-|  New: tests/ directory, playwright.config.ts, vitest.config.ts     |
-|  Tests against live Proxmox API + Socket.IO connections             |
-+-------------------------------------------------------------------+
+     v
+loop.ts processes tool_use:
+  1. getToolTier(name) -> GREEN/YELLOW/RED/BLACK
+  2. BLACK -> blocked, error returned to Claude
+  3. RED -> PendingConfirmation returned to frontend
+  4. GREEN/YELLOW -> executeTool()
+       |
+       v
+  mcp/server.ts executeTool():
+    1. Look up handler from toolHandlers Map
+    2. Sanitize string arguments (sanitizeInput)
+    3. checkSafety(name, args, confirmed, overrideActive)
+    4. Execute handler function
+    5. Log to memoryStore.saveEvent()
+    6. Return ToolResult with tier info
 ```
 
 ---
 
-## Feature 1: Hybrid LLM Router
+## New Feature Architecture: File Operations
 
-### Problem
+### What This Feature Does
 
-The current system has two separate code paths:
-1. `ai/loop.ts` -- Claude-only agentic loop (streaming + tool_use, tightly coupled to Anthropic SDK types)
-2. `ai/local-llm.ts` -- Qwen text-only streaming (no tool support)
-3. `realtime/chat.ts` -- Hardcoded keyword-based routing between the two
+Enables Jarvis to perform file operations across the 4-node cluster:
+- Download files from any node to the user (via browser)
+- Import/upload files to specific node paths
+- List directory contents on any node
+- Read file contents from any node
 
-The routing logic is embedded in chat.ts, making it impossible to use from monitor/poller.ts or API routes. Claude and Qwen have completely different interfaces with no abstraction.
+### Integration Strategy: SSH-Based, Not Agent-Based
 
-### Integration Points
+All file operations go through the existing SSH client (`clients/ssh.ts`). This is the correct approach because:
+- SSH is already established to all 4 nodes with key-based auth
+- The SSH pool handles connection lifecycle automatically
+- No new agent software needed on cluster nodes
+- File transfer via SSH (scp/sftp) is battle-tested
+- The `node-ssh` library already supports file transfer (putFile, getFile, putDirectory)
 
-| Existing Component | How It Changes | Impact |
-|---------------------|----------------|--------|
-| `ai/claude.ts` | Wrapped by new provider abstraction | No direct changes, becomes internal |
-| `ai/local-llm.ts` | Wrapped by new provider abstraction, gains tool support | Extended, not replaced |
-| `ai/loop.ts` | Generalized to accept any provider, not just Claude | Signature changes |
-| `ai/tools.ts` | Converted to provider-neutral format | Tool definitions become provider-agnostic |
-| `ai/system-prompt.ts` | Context budget varies by provider | Parameterized by model context window |
-| `realtime/chat.ts` | Delegates routing to ai/router.ts | Simplified, no longer owns routing logic |
-| `config.ts` | New config: cost thresholds, routing preferences | Extended |
+Do NOT build a file agent that runs on each node. The SSH approach is simpler, uses existing infrastructure, and requires zero new deployment.
 
 ### New Components
 
 ```
-ai/
-  providers.ts          -- LLMProvider interface + Claude/Qwen implementations
-  router.ts             -- Route decision engine (replaces chat.ts keyword logic)
-  cost-tracker.ts       -- Token counting, cost accumulation, budget enforcement
+src/mcp/tools/files.ts      -- File operation MCP tools (4-6 tools)
+src/clients/ssh.ts           -- Extended with file transfer methods (getFile, putFile)
+src/api/files.ts             -- REST endpoint for file download streaming
 ```
 
-### Component: LLMProvider Interface
-
-```typescript
-// ai/providers.ts
-
-interface LLMProvider {
-  name: string;                              // 'claude' | 'qwen-local'
-  available: boolean;                        // Runtime availability check
-  supportsTools: boolean;                    // Can handle tool_use blocks?
-  maxContextTokens: number;                  // 200K for Claude, 4096 for Qwen
-  costPerInputToken: number;                 // 0 for local, $X for Claude
-  costPerOutputToken: number;                // 0 for local, $X for Claude
-
-  chat(params: ChatParams): Promise<ChatResult>;  // Unified interface
-}
-
-interface ChatParams {
-  messages: Message[];                       // Provider-neutral message format
-  systemPrompt: string;
-  tools?: ToolDefinition[];                  // Only sent if provider supports tools
-  callbacks: StreamCallbacks;                // Reuse existing StreamCallbacks from loop.ts
-  abortSignal?: AbortSignal;
-  maxTokens?: number;
-}
-
-interface ChatResult {
-  pendingConfirmation: PendingConfirmation | null;  // From existing loop.ts type
-  usage: { inputTokens: number; outputTokens: number };
-  provider: string;
-}
-```
-
-**Key design decision: Unified interface, NOT unified SDK.**
-
-Do NOT use LiteLLM, OpenRouter, or any external gateway. Reasons:
-- Only two providers (Claude API + local llama-server) -- gateway is overkill
-- Claude's tool_use protocol is unique; OpenAI-compatible endpoints cannot replicate it
-- The existing Anthropic SDK and fetch-based Qwen client work perfectly
-- Adding a gateway adds latency, complexity, and a new dependency
-- Keep the abstraction thin: just an interface over the two existing implementations
-
-**Confidence: HIGH** -- The existing code already has both providers working. This is a refactor to create a common interface, not a rewrite.
-
-### Component: Router Decision Engine
-
-```typescript
-// ai/router.ts
-
-interface RouteDecision {
-  provider: 'claude' | 'qwen-local';
-  reason: string;
-  toolsRequired: boolean;
-}
-
-function routeMessage(
-  message: string,
-  context: RoutingContext,
-  config: RoutingConfig,
-): RouteDecision;
-```
-
-**Routing rules (ordered by priority):**
-
-| Priority | Condition | Route To | Reason |
-|----------|-----------|----------|--------|
-| 1 | Claude API key missing | Qwen local | Only option |
-| 2 | Override passkey detected | Claude | Safety-critical, needs full tool access |
-| 3 | Message contains tool keywords | Claude | Tool_use support required |
-| 4 | Conversation has pending confirmation | Claude | Must continue agentic loop |
-| 5 | Cost budget exceeded for period | Qwen local | Cost control |
-| 6 | Context window > 3000 tokens | Claude | Qwen's 4096 limit too small |
-| 7 | Simple conversation/greeting | Qwen local | Save Claude tokens |
-| 8 | Default | Qwen local | Prefer local for speed + cost |
-
-**Why keyword-based routing instead of a learned router:**
-
-Research shows (xRouter, RouteLLM) that even RL-trained routers converge to simple heuristics. For a two-provider system with clearly different capabilities (tool_use vs text-only), keyword matching is the right approach. The existing `needsTools()` function in chat.ts already works well. Upgrade it with:
-- Configurable keyword lists
-- Context-aware overrides (budget, availability)
-- Telemetry to refine rules over time
-
-### Component: Cost Tracker
-
-```typescript
-// ai/cost-tracker.ts
-
-interface CostTracker {
-  recordUsage(provider: string, input: number, output: number): void;
-  getCurrentPeriodCost(): number;           // Cost in current billing period
-  isOverBudget(): boolean;                  // Check against configured limit
-  getUsageStats(): UsageStats;              // For dashboard display
-}
-```
-
-Storage: Use the existing `preferences` table for budget config and `events` table for usage logs. No new tables needed.
-
-### Data Flow Change: Chat Message
+### Component: File Tools (`src/mcp/tools/files.ts`)
 
 ```
-BEFORE:
-  chat:send -> chat.ts -> needsTools() -> Claude loop.ts OR Qwen local-llm.ts
+Tools to register:
 
-AFTER:
-  chat:send -> chat.ts -> router.routeMessage() -> provider.chat() -> callbacks
-                             |                          |
-                             v                          v
-                       cost-tracker.record()     same StreamCallbacks
+1. list_directory (GREEN)
+   - Args: { node: string, path: string }
+   - Implementation: execOnNodeByName(node, `ls -la "${path}"`)
+   - Returns: Parsed directory listing with names, sizes, permissions, dates
+
+2. read_file (GREEN)
+   - Args: { node: string, path: string, lines?: number }
+   - Implementation: execOnNodeByName(node, `head -n ${lines} "${path}"`)
+   - Safety: Max 500 lines default, path sanitization
+   - Returns: File contents as text
+
+3. search_files (GREEN)
+   - Args: { node: string, path: string, pattern: string, type?: 'name' | 'content' }
+   - Implementation: execOnNodeByName(node, `find "${path}" -name "${pattern}"`)
+                 or: execOnNodeByName(node, `grep -rl "${pattern}" "${path}"`)
+   - Returns: List of matching file paths
+
+4. file_info (GREEN)
+   - Args: { node: string, path: string }
+   - Implementation: execOnNodeByName(node, `stat "${path}" && file "${path}"`)
+   - Returns: File metadata (size, type, permissions, modified date)
+
+5. download_file (YELLOW)
+   - Args: { node: string, path: string }
+   - Implementation: Uses node-ssh getFile to transfer to temp directory
+   - Returns: Download URL (temporary, served by Express)
+   - Note: YELLOW because it transfers data off-node
+
+6. write_file (RED)
+   - Args: { node: string, path: string, content: string, confirmed?: boolean }
+   - Implementation: Uses node-ssh putFile or echo via SSH
+   - Safety: RED tier, requires confirmation
+   - Blocklist: Cannot write to /etc/pve/*, /etc/ssh/*, system paths
 ```
 
-The chat.ts handler becomes thinner. It no longer owns routing logic. It calls `router.routeMessage()`, gets a provider, and calls `provider.chat()`. The StreamCallbacks interface stays identical.
+### Safety Tier Assignments
 
-### Tool Support for Qwen (Future Enhancement)
+| Tool | Tier | Rationale |
+|------|------|-----------|
+| `list_directory` | GREEN | Read-only, equivalent to existing SSH `ls` |
+| `read_file` | GREEN | Read-only, equivalent to existing SSH `cat` |
+| `search_files` | GREEN | Read-only, equivalent to existing SSH `find/grep` |
+| `file_info` | GREEN | Read-only, equivalent to existing SSH `stat` |
+| `download_file` | YELLOW | Transfers data, creates temp file on backend |
+| `write_file` | RED | Modifies filesystem, requires confirmation |
 
-The local Qwen model currently has NO tool support. Adding tool_use to Qwen requires:
-1. Structured prompt engineering (Qwen 2.5 supports function calling via ChatML format)
-2. JSON extraction from Qwen's response to identify tool calls
-3. Same safety pipeline (checkSafety, executeTool)
+### Path Sanitization (Critical)
 
-This is a **separate phase** from the basic routing refactor. Build the abstraction first, then add Qwen tool support later. The provider interface makes this a clean extension.
+File operations introduce **path traversal attacks** as a new threat vector. The existing `sanitizeInput()` strips control characters but does NOT validate filesystem paths.
 
-**Confidence: MEDIUM** -- Qwen 2.5 7B's function calling reliability at Q4_K_M quantization needs empirical testing. The abstraction should be designed to handle unreliable tool extraction gracefully (fall back to text-only).
+New sanitization needed in `src/safety/sanitize.ts`:
+
+```
+Path safety rules:
+1. Resolve and normalize path (collapse ../, ./, //)
+2. BLOCK paths starting with: /etc/pve/, /etc/ssh/, /etc/shadow, /proc/, /sys/
+3. BLOCK paths containing: ../ (after normalization this catches traversal)
+4. BLOCK absolute paths to sensitive locations (defined in a PROTECTED_PATHS list)
+5. MAX path length: 1024 characters
+6. Characters: alphanumeric, /, -, _, ., space only
+```
+
+The protected paths list should mirror the existing `PROTECTED_RESOURCES` pattern from `safety/protected.ts`:
+
+```
+New in protected.ts:
+  PROTECTED_PATHS = [
+    '/etc/pve/',         -- Cluster configuration
+    '/etc/ssh/',         -- SSH keys and config
+    '/etc/shadow',       -- Password hashes
+    '/etc/passwd',       -- User accounts (read OK but write blocked)
+    '/root/.ssh/',       -- SSH keys
+    '/opt/agent/.env',   -- Agent credentials
+  ]
+```
+
+### SSH Client Extension
+
+The existing `ssh.ts` exports `execOnNode()` and `execOnNodeByName()` for command execution. For file download, extend with:
+
+```
+New exports in ssh.ts:
+  getFileFromNode(nodeName: string, remotePath: string, localPath: string): Promise<void>
+  putFileToNode(nodeName: string, localPath: string, remotePath: string): Promise<void>
+```
+
+The `node-ssh` library already supports `getFile()` and `putFile()` on the SSH connection object. This is a thin wrapper.
+
+### File Download Flow
+
+```
+1. Claude calls download_file tool with { node, path }
+2. Handler validates path safety
+3. Handler calls getFileFromNode() -> saves to /tmp/jarvis-downloads/<uuid>-filename
+4. Handler returns JSON: { downloadUrl: "/api/files/download/<uuid>", filename, size }
+5. Claude presents the download link to the user
+6. User clicks link -> Express serves the file with proper Content-Disposition
+7. Cleanup: temp files deleted after 5 minutes (setTimeout or periodic cleanup)
+```
+
+New Express route needed:
+
+```
+GET /api/files/download/:id
+  - Validates id format (UUID)
+  - Serves file from temp directory with Content-Disposition: attachment
+  - Sets appropriate Content-Type based on file extension
+  - Deletes file after serving (or after TTL)
+```
+
+### Command Allowlist Updates
+
+The existing `sanitize.ts` has a COMMAND_ALLOWLIST for `execute_ssh`. File tools use `execOnNodeByName()` internally, which also goes through sanitization. The file tools should bypass the command allowlist since they construct commands internally (not from user input). Two approaches:
+
+**Option A (Recommended):** File tool handlers construct commands internally and call `execOnNode()` directly, bypassing `sanitizeCommand()`. The path validation in the tool handler itself provides safety.
+
+**Option B:** Add file-related prefixes to the allowlist (`cat`, `head`, `find`, `stat`, `file`, `grep`). But `cat` and `find` are already in the allowlist (`head`, `tail`, `stat` are present; `cat /sys` is present but generic `cat` is not).
+
+Recommendation: **Option A.** The file tools should own their own safety validation (path sanitization) rather than relying on the generic command allowlist. The command allowlist is designed for `execute_ssh` where the user provides the command. For file tools, the backend constructs the command from validated inputs.
+
+### Integration with Router
+
+Update `src/ai/router.ts` to route file-related messages to Claude:
+
+```
+New ENTITY_PATTERNS additions:
+  /\b(file|files|folder|directory|download|upload|import)\b/i
+  /\b(read|write|list|search|browse)\b/i  -- (some overlap with existing QUERY_KEYWORDS)
+
+New ACTION_KEYWORDS additions:
+  'download', 'upload', 'import'
+```
 
 ---
 
-## Feature 2: Persistent Memory with TTL Tiers
+## New Feature Architecture: Project Intelligence
 
-### Problem
+### What This Feature Does
 
-The current memory system stores everything but has no strategy for:
-- What to include in the LLM context window
-- When to expire old data
-- How to consolidate repeated events into summaries
-- Different retention for different data types
+Enables Jarvis to understand, browse, and analyze the 24+ projects across the cluster:
+- List all known projects with metadata
+- Read project structure (directory tree, key files)
+- Analyze project health (outdated deps, missing configs, Docker status)
+- Search across projects for code patterns
 
-The system prompt's `buildClusterSummary()` fetches live state on every message, which is good. But conversation history and event history grow unbounded, and there is no "long-term memory" -- JARVIS forgets everything between sessions.
+### Data Source: File Organizer Registry
 
-### Existing Memory Infrastructure
+The existing File Organizer agent on agent1 (192.168.1.61) maintains a registry at:
+```
+/opt/cluster-agents/file-organizer/data/registry.json
+```
 
-The current `db/memory.ts` already provides:
-- `saveEvent()` / `getRecentEvents()` / `getEventsSince()` / `resolveEvent()`
-- `saveMessage()` / `getSessionMessages()` / `getRecentSessions()`
-- `saveSnapshot()` / `getLatestSnapshot()`
-- `setPreference()` / `getPreference()`
-- `saveAutonomyAction()` / `cleanupOldActions(30)`
+This registry contains 24 indexed projects with:
+- `id`: Unique identifier (node-path based)
+- `name`: Project name
+- `path`: Absolute path on the node
+- `node`: Which cluster node (home, pve, agent1)
+- `type`: Project type (node, python, docker-compose, docker, make)
+- `markers`: Detected marker files (package.json, Dockerfile, pyproject.toml, etc.)
+- `lastModified`: Last modification timestamp
+- `status`: active/stale
+- `version`: Package version (if detected)
 
-The `conversations` table stores all messages with sessionId, role, content, model, and tokensUsed.
+### Integration Strategy: Registry as Cache, SSH for Details
 
-### Integration Points
+The registry provides a fast index for project discovery. For detailed operations (read files, analyze deps), use SSH to the project's node. This is a two-tier approach:
 
-| Existing Component | How It Changes | Impact |
-|---------------------|----------------|--------|
-| `db/schema.ts` | New table: `memory_tiers` for long-term knowledge | Schema migration |
-| `db/memory.ts` | New methods for tiered retrieval and TTL cleanup | Extended API |
-| `ai/system-prompt.ts` | `buildClusterSummary()` becomes `buildContext()` with tiered memory | Core change |
-| `monitor/poller.ts` | `pollBackground()` triggers consolidation | New cleanup task |
-| `config.ts` | TTL durations, context budget per provider | Extended |
+```
+Tier 1: Registry query (fast, cached)
+  - List all projects
+  - Filter by node, type, status
+  - Get project metadata
+
+Tier 2: SSH inspection (on-demand, slower)
+  - Read package.json, Dockerfile, etc.
+  - Run `npm outdated` or `pip list --outdated`
+  - Check Docker container status
+  - Read directory structure
+```
 
 ### New Components
 
 ```
-db/
-  context-builder.ts    -- Assemble LLM context from tiered memory sources
-  consolidator.ts       -- Periodic event consolidation (many events -> summary)
+src/mcp/tools/projects.ts     -- Project intelligence MCP tools (5-7 tools)
+src/clients/registry.ts        -- Registry client (fetch + cache from agent1)
 ```
 
-### Three-Tier Memory Architecture
+### Component: Registry Client (`src/clients/registry.ts`)
 
 ```
-+----------------------------------------------------------+
-|  Tier 1: Working Memory (in-process, ephemeral)           |
-|  Source: Live Proxmox API polls, current session messages  |
-|  TTL: Session lifetime (cleared on disconnect)            |
-|  Size: ~500-2000 tokens                                   |
-|  Contains: Current node status, quorum, VM states         |
-|  Already exists: buildClusterSummary() in system-prompt.ts|
-+----------------------------------------------------------+
-|  Tier 2: Short-Term Memory (SQLite, days)                 |
-|  Source: events table, conversations table                |
-|  TTL: 7 days (configurable)                               |
-|  Size: ~500-1000 tokens (summarized for context)          |
-|  Contains: Recent events, recent conversations, actions   |
-|  Partially exists: memoryStore.getRecentEvents()          |
-+----------------------------------------------------------+
-|  Tier 3: Long-Term Memory (SQLite, permanent)             |
-|  Source: Consolidated from Tier 2 by consolidator         |
-|  TTL: Permanent (manual cleanup only)                     |
-|  Size: ~200-500 tokens (high-signal summaries only)       |
-|  Contains: Learned patterns, user preferences, recurring  |
-|  issues, node personality notes                           |
-|  NEW: Requires new table and consolidation logic          |
-+----------------------------------------------------------+
+Purpose: Fetch and cache the project registry from agent1
+
+Implementation:
+  - SSH to agent1, cat the registry.json file
+  - Parse and cache in-memory with 5-minute TTL
+  - Provide typed access to project data
+
+Interface:
+  getProjects(): Promise<Project[]>
+  getProjectById(id: string): Promise<Project | null>
+  getProjectsByNode(node: string): Promise<Project[]>
+  getProjectsByType(type: string): Promise<Project[]>
+  refreshRegistry(): Promise<void>  -- Force cache invalidation
 ```
 
-### New Schema: memory_tiers Table
+Why a dedicated client instead of inline SSH calls:
+- Registry access is frequent (multiple tools reference it)
+- Caching avoids repeated SSH calls for the same data
+- Type safety for the registry schema
+- Single point of change if registry location moves
 
-```sql
-CREATE TABLE memory_tiers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  tier TEXT NOT NULL,               -- 'short' | 'long'
-  category TEXT NOT NULL,           -- 'event_summary' | 'user_preference' | 'pattern' | 'node_note'
-  key TEXT NOT NULL UNIQUE,         -- Dedup key (e.g., 'pattern:agent1_nic_hang')
-  content TEXT NOT NULL,            -- Human-readable summary
-  relevance_score REAL DEFAULT 1.0, -- Decays over time, boosted by access
-  access_count INTEGER DEFAULT 0,   -- How many times included in context
-  last_accessed TEXT,               -- When last included in LLM context
-  expires_at TEXT                   -- NULL for permanent, datetime for TTL
-);
-
-CREATE INDEX idx_memory_tier ON memory_tiers(tier);
-CREATE INDEX idx_memory_category ON memory_tiers(category);
-CREATE INDEX idx_memory_expires ON memory_tiers(expires_at);
-CREATE INDEX idx_memory_relevance ON memory_tiers(relevance_score DESC);
-```
-
-### Context Builder
-
-```typescript
-// db/context-builder.ts
-
-interface ContextBudget {
-  totalTokens: number;          // Max tokens for context section
-  tier1Tokens: number;          // Budget for live state
-  tier2Tokens: number;          // Budget for recent events/actions
-  tier3Tokens: number;          // Budget for long-term knowledge
-}
-
-function buildLLMContext(budget: ContextBudget): string {
-  // 1. Tier 1: Live cluster state (from existing buildClusterSummary)
-  //    Always included, ~500-800 tokens
-
-  // 2. Tier 2: Recent events + unresolved issues
-  //    Sorted by severity DESC, timestamp DESC
-  //    Truncated to budget
-
-  // 3. Tier 3: Long-term knowledge relevant to current context
-  //    Sorted by relevance_score DESC
-  //    Only include if budget allows
-
-  // 4. Assemble into structured text block
-  return `<cluster_context>
-${tier1Content}
-</cluster_context>
-
-<recent_activity>
-${tier2Content}
-</recent_activity>
-
-<knowledge>
-${tier3Content}
-</knowledge>`;
-}
-```
-
-**Context budgets by provider:**
-
-| Provider | Total Budget | Tier 1 (Live) | Tier 2 (Recent) | Tier 3 (Knowledge) |
-|----------|-------------|---------------|-----------------|---------------------|
-| Claude | 5000 tokens | 1000 | 2500 | 1500 |
-| Qwen local | 1500 tokens | 800 | 500 | 200 |
-
-### Consolidation Engine
-
-```typescript
-// db/consolidator.ts
-
-// Runs on pollBackground() interval (every 30 minutes)
-async function consolidateMemory(): Promise<void> {
-  // 1. TTL cleanup: Delete expired short-term memories
-  deleteExpiredMemories();
-
-  // 2. Event consolidation: Group similar recent events into summaries
-  //    Example: 15 "Node agent temp warning" events -> "agent node experienced
-  //    repeated thermal warnings over 3 hours"
-  consolidateRepeatedEvents();
-
-  // 3. Relevance decay: Reduce relevance_score of unaccessed memories
-  //    score *= 0.95 per consolidation cycle
-  decayUnusedMemories();
-
-  // 4. Conversation mining: Extract learned facts from recent conversations
-  //    Example: User said "I prefer short responses" -> store as user preference
-  //    NOTE: This is a FUTURE enhancement, not MVP
-}
-```
-
-**Critical design constraint:** The consolidator must be simple and deterministic. Do NOT use LLM calls for consolidation (expensive, slow, unreliable). Use pattern matching and SQL aggregation instead. LLM-powered summarization can be added later as an enhancement.
-
-### Integration with Existing Cleanup
-
-The existing `pollBackground()` in `monitor/poller.ts` already calls `memoryStore.cleanupOldActions(30)`. The new consolidation hooks into the same cycle:
+### Component: Project Tools (`src/mcp/tools/projects.ts`)
 
 ```
-pollBackground() [every 30 min]
-  -> Storage capacity check (existing)
-  -> cleanupOldActions(30) (existing)
-  -> consolidateMemory() (NEW)
+Tools to register:
+
+1. list_projects (GREEN)
+   - Args: { node?: string, type?: string }
+   - Implementation: Registry client query with optional filters
+   - Returns: Project list with name, node, type, path, lastModified
+
+2. get_project_details (GREEN)
+   - Args: { project: string }  -- project name or ID
+   - Implementation: Registry lookup + SSH to read key files
+   - Reads: package.json/pyproject.toml (name, version, deps count),
+            Dockerfile existence, docker-compose.yml existence,
+            .git status (branch, last commit)
+   - Returns: Rich project details
+
+3. get_project_structure (GREEN)
+   - Args: { project: string, depth?: number }
+   - Implementation: Registry lookup for path/node, then SSH `tree` or `find`
+   - Returns: Directory tree (limited depth, excludes node_modules/.git)
+
+4. read_project_file (GREEN)
+   - Args: { project: string, file: string }
+   - Implementation: Registry lookup for path/node, then SSH `cat`
+   - Safety: File path must be within project directory
+   - Returns: File contents
+
+5. analyze_project (GREEN)
+   - Args: { project: string }
+   - Implementation: Registry + SSH to gather:
+     - Package outdated status (npm outdated / pip list --outdated)
+     - Docker container running status
+     - Git status (uncommitted changes, ahead/behind)
+     - Disk usage
+   - Returns: Health report with findings
+
+6. search_project_code (GREEN)
+   - Args: { project: string, pattern: string }
+   - Implementation: Registry lookup, then SSH `grep -rn`
+   - Returns: Matching lines with file paths and line numbers
 ```
 
-**Confidence: HIGH** -- The existing memory infrastructure provides a solid foundation. The three-tier model adds structure without requiring major schema changes. The new `memory_tiers` table is additive.
+### Safety Tier Assignments
+
+All project tools are **GREEN** (read-only). The project tools never modify files. If the user wants to modify project files, they use the `write_file` tool from the file operations feature, which is RED tier.
+
+| Tool | Tier | Rationale |
+|------|------|-----------|
+| `list_projects` | GREEN | Read-only registry query |
+| `get_project_details` | GREEN | Read-only SSH + registry |
+| `get_project_structure` | GREEN | Read-only directory listing |
+| `read_project_file` | GREEN | Read-only file read within project bounds |
+| `analyze_project` | GREEN | Read-only health check commands |
+| `search_project_code` | GREEN | Read-only grep |
+
+### Project Path Containment
+
+The `read_project_file` tool must enforce that the requested file is within the project's directory. This prevents using project tools as a backdoor for arbitrary file access:
+
+```
+Validation:
+  1. Look up project from registry -> get project.path and project.node
+  2. Resolve requested file: path.resolve(project.path, file)
+  3. Verify resolved path starts with project.path
+  4. Block if traversal detected (resolved path escapes project root)
+```
+
+### Integration with Existing File Tools
+
+The project tools and file tools are complementary:
+- **Project tools** are scoped to known projects (safer, more context-aware)
+- **File tools** are general-purpose (any path on any node)
+- Claude can chain them: `list_projects` -> pick project -> `read_project_file` -> `analyze_project`
+
+### Integration with Router
+
+Update `src/ai/router.ts`:
+
+```
+New ENTITY_PATTERNS additions:
+  /\b(project|projects|repository|codebase)\b/i
+  /\b(jarvis-ui|jarvis-backend|jarvis-tts|proxmox-ui|file-organizer)\b/i
+  /\b(package\.json|dockerfile|docker-compose|requirements\.txt)\b/i
+
+New ACTION_KEYWORDS additions:
+  'analyze', 'outdated', 'dependencies'
+```
 
 ---
 
-## Feature 3: Docker Deployment
+## New Feature Architecture: Voice Retraining
 
-### Problem
+### What This Feature Does
 
-The current Docker setup is partially functional:
-- Backend Dockerfile works (multi-stage, handles better-sqlite3 native module)
-- Frontend Dockerfile works (multi-stage, Nginx serve)
-- docker-compose.yml has backend defined, frontend commented out
-- The frontend currently runs via `npm run dev` (Vite dev server), not containerized
-- No production .env template
-- No deployment script for the management VM
+Provides tools for Jarvis to manage its own voice:
+- Extract audio clips from video files (for new training data)
+- Prepare audio in XTTS v2 format
+- Trigger speaker embedding recomputation
+- Trigger GPT fine-tuning
+- Monitor training progress
 
-### Current Docker State (Verified from Files)
-
-**Backend Dockerfile** (`jarvis-backend/Dockerfile`):
-- Stage 1: `node:22-slim`, `npm ci --ignore-scripts`, `prebuild-install` for better-sqlite3
-- Stage 2: `node:22-slim`, copies dist + node_modules, creates `/app/.ssh` and `/data`
-- Missing: `USER node` (runs as root), no build-essential in builder (relies on prebuild)
-
-**Frontend Dockerfile** (`jarvis-ui/Dockerfile`):
-- Stage 1: `node:20-alpine`, `npm install` (should be `npm ci`), builds with Vite
-- Stage 2: `nginx:alpine`, copies dist to `/usr/share/nginx/html`
-- Has `nginx.conf` with SPA fallback, gzip, security headers
-- Missing: No API proxy configuration (frontend connects directly to backend)
-
-**docker-compose.yml**:
-- Backend service: port 4000, data volume, SSH key mount, env vars
-- Frontend: commented out
-- Network: `jarvis-net` bridge
-
-### Integration Points
-
-| Existing Component | How It Changes | Impact |
-|---------------------|----------------|--------|
-| `jarvis-backend/Dockerfile` | Harden: add build-essential, USER node, healthcheck | Security + reliability |
-| `jarvis-ui/Dockerfile` | Fix: npm ci, add API/WS proxy in nginx.conf | Production-ready |
-| `docker-compose.yml` | Enable frontend, add env vars for all features | Full stack deployment |
-| `jarvis-ui/nginx.conf` | Add reverse proxy for /api and /socket.io | Single entry point |
-| `.env` files | Create .env.production template | Deployment standardization |
-
-### Target Docker Architecture
+### Current Voice Pipeline (Verified)
 
 ```
-Management VM (192.168.1.65)
+Data Preparation:
+  extract-voice.sh   -- ffmpeg: video -> audio clip (22050Hz, mono, 16-bit PCM)
+  prepare-audio.sh   -- ffmpeg: any audio -> XTTS format
+
+Training Pipeline (inside Docker container):
+  1. compute_speaker_embedding.py
+     - Loads XTTS v2 model
+     - Processes all clips in /voices/jarvis/
+     - Outputs: jarvis_speaker.pth (combined GPT cond latent + speaker embedding)
+
+  2. finetune_xtts.py
+     - Loads XTTS v2 + DVAE
+     - Freezes all non-GPT parameters
+     - Trains GPT decoder on dataset (6 epochs, lr=5e-6)
+     - Outputs: gpt_finetuned/ checkpoint directory
+
+  3. extract_gpt_weights.py
+     - Loads checkpoint from finetune output
+     - Remaps keys (xtts.gpt.* -> gpt.*)
+     - Outputs: gpt_finetuned_weights.pth
+
+Runtime:
+  server.py loads:
+    1. Base XTTS v2 model
+    2. Fine-tuned GPT weights (gpt_finetuned_weights.pth)
+    3. Pre-computed speaker embedding (jarvis_speaker.pth)
+  Synthesis uses pre-computed embedding (fast) with fine-tuned GPT (better quality)
+```
+
+### Integration Strategy: Backend Orchestrates, TTS Container Executes
+
+The voice retraining tools live in the Jarvis backend but delegate execution to:
+- **Host shell** for audio extraction (ffmpeg runs on the Home node host)
+- **TTS Docker container** for training scripts (Python + PyTorch environment)
+
+The backend does NOT need Python or PyTorch. It orchestrates via:
+1. SSH commands to Home node for ffmpeg operations
+2. `docker exec` commands to the jarvis-tts container for training
+
+### New Components
+
+```
+src/mcp/tools/voice.ts        -- Voice management MCP tools (5-6 tools)
+```
+
+No new clients needed. Uses:
+- `execOnNodeByName('Home', ...)` for host-level operations
+- `execOnNodeByName('Home', 'docker exec jarvis-tts ...')` for container operations
+
+### Component: Voice Tools (`src/mcp/tools/voice.ts`)
+
+```
+Tools to register:
+
+1. voice_status (GREEN)
+   - Args: {}
+   - Implementation: Fetch http://192.168.1.50:5050/health + list voice files
+   - Returns: Model status, mode (zero-shot/trained/finetuned),
+              reference audio count, embedding status, cache info
+
+2. list_voice_clips (GREEN)
+   - Args: {}
+   - Implementation: SSH ls /opt/jarvis-tts/voices/jarvis/
+   - Returns: Audio clips with names, sizes, durations
+
+3. extract_voice_clip (YELLOW)
+   - Args: { inputVideo: string, startTime: string, duration: number, outputName: string }
+   - Implementation: SSH to Home: ffmpeg -i ... -ss ... -t ... -vn -acodec pcm_s16le -ar 22050 -ac 1
+   - Safety: Validate paths, duration limits (3-60s), output to /opt/jarvis-tts/voices/jarvis/
+   - Returns: Extracted clip metadata
+
+4. prepare_audio_clip (YELLOW)
+   - Args: { inputFile: string, outputName: string }
+   - Implementation: SSH to Home: ffmpeg conversion to XTTS format
+   - Returns: Converted clip metadata
+
+5. retrain_voice_embedding (YELLOW)
+   - Args: { confirmed?: boolean }
+   - Implementation: docker exec jarvis-tts python3 /training/compute_speaker_embedding.py
+   - Note: Takes ~60-120s on CPU, blocks the TTS service during execution
+   - Returns: New embedding info (num clips, shapes)
+
+6. retrain_voice_model (RED)
+   - Args: { epochs?: number, confirmed: boolean }
+   - Implementation:
+     a. docker exec jarvis-tts python3 /training/finetune_xtts.py
+     b. docker exec jarvis-tts python3 /training/extract_gpt_weights.py
+     c. docker restart jarvis-tts (to reload weights)
+   - Note: Takes 30-90 minutes on CPU, heavy resource usage
+   - Returns: Training status and log tail
+
+7. get_training_log (GREEN)
+   - Args: { lines?: number }
+   - Implementation: SSH tail /opt/jarvis-tts/training/finetune.log
+   - Returns: Recent training log output
+```
+
+### Safety Tier Assignments
+
+| Tool | Tier | Rationale |
+|------|------|-----------|
+| `voice_status` | GREEN | Read-only health check |
+| `list_voice_clips` | GREEN | Read-only directory listing |
+| `extract_voice_clip` | YELLOW | Creates files, runs ffmpeg |
+| `prepare_audio_clip` | YELLOW | Creates files, runs ffmpeg |
+| `retrain_voice_embedding` | YELLOW | Compute-intensive but non-destructive, can be auto-reloaded |
+| `retrain_voice_model` | RED | Very compute-intensive (30-90 min), blocks TTS, requires restart |
+| `get_training_log` | GREEN | Read-only log access |
+
+### Command Allowlist for Voice Operations
+
+The voice tools execute commands via `execOnNodeByName('Home', ...)`. Since these commands are constructed internally (not from user input), they should bypass the generic command allowlist. However, the blocklist still applies.
+
+For voice tools specifically, the constructed commands are:
+- `ffmpeg -i ... -ss ... -t ... -vn -acodec pcm_s16le -ar 22050 -ac 1 -y /opt/jarvis-tts/voices/jarvis/...`
+- `docker exec jarvis-tts python3 /training/compute_speaker_embedding.py`
+- `docker exec jarvis-tts python3 /training/finetune_xtts.py`
+- `ls /opt/jarvis-tts/voices/jarvis/`
+- `tail /opt/jarvis-tts/training/finetune.log`
+
+These are NOT in the current allowlist and should NOT be added there (they are internal commands, not user-facing SSH commands). The voice tool handlers should call `execOnNode()` directly rather than going through the `execute_ssh` tool pipeline.
+
+### Resource Management During Training
+
+Fine-tuning XTTS v2 GPT decoder on CPU is extremely resource-intensive:
+- Current config: 14 CPU cores, 8GB memory limit for the TTS container
+- Training duration: 30-90 minutes for 6 epochs on 10 samples
+- During training, TTS synthesis is unavailable (model weights are being modified)
+
+Mitigation:
+- `retrain_voice_model` is RED tier (requires explicit user confirmation)
+- The tool description should warn about TTS downtime
+- After training completes, the container must be restarted to load new weights
+- Consider running training in a separate container to avoid TTS downtime (future enhancement)
+
+### Integration with Router
+
+Update `src/ai/router.ts`:
+
+```
+New ENTITY_PATTERNS additions:
+  /\b(voice|tts|speech|audio|training|retrain)\b/i
+  /\b(xtts|jarvis.?tts|voice.?clone)\b/i
+
+New ACTION_KEYWORDS additions:
+  'extract', 'retrain', 'train', 'clip'
+```
+
+---
+
+## Component Boundaries Summary
+
+### New Files to Create
+
+| File | Purpose | Depends On |
+|------|---------|------------|
+| `src/mcp/tools/files.ts` | 6 file operation MCP tools | `clients/ssh.ts`, `safety/sanitize.ts` |
+| `src/mcp/tools/projects.ts` | 6 project intelligence MCP tools | `clients/registry.ts`, `clients/ssh.ts` |
+| `src/mcp/tools/voice.ts` | 7 voice management MCP tools | `clients/ssh.ts` |
+| `src/clients/registry.ts` | Project registry fetch + cache | `clients/ssh.ts` |
+| `src/api/files.ts` | File download REST endpoint | Express router |
+
+### Existing Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/mcp/server.ts` | Import + call `registerFileTools`, `registerProjectTools`, `registerVoiceTools` |
+| `src/safety/tiers.ts` | Add ~19 new tool-to-tier mappings in `TOOL_TIERS` |
+| `src/safety/sanitize.ts` | Add path sanitization function (`sanitizePath`) |
+| `src/safety/protected.ts` | Add `PROTECTED_PATHS` list |
+| `src/ai/tools.ts` | Add ~19 new Claude tool definitions |
+| `src/ai/router.ts` | Add file/project/voice keywords to routing patterns |
+| `src/clients/ssh.ts` | Add `getFileFromNode()` and `putFileToNode()` methods |
+| `src/api/routes.ts` | Mount file download route |
+
+### Files NOT Modified
+
+| File | Why Unchanged |
+|------|---------------|
+| `src/ai/loop.ts` | Agentic loop is tool-agnostic; new tools work automatically |
+| `src/ai/claude.ts` | Client singleton unchanged |
+| `src/db/schema.ts` | No new tables needed for these features |
+| `src/db/memory.ts` | Existing event logging suffices |
+| `src/config.ts` | May add TTS endpoint config but already has `localTtsEndpoint` |
+| `src/realtime/chat.ts` | Chat flow unchanged; routing handles the new tool triggers |
+
+---
+
+## Data Flow Diagrams
+
+### File Download Flow
+
+```
+User: "Download the nginx config from agent1"
   |
-  +-- Docker Compose
-       |
-       +-- jarvis-frontend (nginx:alpine)
-       |     Port 3004:80
-       |     Serves: React SPA static files
-       |     Proxies: /api/* -> jarvis-backend:4000
-       |     Proxies: /socket.io/* -> jarvis-backend:4000 (WebSocket upgrade)
-       |
-       +-- jarvis-backend (node:22-slim)
-             Port 4000 (internal only, not exposed to host)
-             Volumes:
-               - jarvis-data:/data (SQLite)
-               - SSH key mount (read-only)
-             Env: ANTHROPIC_API_KEY, PVE_TOKEN_SECRET, JWT_SECRET, etc.
-             Connects to:
-               - Proxmox nodes (HTTPS:8006, SSH:22)
-               - llama-server (HTTP:8080 on 192.168.1.50)
-               - Claude API (HTTPS, external)
+  v
+router.ts: matches "download" -> Claude
+  |
+  v
+Claude: tool_use { name: "download_file", input: { node: "agent1", path: "/etc/nginx/nginx.conf" } }
+  |
+  v
+loop.ts: tier=YELLOW -> auto-execute
+  |
+  v
+files.ts handler:
+  1. sanitizePath("/etc/nginx/nginx.conf") -> allowed
+  2. getFileFromNode("agent1", "/etc/nginx/nginx.conf", "/tmp/jarvis-dl/<uuid>-nginx.conf")
+  3. return { downloadUrl: "/api/files/download/<uuid>", filename: "nginx.conf", size: 1234 }
+  |
+  v
+Claude: "Here's the nginx config: [Download link](/api/files/download/<uuid>)"
+  |
+  v
+User clicks link -> files.ts Express route serves file -> cleanup
 ```
 
-### Critical: Nginx Reverse Proxy for Socket.IO
-
-The current `nginx.conf` only serves static files. For production, Nginx must proxy both REST and WebSocket traffic to the backend. Socket.IO requires specific proxy configuration:
-
-```nginx
-server {
-    listen 80;
-    server_name localhost;
-    root /usr/share/nginx/html;
-    index index.html;
-
-    # Gzip
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript
-               application/javascript application/json application/xml;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-
-    # Cache static assets
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # Socket.IO WebSocket + polling (MUST be before /api)
-    location /socket.io/ {
-        proxy_pass http://jarvis-backend:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 86400;
-        proxy_send_timeout 86400;
-    }
-
-    # REST API proxy
-    location /api/ {
-        proxy_pass http://jarvis-backend:4000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
-    # SPA fallback
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Health check
-    location /health {
-        access_log off;
-        return 200 "healthy\n";
-        add_header Content-Type text/plain;
-    }
-}
-```
-
-### Backend Dockerfile Improvements
-
-The existing Dockerfile has a subtle issue: `--ignore-scripts` prevents better-sqlite3 from compiling, then `prebuild-install` tries to download a prebuilt binary. This works on x86_64 but is fragile. A more robust approach:
-
-```dockerfile
-# Stage 1: Build
-FROM node:22-slim AS builder
-WORKDIR /app
-
-# Install build tools for native modules
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 build-essential && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY package.json package-lock.json ./
-RUN npm ci
-
-COPY tsconfig.json ./
-COPY src/ ./src/
-RUN npm run build
-
-# Stage 2: Production
-FROM node:22-slim
-WORKDIR /app
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends wget && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
-
-RUN mkdir -p /app/.ssh && chmod 700 /app/.ssh
-RUN mkdir -p /data && chown node:node /data
-
-USER node
-EXPOSE 4000
-
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
-  CMD wget --spider -q http://localhost:4000/api/health || exit 1
-
-CMD ["node", "dist/index.js"]
-```
-
-### SSH Key Access in Container
-
-The backend needs SSH access to cluster nodes. The current approach (volume-mounting the host SSH key) is correct:
-
-```yaml
-volumes:
-  - /root/.ssh/id_ed25519:/app/.ssh/id_ed25519:ro
-```
-
-The config already sets `SSH_KEY_PATH=/app/.ssh/id_ed25519`. No changes needed here.
-
-### Environment Variable Strategy
+### Project Analysis Flow
 
 ```
-.env.production (template, NOT committed):
-  NODE_ENV=production
-  PORT=4000
-  JWT_SECRET=<generate-unique>
-  JARVIS_PASSWORD=<set-password>
-  JARVIS_OVERRIDE_KEY=<set-passkey>
-  ANTHROPIC_API_KEY=<claude-api-key>
-  PVE_TOKEN_ID=root@pam!jarvis
-  PVE_TOKEN_SECRET=<proxmox-token>
-  DB_PATH=/data/jarvis.db
-  SSH_KEY_PATH=/app/.ssh/id_ed25519
-  LOCAL_LLM_ENDPOINT=http://192.168.1.50:8080
-  LOCAL_LLM_MODEL=qwen2.5-7b-instruct-q4_k_m.gguf
-  NODE_TLS_REJECT_UNAUTHORIZED=0
+User: "Analyze the jarvis-backend project"
+  |
+  v
+router.ts: matches "project" + "analyze" -> Claude
+  |
+  v
+Claude: tool_use { name: "analyze_project", input: { project: "jarvis-backend" } }
+  |
+  v
+projects.ts handler:
+  1. registry.getProjects() -> find project by name
+  2. SSH to Home node:
+     a. cat /root/jarvis-backend/package.json (parse deps, version)
+     b. npm outdated --json (in project dir)
+     c. git -C /root/jarvis-backend status --porcelain
+     d. du -sh /root/jarvis-backend
+  3. Return structured report
+  |
+  v
+Claude: Presents analysis with findings and recommendations
 ```
 
-### Resource Budget Validation
-
-The management VM (192.168.1.65) has 4 vCPUs, 8GB RAM, and already runs 16 Docker containers. Based on the existing docker-compose and typical Node.js memory footprint:
-
-| Container | Expected RAM | Expected CPU |
-|-----------|-------------|-------------|
-| jarvis-backend | 150-300 MB | 0.2-0.5 cores (idle), spikes during LLM streaming |
-| jarvis-frontend | 20-50 MB | Near zero (Nginx serving static files) |
-| **Total** | **170-350 MB** | **0.2-0.5 cores** |
-
-This is well within the available budget. Set memory limits in docker-compose as guardrails:
-
-```yaml
-deploy:
-  resources:
-    limits:
-      memory: 512M
-```
-
-**Confidence: HIGH** -- Both Dockerfiles already exist and work. This is hardening and completing what is 80% done.
-
----
-
-## Feature 4: E2E Testing
-
-### Problem
-
-The project has zero tests. No unit tests, no integration tests, no E2E tests. For a system that manages live infrastructure with autonomous remediation capabilities, this is a significant gap.
-
-### Testing Strategy
-
-Given the nature of Jarvis (infrastructure management against live Proxmox API), the testing approach must be:
-
-1. **Unit tests (Vitest)**: Test pure logic in isolation -- routing decisions, safety tier checks, context building, cost tracking
-2. **Integration tests (Vitest)**: Test module interactions with real SQLite (in-memory), mocked Proxmox API
-3. **E2E tests (Playwright)**: Test the full stack through the browser -- dashboard loads, chat works, tools execute against live cluster
-
-### Integration Points
-
-| Existing Component | How It's Tested | New Infrastructure |
-|---------------------|-----------------|-------------------|
-| `ai/router.ts` | Unit test routing decisions | Vitest |
-| `safety/tiers.ts` | Unit test tier classification | Vitest |
-| `db/memory.ts` | Integration test with in-memory SQLite | Vitest |
-| `db/context-builder.ts` | Unit test context assembly | Vitest |
-| `mcp/server.ts` | Integration test executeTool pipeline | Vitest + mocked proxmox |
-| `realtime/chat.ts` | E2E test through browser | Playwright |
-| Full dashboard | E2E: login, view cluster, send chat, view terminal | Playwright |
-
-### New Components
+### Voice Retraining Flow
 
 ```
-tests/
-  vitest.config.ts       -- Vitest configuration
-  playwright.config.ts   -- Playwright configuration
+User: "Extract a new voice clip from the Iron Man 2 video"
+  |
+  v
+router.ts: matches "voice" + "extract" -> Claude
+  |
+  v
+Claude: tool_use { name: "extract_voice_clip", input: {
+  inputVideo: "/path/to/ironman2.mkv",
+  startTime: "00:45:23",
+  duration: 12,
+  outputName: "jarvis-ref-33"
+} }
+  |
+  v
+voice.ts handler:
+  1. Validate inputs (duration 3-60s, output name safe)
+  2. execOnNodeByName("Home", "ffmpeg -i ... -ss 00:45:23 -t 12 ...")
+  3. execOnNodeByName("Home", "ls -la /opt/jarvis-tts/voices/jarvis/jarvis-ref-33.wav")
+  4. Return clip metadata
 
-  unit/
-    router.test.ts       -- LLM routing logic
-    tiers.test.ts        -- Safety tier classification
-    cost-tracker.test.ts -- Cost tracking and budget checks
-    context-builder.test.ts -- Context assembly
+...later...
 
-  integration/
-    memory.test.ts       -- Memory store with real SQLite
-    tools.test.ts        -- Tool execution pipeline (mocked Proxmox)
-    safety.test.ts       -- Full safety pipeline
+User: "Retrain the voice with the new clips"
+  |
+  v
+Claude: tool_use { name: "retrain_voice_embedding", input: {} }
+  |
+  v
+voice.ts handler:
+  1. execOnNodeByName("Home",
+     "docker exec jarvis-tts python3 /training/compute_speaker_embedding.py")
+  2. Return embedding computation results
 
-  e2e/
-    dashboard.spec.ts    -- Login, view cluster status
-    chat.spec.ts         -- Send message, receive streaming response
-    tools.spec.ts        -- Execute tool via chat, verify result
-    terminal.spec.ts     -- Open terminal session
-
-  fixtures/
-    proxmox-responses.ts -- Recorded Proxmox API responses for mocking
-    cluster-state.ts     -- Standard cluster state for tests
-
-  helpers/
-    test-db.ts           -- In-memory SQLite for integration tests
-    mock-proxmox.ts      -- HTTP mock server for Proxmox API
-    test-auth.ts         -- JWT token generation for tests
+Claude: "Embedding updated with 11 clips. Shall I also retrain the GPT model?"
+  |
+  v
+User: "Yes"
+  |
+  v
+Claude: tool_use { name: "retrain_voice_model", input: { epochs: 6 } }
+  |
+  v (RED tier -> PendingConfirmation -> user confirms in UI)
+  |
+  v
+voice.ts handler:
+  1. execOnNodeByName("Home",
+     "docker exec jarvis-tts python3 /training/finetune_xtts.py")
+  2. execOnNodeByName("Home",
+     "docker exec jarvis-tts python3 /training/extract_gpt_weights.py")
+  3. execOnNodeByName("Home", "docker restart jarvis-tts")
+  4. Wait for health check to pass
+  5. Return training results
 ```
-
-### E2E Test Architecture Against Live Infrastructure
-
-The E2E tests have a unique requirement: they test against the **real** Proxmox cluster API, not mocks. This is because:
-- The system's value is in real cluster management
-- Mocking the Proxmox API defeats the purpose of E2E testing
-- The homelab environment is always available
-
-**Safety constraints for E2E tests:**
-- Only use GREEN-tier (read-only) tools in automated tests
-- Never start/stop VMs or containers in automated tests
-- Test RED/BLACK tier tools only via the confirmation UI flow (verify the confirmation dialog appears, do not confirm)
-- Use a dedicated test session ID prefix (`test-`) for cleanup
-
-```typescript
-// playwright.config.ts
-export default defineConfig({
-  testDir: './tests/e2e',
-  use: {
-    baseURL: 'http://192.168.1.65:3004',   // Management VM
-    // OR for local dev:
-    // baseURL: 'http://localhost:5173',
-  },
-  webServer: {
-    // For CI/local dev, start the backend
-    command: 'npm run dev',
-    port: 4000,
-    reuseExistingServer: true,
-  },
-});
-```
-
-### Test Against Live vs. Mock
-
-| Test Type | Proxmox API | LLM | SQLite | Frontend |
-|-----------|-------------|-----|--------|----------|
-| Unit | Not used | Not used | Not used | Not used |
-| Integration | Mocked (HTTP mock) | Mocked | Real (in-memory) | Not used |
-| E2E (local dev) | Live cluster | Mocked (fast, deterministic) | Real (file) | Real (browser) |
-| E2E (deployed) | Live cluster | Real (both providers) | Real (file) | Real (browser) |
-
-### Vitest Configuration
-
-```typescript
-// vitest.config.ts
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
-    environment: 'node',
-    globals: true,
-    coverage: {
-      provider: 'v8',
-      include: ['src/**/*.ts'],
-      exclude: ['src/index.ts'],
-    },
-  },
-});
-```
-
-### Mock Strategy for Integration Tests
-
-For integration tests that need Proxmox API responses without hitting the live cluster:
-
-```typescript
-// tests/helpers/mock-proxmox.ts
-// Record real responses once, replay in tests
-
-import { createServer } from 'node:http';
-
-// Recorded from live cluster
-const MOCK_RESPONSES = {
-  '/api2/json/cluster/status': { data: [/* recorded data */] },
-  '/api2/json/cluster/resources?type=node': { data: [/* recorded data */] },
-  '/api2/json/cluster/resources?type=vm': { data: [/* recorded data */] },
-};
-
-export function startMockProxmox(port: number): Promise<() => void> {
-  const server = createServer((req, res) => {
-    const response = MOCK_RESPONSES[req.url ?? ''];
-    if (response) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(response));
-    } else {
-      res.writeHead(404);
-      res.end('Not found');
-    }
-  });
-
-  return new Promise(resolve => {
-    server.listen(port, () => {
-      resolve(() => server.close());
-    });
-  });
-}
-```
-
-**Confidence: MEDIUM** -- The testing architecture is well-established (Vitest + Playwright is the standard 2025/2026 stack for Vite projects). However, testing against live Proxmox infrastructure introduces test stability risks (node offline = test failure). Need clear test categories: stable (mocked) vs. live (may flake).
 
 ---
 
 ## Suggested Build Order
 
-The four features have clear dependency relationships:
+The three features have clear dependency and complexity ordering:
 
 ```
-Phase 1: Hybrid LLM Router
-  Depends on: Nothing new (refactors existing code)
-  Blocks: Persistent Memory (context builder needs to know provider budgets)
-  Deliverables: ai/providers.ts, ai/router.ts, ai/cost-tracker.ts
-  Risk: Low (refactoring known code)
+Phase 1: File Operations (Foundation Layer)
+  Build: src/mcp/tools/files.ts + ssh.ts extensions + safety/sanitize path validation
+  Why first: Both project tools and voice tools need file read/list capabilities.
+             Path sanitization is foundational safety infrastructure.
+  Estimated scope: 4-5 new tools, ~300 lines new code
+  Risk: LOW (SSH commands are well-understood, safety patterns established)
 
-Phase 2: Persistent Memory + TTL Tiers
-  Depends on: Hybrid LLM Router (context budgets per provider)
-  Blocks: Nothing (independent)
-  Deliverables: db/context-builder.ts, db/consolidator.ts, schema migration
-  Risk: Low (extending existing SQLite infrastructure)
+Phase 2: Project Intelligence (Data Layer)
+  Build: src/clients/registry.ts + src/mcp/tools/projects.ts
+  Why second: Depends on file reading capability from Phase 1.
+              The registry client is a new client pattern but straightforward.
+  Estimated scope: 1 new client + 5-6 tools, ~400 lines new code
+  Risk: LOW (Registry is a simple JSON file, SSH commands are familiar)
 
-Phase 3: Docker Deployment
-  Depends on: All code changes complete (Phases 1-2)
-  Blocks: E2E Testing (tests run against deployed containers)
-  Deliverables: Updated Dockerfiles, docker-compose.yml, nginx.conf, deploy script
-  Risk: Low (Docker setup already 80% done)
-
-Phase 4: E2E Testing
-  Depends on: Docker Deployment (tests against running stack)
-  Blocks: Nothing
-  Deliverables: tests/ directory, vitest.config.ts, playwright.config.ts
-  Risk: Medium (live infrastructure testing requires stability patterns)
+Phase 3: Voice Retraining (Orchestration Layer)
+  Build: src/mcp/tools/voice.ts
+  Why last: Most complex (Docker exec, long-running processes, service restart).
+            Does not block other features. Requires TTS container running.
+  Estimated scope: 6-7 tools, ~350 lines new code
+  Risk: MEDIUM (long-running training, resource contention, container restart)
 ```
 
-**Why this order:**
+### Phase Ordering Rationale
 
-1. **LLM Router first** because it refactors the AI module without changing external behavior. It creates the provider abstraction that all other features depend on. The context builder needs to know provider budgets. Cost tracking provides data for the dashboard.
+1. **File operations first** because they establish the path sanitization infrastructure that all subsequent file access depends on. The `sanitizePath()` function, `PROTECTED_PATHS` list, and SSH file transfer methods are reused by project tools. Without file ops, project tools cannot safely read files.
 
-2. **Persistent Memory second** because it extends the database layer (additive changes) and integrates with the newly abstracted LLM providers. The context builder needs to produce different-sized context blocks for Claude vs. Qwen.
+2. **Project intelligence second** because it introduces the registry client (a new client pattern alongside proxmox.ts and ssh.ts) and depends on safe file reading from Phase 1. Project browsing and analysis are the highest user-value features -- they make Jarvis useful for daily development work, not just cluster management.
 
-3. **Docker Deployment third** because it should package the complete, working application. Deploying before features are complete means redeploying after every change. Deploy once when the code is stable.
+3. **Voice retraining last** because it is the most complex (Docker exec orchestration, long-running processes, service lifecycle management) and the most self-contained (no other features depend on it). If it ships later, no other features are blocked. It also requires the TTS container to be running, which is a separate deployment concern.
 
-4. **E2E Testing last** because it tests the deployed system end-to-end. You cannot write meaningful E2E tests until the features exist and the deployment pipeline works. Unit tests for individual features (router, memory) should be written alongside the feature code in Phases 1-2.
+### Dependency Graph
 
-**Exception: Write unit tests alongside feature code.** While the E2E test infrastructure goes in Phase 4, individual unit tests for the router, cost tracker, and context builder should be created during Phases 1-2. Phase 4 is for the E2E test harness + integration test infrastructure.
+```
+Phase 1: File Operations
+    |
+    +-- sanitizePath() function
+    |     |
+    |     +-- Used by: Phase 2 project tools (path containment)
+    |     +-- Used by: Phase 3 voice tools (path validation)
+    |
+    +-- ssh.ts getFileFromNode()
+    |     |
+    |     +-- Used by: download_file tool
+    |     +-- Potentially used by: project file download (future)
+    |
+    +-- api/files.ts download endpoint
+          |
+          +-- Self-contained, no downstream deps
+
+Phase 2: Project Intelligence
+    |
+    +-- clients/registry.ts
+    |     |
+    |     +-- Used by: all project tools
+    |     +-- Potentially used by: system prompt context (future)
+    |
+    +-- Phase 1 file reading capability (read_file pattern)
+
+Phase 3: Voice Retraining
+    |
+    +-- No downstream dependents
+    +-- Phase 1 path validation (sanitizePath)
+```
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: External LLM Gateway for Two Providers
+### Anti-Pattern 1: Agent-Per-Node for File Access
 
-**What:** Using LiteLLM, OpenRouter, or a separate gateway service to abstract Claude + Qwen.
+**What:** Deploying a file access daemon/agent on each cluster node.
 
 **Why bad for this project:**
-- Adds a new service to manage on resource-constrained management VM
-- Claude's tool_use protocol is fundamentally different from OpenAI's function calling
-- Two providers do not justify gateway overhead
-- Adds latency hop on every request
-- New dependency to monitor, update, and debug
+- Adds 4 new services to maintain across the cluster
+- Each agent needs security (auth, encryption, access control)
+- The SSH infrastructure already provides authenticated, encrypted file access
+- More moving parts = more failure modes
+- The management overhead vastly exceeds the benefit
 
-**Instead:** Thin TypeScript interface (LLMProvider) with two implementations. Direct SDK calls. The abstraction lives in application code, not in a proxy.
+**Instead:** Use existing SSH connections via `node-ssh`. The SSH pool in `clients/ssh.ts` already handles connection lifecycle, reconnection, and pooling. File transfer is a native SSH capability.
 
-### Anti-Pattern 2: LLM-Powered Memory Consolidation
+### Anti-Pattern 2: Exposing Raw File Paths to Claude
 
-**What:** Using Claude or Qwen to summarize/consolidate events into long-term memories.
-
-**Why bad:**
-- Expensive (Claude API calls for background maintenance)
-- Slow (blocks consolidation on LLM response time)
-- Unreliable (LLM may hallucinate or produce poor summaries)
-- Circular dependency (memory system depends on LLM, LLM depends on memory)
-
-**Instead:** SQL aggregation + pattern matching for consolidation. Group similar events by key, count occurrences, produce deterministic summaries. Simple, fast, free.
-
-### Anti-Pattern 3: Exposing Backend Port to Host Network
-
-**What:** Mapping port 4000 to the management VM's network so the frontend connects directly.
+**What:** Letting Claude construct arbitrary filesystem paths from user descriptions.
 
 **Why bad:**
-- Two exposed ports (3004 for frontend, 4000 for backend)
-- No single entry point
-- WebSocket connections bypass any future TLS termination
-- CORS configuration complexity
+- Path traversal attacks via prompt injection
+- Claude might construct paths to sensitive files
+- User input + LLM reasoning + filesystem = large attack surface
 
-**Instead:** Frontend Nginx proxies all traffic. Only port 3004 is exposed. Backend port 4000 is internal to the Docker network. Single entry point, single CORS origin.
+**Instead:** All paths go through `sanitizePath()` validation. Blocked paths are defined declaratively in `PROTECTED_PATHS`. The tool handler validates before executing. For project tools, paths are additionally contained to the project directory.
 
-### Anti-Pattern 4: Testing Against Live LLM in CI
+### Anti-Pattern 3: Synchronous Training in Tool Handler
 
-**What:** Running E2E tests that require Claude API responses.
-
-**Why bad:**
-- Tests become flaky (API latency, rate limits, model behavior changes)
-- Tests cost money per run
-- Tests are slow (seconds per LLM response)
-- Non-deterministic (same prompt, different response)
-
-**Instead:** Mock LLM responses in integration tests. For E2E, test the UI flow (message sent, streaming tokens appear) with a lightweight mock server that returns canned responses. Only test against real LLM in manual/smoke tests.
-
-### Anti-Pattern 5: Unbounded Event Storage
-
-**What:** Storing every event forever without TTL, letting the SQLite database grow unbounded.
+**What:** Running voice model fine-tuning synchronously in the MCP tool handler and making Claude wait 30-90 minutes for the result.
 
 **Why bad:**
-- SQLite performance degrades with millions of rows (especially without VACUUM)
-- Context retrieval queries slow down
-- Disk space consumption on resource-constrained VM
-- Old events lose relevance but still consume query time
+- The agentic loop has a max iteration limit (10 iterations)
+- HTTP/WebSocket timeouts will kill the connection long before training completes
+- The frontend will show a "thinking" spinner for 30+ minutes
+- Resource-intensive training blocks all other TTS requests
 
-**Instead:** TTL-based cleanup in pollBackground() (already partially implemented with `cleanupOldActions(30)`). Extend to all event types with configurable retention: 7 days for raw events, 30 days for actions, permanent for long-term memories.
+**Instead:** For `retrain_voice_model`:
+- Start training as a background process: `docker exec -d jarvis-tts python3 /training/finetune_xtts.py`
+- Return immediately with "Training started, use get_training_log to monitor progress"
+- Claude can periodically check `get_training_log` to report status
+- When complete, a separate `apply_trained_model` tool extracts weights and restarts the container
+
+Actually, there is a simpler approach: since the `execOnNodeByName()` function has a configurable timeout (default 30s), simply set a very long timeout for training commands (e.g., 120 minutes). The SSH connection will stream stdout back. The loop.ts tool execution timeout should be extended for this specific tool. However, the agentic loop continues after receiving the tool result, so Claude will process the result when training completes.
+
+**Recommended approach:** Background process with monitoring. Start training detached, return immediately, let the user check progress via `get_training_log`.
+
+### Anti-Pattern 4: Caching Registry Forever
+
+**What:** Fetching the project registry once at startup and never refreshing.
+
+**Why bad:**
+- Projects change (new deployments, moved files, deleted projects)
+- Registry is updated by the File Organizer agent every 6 hours
+- Stale data leads to "project not found" errors when projects have moved
+
+**Instead:** Cache with 5-minute TTL. The registry is a small JSON file (~5KB for 24 projects); fetching it via SSH is fast (<100ms). Provide a `refreshRegistry()` method for explicit invalidation.
+
+### Anti-Pattern 5: Sharing Sanitization Logic Between execute_ssh and File Tools
+
+**What:** Running file tool commands through the same `sanitizeCommand()` allowlist used by `execute_ssh`.
+
+**Why bad:**
+- The allowlist is designed for user-facing SSH commands, not internally constructed commands
+- File tools would need to add generic commands like `cat`, `find`, `grep` to the allowlist
+- Adding generic `cat` to the allowlist weakens security for `execute_ssh` (users could `cat /etc/shadow`)
+- The safety models are different: execute_ssh validates user-provided commands; file tools validate user-provided paths
+
+**Instead:** Separate safety models:
+- `execute_ssh`: Command allowlist/blocklist (existing, unchanged)
+- File tools: Path sanitization + protected paths (new, orthogonal)
+- Both share: Input sanitization (`sanitizeInput()`), protected resource checks (`isProtectedResource()`)
+
+---
+
+## Scalability Considerations
+
+| Concern | Current (18 tools) | After (37 tools) | Mitigation |
+|---------|---------------------|-------------------|------------|
+| Tool count in Claude context | 18 tools ~1500 tokens | 37 tools ~3000 tokens | Still well within Claude's 200K window |
+| Tool selection accuracy | Good (18 well-described tools) | May degrade (more tools to choose from) | Group tools by domain in descriptions; test accuracy |
+| SSH connection pool | 4 connections (1 per node) | Same 4 connections | Pool already handles concurrent use |
+| Registry fetch overhead | N/A | ~100ms per SSH + parse | 5-minute cache eliminates most calls |
+| File download temp storage | N/A | /tmp fills up | 5-minute TTL cleanup; max file size limit (100MB) |
+| Training resource contention | TTS runs on Home CPU | Training blocks TTS | RED tier for training; background execution |
+
+### Tool Count and Claude Selection Quality
+
+With 37 tools, Claude will receive approximately 3000 additional context tokens for tool definitions. This is well within budget. However, more tools means more opportunity for Claude to select the wrong tool.
+
+Mitigation: **Excellent tool descriptions are critical.** The existing `ai/tools.ts` already uses handcrafted descriptions optimized for Claude's tool selection. Continue this pattern. Each new tool description should:
+- Clearly state WHEN to use it (not just what it does)
+- Distinguish from similar tools (e.g., `read_file` vs `read_project_file`)
+- Include example triggers ("Use when the user asks to...")
 
 ---
 
 ## Sources
 
 ### HIGH Confidence (Verified Against Codebase)
+
 - All component details verified by reading every TypeScript source file in jarvis-backend/src/
-- Docker configuration verified from existing Dockerfiles and docker-compose.yml
-- Current routing logic verified from realtime/chat.ts source code
-- Memory schema verified from db/schema.ts and db/memory.ts source code
+- TTS pipeline verified by reading server.py, finetune_xtts.py, compute_speaker_embedding.py, extract_gpt_weights.py
+- Docker configuration verified from /opt/jarvis-tts/docker-compose.yml and Dockerfile
+- Registry structure verified by fetching live registry.json from agent1
+- Voice training data verified from metadata.csv (10 clips, LJSpeech format)
+- Shell helper scripts verified from extract-voice.sh and prepare-audio.sh
+- SSH client capabilities verified from node-ssh library usage in clients/ssh.ts
 
-### HIGH Confidence (Official Documentation)
-- [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript) -- Tool use, streaming, message format
-- [Socket.IO v4 documentation](https://socket.io/docs/v4/) -- Namespace configuration, proxy setup
-- [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) -- proxy_pass + upgrade headers
-- [Docker multi-stage builds](https://docs.docker.com/build/building/multi-stage/) -- Best practices for Node.js
-- [better-sqlite3 Docker](https://github.com/WiseLibs/better-sqlite3/discussions/1270) -- Native module compilation in containers
+### HIGH Confidence (Architecture Patterns)
 
-### MEDIUM Confidence (Multiple Sources Agree)
-- [Multi-tier persistent memory for LLMs](https://healthark.ai/persistent-memory-for-llms-designing-a-multi-tier-context-system/) -- TTL tiers, relevance scoring, context budgets
-- [Playwright E2E testing guide](https://www.deviqa.com/blog/guide-to-playwright-end-to-end-testing-in-2025/) -- WebSocket handling, auto-waiting
-- [Vitest + Playwright complementary testing](https://www.browserstack.com/guide/vitest-vs-playwright) -- Unit vs E2E responsibilities
-- [LLM cost optimization patterns](https://byteiota.com/llm-cost-optimization-stop-overpaying-5-10x-in-2026/) -- Tiered routing, local-first strategy
-- [xRouter cost-aware routing research](https://arxiv.org/html/2510.08439v1) -- RL-trained routers converge to simple heuristics
+- MCP tool registration pattern: Verified from 3 existing tool files (cluster.ts, lifecycle.ts, system.ts)
+- Safety tier pipeline: Verified from server.ts executeTool() + tiers.ts checkSafety()
+- Sanitization pipeline: Verified from sanitize.ts (allowlist/blocklist/metacharacter detection)
+- Agentic loop flow: Verified from loop.ts (GREEN/YELLOW auto-exec, RED confirmation, BLACK block)
+
+### MEDIUM Confidence (Implementation Details)
+
+- node-ssh file transfer methods (getFile/putFile): Based on node-ssh library documentation
+- Docker exec for training: The commands exist in the training scripts; orchestrating via SSH + docker exec is standard
+- Path sanitization approach: Standard filesystem security pattern; specific PROTECTED_PATHS list needs validation
 
 ### LOW Confidence (Needs Validation)
-- Qwen 2.5 7B function calling reliability at Q4_K_M quantization -- needs empirical testing
-- Exact memory overhead of jarvis-backend container -- estimate based on similar Node.js apps
-- Playwright WebSocket test stability against live Proxmox -- needs testing in practice
+
+- Training duration estimates (30-90 min): Based on single data point from existing finetune.log
+- Claude tool selection quality with 37 tools: Empirical testing needed
+- Background training process reliability: docker exec -d behavior with long-running Python scripts needs testing
 
 ---
 
-*Architecture research for milestone integration: 2026-01-26*
+*Architecture research for file operations, project intelligence, and voice retraining: 2026-01-26*

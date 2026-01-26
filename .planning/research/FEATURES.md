@@ -1,9 +1,9 @@
-# Feature Landscape: Milestone 2 -- Intelligence, Memory, Deployment, Testing
+# Feature Landscape: Milestone 3 -- File Operations, Project Intelligence, Voice Retraining
 
-**Domain:** AI-powered infrastructure management dashboard (Proxmox homelab)
-**Project:** Jarvis 3.1 -- Subsequent Milestone
+**Domain:** AI-powered infrastructure management + developer assistant (Proxmox homelab)
+**Project:** Jarvis 3.1 -- Subsequent Milestone (File & Project Intelligence)
 **Researched:** 2026-01-26
-**Focus:** Hybrid LLM routing, persistent memory, Docker deployment, E2E testing
+**Focus:** File import/download, project browsing/analysis, code review, voice retraining pipeline
 
 ---
 
@@ -13,392 +13,319 @@ These features are live and inform what the new features build upon:
 
 | Component | Status | Relevant to New Features |
 |-----------|--------|--------------------------|
-| Express 5 backend + 18 MCP tools | Working | Hybrid routing wraps existing chat handler |
-| Claude API agentic loop with tool calling | Working | Routing must preserve tool-calling path |
-| Local LLM (Qwen 2.5 7B) text-only fallback | Working | Routing upgrades this from fallback to intelligent peer |
-| Keyword-based routing (`needsTools()`) | Working | Must be replaced by smarter routing logic |
-| SQLite via better-sqlite3 + Drizzle ORM | Working | Memory tables extend existing schema |
-| `conversations` table (session messages) | Working | Memory builds on this for cross-session recall |
-| `events` table (alerts, actions, metrics) | Working | Memory draws from event history |
-| `preferences` table (key-value upsert) | Working | User preferences stored here |
-| `autonomy_actions` audit log | Working | Memory can reference past remediation actions |
-| Dockerfiles (backend + frontend) | Working | Need compose unification + production hardening |
-| Docker Compose (backend only, frontend commented out) | Partial | Must enable full-stack deployment |
-| Socket.IO 4 namespaces (/chat, /events, /hud) | Working | E2E tests must exercise WebSocket flows |
-| 4-tier safety framework (GREEN/YELLOW/RED/BLACK) | Working | Tests must validate safety enforcement |
-| JARVIS personality system prompt | Working | Memory context injection extends system prompt |
+| 18 MCP tools (9 cluster, 6 lifecycle, 3 system) | Working | New file/project tools follow same MCP pattern |
+| 4-tier safety framework (GREEN/YELLOW/RED/BLACK) | Working | File operations need tier classification |
+| Command sanitization (allowlist/blocklist) | Working | File path validation extends this pattern |
+| SSH execution to all 4 cluster nodes | Working | Project browsing uses cross-node SSH |
+| Project registry (24 projects indexed) | Working | Registry is the foundation for project browsing |
+| File Organizer Agent (agent1) | Working | Provides project discovery, can be queried |
+| XTTS v2 TTS server (FastAPI) | Working | Voice retraining feeds into this |
+| TTS training pipeline (finetune_xtts.py) | Working | Dataset expansion improves voice quality |
+| Training dataset (10 WAV samples, LJ Speech format) | Working | Current dataset is minimal, needs expansion |
+| Claude agentic loop with streaming | Working | File/project tools plug into existing loop |
+| Local LLM (Qwen 2.5 7B) | Working | Can handle project analysis tasks locally |
+
+### Key Architectural Constraints
+
+1. **MCP tool pattern**: All new capabilities must be registered as MCP tools through the existing `McpServer` instance, following the `registerXxxTools(server)` pattern.
+2. **Safety tiers**: Every new tool needs a tier classification. File reads are GREEN, file writes are YELLOW, file downloads from URLs are RED.
+3. **Cross-node SSH**: Projects live on different nodes. The existing `execOnNodeByName()` function handles SSH execution. File operations on remote nodes go through SSH.
+4. **Command allowlist**: The current allowlist includes `ls`, `head`, `tail`, `cat /sys`, `cat /proc/*`, `stat`, `du`, `wc`. Expanding file operations requires extending the allowlist or creating dedicated tools that bypass the generic SSH tool.
+5. **Token budget**: Qwen has 4096 token context. Project analysis with code snippets can easily exceed this. Claude with 200K context is needed for meaningful code analysis.
 
 ---
 
-## Feature Domain 1: Hybrid LLM Routing
+## Feature Domain 1: File Import/Download
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Dependencies |
 |---------|--------------|------------|--------------|
-| Intent-based routing (tools vs conversation) | Current keyword matching is brittle -- misroutes conversational messages about nodes. Must detect whether user needs cluster tools or just wants to chat. | Medium | Existing `needsTools()` function, both LLM backends |
-| Automatic fallback when Claude unavailable | If API key missing, rate limited, or API down, Jarvis must degrade gracefully to local LLM. Must not crash or show raw errors. | Low | Already partially implemented (`claudeAvailable` check), needs timeout/error fallback |
-| Provider indicator in UI | User must know whether Claude or Qwen is responding. Affects trust calibration -- tool results require Claude, conversational answers can come from either. | Low | Chat store, UI badge on messages |
-| Token usage tracking per request | Every Claude API call costs money. Must log input/output tokens per message. Foundation for any cost management. | Low | Already tracking in `onDone` callback, needs DB persistence and API exposure |
+| Download file from URL to local path | "Download this tarball to /opt/downloads/" -- basic wget/curl equivalent. Every assistant with file access needs this. | Low | New MCP tool `download_file`, path validation, size limits |
+| Progress reporting for large downloads | Files over 10MB should report progress. Without it, user thinks JARVIS froze. Streaming progress via Socket.IO events. | Medium | Download tool with chunked transfer, progress callback to Socket.IO |
+| File type validation | Block downloads of executable binaries (.exe, .sh with execute bit), disk images, or obviously dangerous content. Prevent JARVIS from becoming a malware dropper. | Low | Extension allowlist, MIME type checking via `file` command |
+| Download destination restrictions | Only allow downloads to designated directories (e.g., `/opt/downloads/`, `/tmp/jarvis/`, shared storage paths). Never to `/etc/`, `/usr/`, system directories. | Low | Path allowlist, symlink resolution check |
+| Size limits | Cap downloads at a configurable maximum (default 500MB). Prevent filling up disk with a single operation. | Low | HEAD request for Content-Length check before download, streaming size counter |
+| Download status/history | "What did you download recently?" -- log all downloads with URL, destination, size, timestamp. | Low | New `downloads` table in SQLite or extend `events` table |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Dependencies |
 |---------|-------------------|------------|--------------|
-| Confidence-based cascade routing | Send to local LLM first; if response confidence is low or query is complex, escalate to Claude. Research shows 60-85% API cost reduction with <5% quality loss. This is the architecture that makes self-hosting a 7B model worthwhile. | High | Local LLM response evaluation, confidence scoring heuristic |
-| Cost tracking dashboard panel | Running cost counter showing daily/weekly/monthly Claude API spend. "You've spent $2.14 this week on 47 Claude calls." Makes the hybrid routing value visible to the operator. | Medium | Token cost table (model -> cost per 1K tokens), aggregation queries |
-| Session-level cost attribution | Track cost per chat session so operator sees which conversations were expensive. Enables "this deep diagnostic cost $0.38" transparency. | Low | Extend `conversations` table with cost column |
-| Configurable routing rules | Let operator set routing preferences: "Always use Claude for SSH commands", "Use local for status queries", "Budget cap: $X/day". Stored in preferences table. | Medium | Preferences API, routing rule evaluation |
-| Model quality A/B visibility | Show which model answered and let operator rate responses (thumbs up/down). Builds data for routing improvement over time. | Medium | Rating column in conversations, analytics query |
-| Streaming parity between providers | Both Claude and Qwen already stream, but Qwen responses are text-only while Claude includes tool use events. Make the streaming UX consistent regardless of provider. | Low | Already implemented -- verify consistency |
+| Smart archive extraction | After downloading a .tar.gz, .zip, or .deb, automatically offer to extract it. "I've downloaded the file. Would you like me to extract it?" Context-aware follow-up. | Medium | Archive detection, extraction commands (tar, unzip, dpkg), confirmation flow |
+| Cross-node file transfer | "Move this backup from Home to pve" -- SCP/rsync between cluster nodes. Leverages existing SSH infrastructure. Unique to a multi-node homelab assistant. | Medium | SCP via SSH, source/destination node validation, progress reporting |
+| Git clone integration | "Clone this repo to /opt/projects/" -- git clone as a first-class operation, not just a generic download. Sets up the project for immediate browsing/analysis. | Low | `git clone` via SSH execution, clone status reporting |
+| URL content preview | Before downloading, fetch headers and show: file name, size, type. "This is a 45MB gzipped tarball. Download to /opt/downloads/?" Informed consent. | Low | HTTP HEAD request, content-type parsing |
 
 ### Anti-Features
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| ML-trained router model | RouteLLM and NVIDIA use trained classifiers for routing. Overkill for a single-user homelab with ~50 queries/day. The training data collection alone would take months. | Use heuristic routing: keyword + message length + explicit user preference. Simple, predictable, debuggable. |
-| Multiple cloud LLM providers | LiteLLM supports 100+ providers. Adding OpenAI, Gemini, etc. adds config complexity with no benefit when Claude + local Qwen cover all needs. | Stick to two providers: Claude (cloud, smart, tools) and Qwen (local, fast, free). Add a third only if a specific capability gap emerges. |
-| Automatic model selection via LLM-as-judge | Using one LLM to evaluate whether another LLM's response was good enough is recursive and expensive. Doubles API calls in the worst case. | Use structural signals: did the response include tool calls? Did it complete without errors? Was it under the length threshold? These are free to evaluate. |
-| Real-time cost optimization (mid-response switching) | Switching models mid-stream based on token count is fragile and confusing to the user. | Route once per message at the start. If the wrong choice was made, the next message can be re-routed. |
+| Arbitrary code execution from downloads | Downloading a script and immediately executing it (`curl | bash` pattern) is explicitly blocked in the command blocklist. Must remain blocked even for JARVIS. | Download the file. Let the operator inspect it. Offer to make it executable as a separate RED-tier action if requested. |
+| Browser/web scraping | Building a web scraper or headless browser into JARVIS adds enormous complexity. JARVIS is not a web browsing agent. | Use `wget`/`curl` for direct file URLs. For web content, the operator can provide the direct link. |
+| Torrent/P2P downloads | BitTorrent support adds protocol complexity and potential legal concerns. Out of scope for a homelab assistant. | Direct HTTP/HTTPS downloads only. The operator can use separate torrent clients. |
+| Automatic virus scanning | Running ClamAV or similar on every download is infrastructure overhead for a private homelab. | Block known-dangerous file types. Log all downloads for audit. Trust the operator's judgment for content safety. |
 
 ---
 
-## Feature Domain 2: Persistent Memory
+## Feature Domain 2: Project Read/Browse
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Dependencies |
 |---------|--------------|------------|--------------|
-| Cross-session conversation recall | "What did we discuss yesterday about pve's disk?" -- Jarvis must retrieve relevant past conversations. Without this, every session starts from zero. The "goldfish memory problem." | Medium | Existing `conversations` table, search/retrieval logic, system prompt injection |
-| Cluster state memory | Jarvis should remember "node agent was offline for 2 hours last Tuesday" and "we expanded root disk on Home to 112GB on Jan 25." Operational history is context. | Medium | Existing `events` table + `cluster_snapshots` table, summarization into system prompt |
-| User preference persistence | "I prefer email alerts for critical issues" or "Don't restart VM 100 without asking me first." These must survive across sessions. | Low | Existing `preferences` table with key-value upsert. Already scaffolded. |
-| Memory-aware system prompt | Inject relevant memories into the system prompt before each LLM call. Current `buildClusterSummary()` fetches live state -- must also include relevant historical context. | Medium | System prompt builder, memory retrieval, token budget management |
+| List projects from registry | "What projects are on the cluster?" -- query the existing project registry (24 indexed projects across 4 nodes). This data already exists. | Low | SSH to agent1 to read `/opt/cluster-agents/file-organizer/data/registry.json`, or cache locally |
+| Browse directory structure | "Show me the structure of jarvis-backend/" -- tree-like directory listing with depth control. Equivalent to `tree -L 2`. | Low | New MCP tool `list_directory` or `browse_project`, recursive listing via SSH |
+| Read file contents | "Show me the contents of server.ts" -- read a specific file and return contents. The most fundamental file operation. | Low | New MCP tool `read_file`, path validation, size limits (cap at ~50KB to avoid overwhelming context) |
+| Search within project files | "Find all files that import 'express'" -- grep/ripgrep equivalent across a project directory. Essential for code understanding. | Medium | New MCP tool `search_files`, regex support, result pagination |
+| File metadata | "How big is this file? When was it last modified?" -- stat information for files. | Low | `stat` command via SSH (already in allowlist) |
+| Multi-file read | "Show me server.ts, config.ts, and routes.ts" -- read multiple files in one request. Reduces round-trips for code review workflows. | Low | Batch variant of `read_file`, combined output with file separators |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Dependencies |
 |---------|-------------------|------------|--------------|
-| Tiered memory with TTL | **Short-term** (session, full verbatim, TTL: session lifetime). **Medium-term** (summarized conversations, TTL: 7 days). **Long-term** (extracted facts/preferences, TTL: indefinite). This mirrors how human memory works -- recent events in detail, older events as summaries, important facts forever. | High | New `memory_facts` table, summarization pipeline, TTL cleanup job |
-| Context consolidation / summarization | When a conversation ends, extract key facts and decisions into compact memory entries. "On Jan 26, operator asked to check pve temperatures. Found 62C, within normal range." Reduces token cost of memory injection by 80-90%. | High | LLM-based summarization (can use local Qwen for this -- it is a text task, not a tool task), fact extraction prompts |
-| Semantic memory search | When user asks about a topic, find relevant past memories by meaning, not just keyword. "Tell me about that storage issue" should find the conversation about pve disk expansion even if "storage" wasn't the exact word used. | High | Vector embeddings (sqlite-vss or in-memory cosine similarity on small corpus). May be overkill for single-user homelab -- keyword search could suffice initially. |
-| Autonomy action recall | "What actions have you taken today?" -- Jarvis queries the `autonomy_actions` table and narrates: "I restarted the corosync service on pve at 2:14 PM after detecting a quorum warning. The issue resolved within 30 seconds." | Low | Existing `autonomy_actions` table, query + narration |
-| Memory management UI | Dashboard panel showing what Jarvis remembers: facts, preferences, conversation summaries. Let operator edit/delete memories. Transparency and control over AI context. | Medium | REST API for memory CRUD, UI panel |
-| Progressive context injection | Rather than dumping all memories into the system prompt (token expensive), retrieve only memories relevant to the current query. Budget: 500-800 tokens for memory context out of 4096 max. | Medium | Relevance scoring at query time, token counting |
+| Cross-node project browsing | "Show me the projects on pve node" -- browse any project on any cluster node seamlessly. The registry knows which node each project lives on. This is unique to a multi-node homelab. | Medium | Node-aware routing, SSH to correct node based on registry lookup |
+| Project summary generation | "Summarize the jarvis-backend project" -- read package.json, README, key source files and generate an architectural overview. Goes beyond file listing to understanding. | High | LLM analysis (Claude for quality), selective file reading, token budget management |
+| Code search with context | Search results include surrounding lines (like `grep -C 3`), file path, and line numbers. Not just matching lines but enough context to understand the match. | Low | Enhanced grep output parsing, context line parameter |
+| Syntax-aware file reading | When reading code files, identify the language and provide syntax-highlighted output (or at minimum, language annotation for the frontend to render). | Low | File extension to language mapping, markdown code fences with language tags |
+| Project dependency graph | "What does jarvis-backend depend on?" -- parse package.json/requirements.txt/pyproject.toml and show dependency tree. | Medium | Package manifest parsing, optional `npm ls` or `pip list` execution |
+| Recent changes view | "What changed recently in this project?" -- `git log --oneline -10` and `git diff --stat` for the project. Quick overview of recent work. | Low | Git commands via SSH, project path from registry |
 
 ### Anti-Features
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Vector database (Pinecone, Weaviate, Chroma) | External vector DB is infrastructure overhead for a corpus of <10K memories from a single user. The operational complexity of running ChromaDB alongside SQLite adds a failure mode. | Use SQLite for storage + simple TF-IDF or keyword matching for retrieval. If semantic search becomes necessary later, use sqlite-vss extension (embedded, no extra service). |
-| Unlimited context window usage | Even with Claude's 200K context, stuffing 50K tokens of history into every request is wasteful and degrades response quality (lost-in-the-middle effect). Research shows models struggle with information positioned centrally in long contexts. | Budget memory injection: ~500 tokens for facts, ~300 for recent events, ~200 for preferences. Total memory context under 1000 tokens. Use summarization to compress, not expansion to include everything. |
-| Automatic preference extraction from conversation | "You always seem to prefer..." -- automatically inferring preferences from conversation patterns is error-prone and creepy. False positives erode trust. | Let preferences be explicit: user says "Remember that I prefer X", Jarvis stores it. Or extract from direct statements only, not behavioral patterns. |
-| Memory sharing across users | Single-operator system. Multi-user memory with isolation, access control, and privacy is enterprise scope. | All memory belongs to the single operator. No user segmentation needed. |
-| Real-time memory streaming | Updating memory during a conversation (rather than after) adds latency and complexity to the chat loop. | Extract and store memories after conversation completion. Batch processing, not inline. |
+| Full codebase indexing / embedding | Building a vector index of all 24 projects' source code is expensive, requires a vector DB, and would need constant re-indexing. Overkill for an assistant that handles ~50 queries/day. | Read files on-demand. Use grep for search. Claude's 200K context can hold significant portions of a project when needed for analysis. |
+| Live file watching / hot reload | Monitoring file changes in real-time across 4 nodes would require inotify watchers via persistent SSH connections. Complex, fragile, unnecessary. | The project registry already scans every 6 hours. For immediate info, read the file when asked. |
+| File editing / writing | JARVIS should NOT write to project files autonomously. The risk of corrupting a working project is too high. A homelab assistant should inform, not modify. | Present suggestions as text. Let the operator apply changes manually or use their IDE. If file writing is ever added, it must be RED-tier with explicit confirmation and backup. |
+| IDE integration (LSP) | Running Language Server Protocol servers for TypeScript, Python, etc. on the cluster is heavy infrastructure for occasional code questions. | Use LLM analysis instead of static analysis. Claude understands code structure without needing an LSP server. |
+| Git operations (commit, push, merge) | Allowing JARVIS to make commits or push code introduces version control risks. A typo in the commit message or wrong branch could cause problems. | Read-only git operations (log, diff, status, blame) are fine as GREEN tier. Write operations (commit, push) should remain manual. |
 
 ---
 
-## Feature Domain 3: Docker Deployment
+## Feature Domain 3: Project Analysis & Discussion
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Dependencies |
 |---------|--------------|------------|--------------|
-| Full-stack Docker Compose | `docker compose up` must bring up both backend and frontend, working end-to-end. Currently frontend is commented out in compose file. | Low | Existing Dockerfiles for both services, nginx.conf for frontend |
-| Persistent data volume | SQLite database, conversation history, event logs, preferences must survive container restarts. Currently configured with `jarvis-data:/data` volume. | Low | Already configured, verify data directory mapping |
-| SSH key mounting (read-only) | Backend container needs SSH access to cluster nodes. Current compose mounts `~/.ssh/id_ed25519:ro`. Must work with correct permissions. | Low | Already configured, validate file permissions inside container (chmod 600) |
-| Environment variable configuration | All secrets (JWT_SECRET, PVE_TOKEN_SECRET, ANTHROPIC_API_KEY) via `.env` file or environment variables. No hardcoded secrets. | Low | Already structured in config.ts, needs `.env.example` template |
-| Health checks | Both services must have health checks so Docker can detect and restart failed containers. Backend already has wget-based health check. | Low | Backend done, frontend needs NGINX health endpoint |
-| Automatic restart on failure | `restart: unless-stopped` ensures services recover from crashes without manual intervention. | Low | Already configured for backend |
+| Code explanation | "Explain what this function does" -- given a file and function name (or line range), explain the code in plain language. The most basic code analysis feature. | Medium | File reading + LLM analysis. Must use Claude (not Qwen) for quality code understanding. |
+| Bug/issue identification | "Are there any issues in this file?" -- scan for common problems: unhandled errors, security issues, type mismatches, logic errors. | Medium | File reading + Claude analysis with structured prompt. Return categorized findings (bug, security, style, performance). |
+| Architecture overview | "How is the jarvis-backend structured?" -- read key files and explain the overall architecture, component relationships, and data flow. | High | Multi-file reading, registry data, LLM synthesis. Token-expensive for Claude but high-value output. |
+| Code question answering | "Why does the safety tier use a blocklist AND an allowlist?" -- conversational Q&A about code with file references. Like having a senior developer explain the codebase. | Medium | Context-aware: read relevant files, inject into conversation, let Claude answer. |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Dependencies |
 |---------|-------------------|------------|--------------|
-| One-command deployment to management VM | `ssh management 'cd /opt/jarvis && docker compose up -d'` -- single command deploys entire stack to the management VM (192.168.1.65). Operator doesn't need to SSH in and run multiple commands. | Low | Docker Compose file, deployment script/docs |
-| Multi-architecture build support | Management VM may run on different architecture than build host. Multi-arch builds ensure portability within the cluster. | Medium | Docker buildx, platform specification in Dockerfile |
-| Local LLM endpoint configuration | Container must be able to reach `http://192.168.1.50:8080` (llama-server on Home node) from the Docker network. Not localhost -- needs bridge/host network config. | Low | Environment variable for LLM endpoint, Docker network config (already using bridge) |
-| Container log aggregation | Centralized log viewing: `docker compose logs -f` shows interleaved backend + frontend logs with timestamps. Structured JSON logging in backend. | Medium | Winston or pino logger, JSON log format |
-| Build cache optimization | Multi-stage builds should cache `npm ci` layer separately from source code copy. Rebuilds after code changes should be fast (~30s not ~5min). | Low | Already using multi-stage builds, verify layer ordering |
-| Resource limits | Set CPU and memory limits on containers to prevent runaway processes from starving the management VM (which runs other services). | Low | `deploy.resources.limits` in compose file |
+| Security audit | "Check this project for security issues" -- targeted security review: hardcoded secrets, injection vulnerabilities, missing input validation, insecure defaults. Particularly valuable for a homelab with SSH keys and API tokens. | High | Multi-file reading, security-focused analysis prompt, categorized output (critical/high/medium/low) |
+| Improvement suggestions | "How can I improve this code?" -- actionable suggestions with specific file/line references. Not just "use better variable names" but "extract this 50-line function into two smaller functions because X." | Medium | File reading + Claude analysis with improvement-focused prompt |
+| Cross-project consistency check | "Are all projects using the same Node.js version?" or "Which projects have outdated dependencies?" -- cluster-wide analysis leveraging the project registry. | High | Registry query + multi-node file reading + comparison logic |
+| Diff analysis | "Explain what changed in the last commit" -- `git diff` + LLM explanation. Useful when the operator returns to a project after time away. | Medium | Git diff via SSH + Claude analysis |
+| Technical debt assessment | "What's the technical debt in jarvis-backend?" -- assess code quality holistically: test coverage, error handling patterns, dependency freshness, code duplication indicators. | High | Multi-file analysis, metrics collection, LLM synthesis |
+| Documentation generation | "Generate API docs for the MCP tools" -- read source code and produce structured documentation. Saves significant manual documentation effort. | Medium | Source code reading + structured output prompt. Output as markdown. |
 
 ### Anti-Features
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Kubernetes / Docker Swarm | Container orchestration is massive overhead for a 2-container app on a single VM. No scaling needs, no multi-node deployment. | Docker Compose. Period. It handles everything needed for a homelab deployment. |
-| Custom Docker registry | Pushing images to a registry adds infrastructure. Images are built and run on the same machine or cluster. | Build locally on the management VM or use `docker compose build` on deploy. If needed later, use GitHub Container Registry (free for personal). |
-| Container-per-service microservices | Splitting the backend into separate containers for API, WebSocket, monitoring, etc. adds networking complexity and failure modes. | Single backend container handles all backend concerns. Single frontend container serves static files via NGINX. Two containers total. |
-| Docker-in-Docker for SSH | Running SSH from inside a container that itself runs in Docker. Some suggest DinD for isolation -- it adds complexity and latency. | Mount SSH key as volume (already done). Direct SSH from backend container to cluster nodes. Simple and proven. |
-| Automated CI/CD pipeline | GitHub Actions, Jenkins, etc. for automatic deployment on push. The cluster is behind a home network, not publicly accessible. Manual deploy is fine for a single operator. | Manual deploy via SSH + `docker compose up -d --build`. Add a convenience script if needed. |
+| Automated code fixing | JARVIS should not automatically modify code based on its analysis. LLM code generation has a 75% higher rate of logic errors (2025 data). Auto-fixing compounds risk. | Present findings and suggestions as text. Let the operator decide and implement changes. |
+| PR/commit review bot | Running as a CI/CD review bot requires webhook infrastructure, Git integration, and continuous operation. This is a conversational assistant, not a CI pipeline. | Analyze code on-demand when the operator asks. "Review the last 3 commits" works conversationally. |
+| Performance profiling | Runtime performance analysis requires instrumentation, profiling tools, and running the code. Static analysis of performance is unreliable. | Identify obvious performance anti-patterns in static analysis (N+1 queries, synchronous I/O in async code). For real profiling, recommend appropriate tools. |
+| Multi-language deep analysis | Supporting deep semantic analysis for TypeScript, Python, Go, Rust, etc. each requires language-specific knowledge. Spread thin = shallow everywhere. | Focus on TypeScript and Python (the two languages used in this cluster). Accept that analysis of other languages will be shallower. |
+| Autonomous refactoring plans | Generating multi-step refactoring plans that JARVIS could "execute" is scope creep toward an IDE. | Provide analysis and suggestions. The operator drives refactoring in their own IDE with JARVIS as a consultant. |
 
 ---
 
-## Feature Domain 4: E2E Testing
+## Feature Domain 4: Voice Retraining from Video Sources
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Dependencies |
 |---------|--------------|------------|--------------|
-| Backend unit tests with Vitest | Core business logic (safety tiers, command sanitization, routing decisions) must have unit test coverage. These are the highest-risk code paths. | Medium | Vitest, mocking for SSH/Proxmox API |
-| API integration tests | HTTP endpoints (auth, health, REST API) tested with Supertest against a real Express instance. Validates request/response contracts. | Medium | Vitest + Supertest, test database (in-memory SQLite) |
-| Safety framework tests | The 4-tier safety system (GREEN/YELLOW/RED/BLACK) is the most critical code. Every tier boundary must be tested: tool classification, confirmation flow, override passkey, protected resource blocking. | Medium | Vitest, mock tool execution |
-| Command sanitization tests | Allowlist/blocklist enforcement for SSH commands. Must verify dangerous commands are blocked and safe commands pass through. | Low | Vitest, existing sanitize.ts |
-| CI-compatible test runner | Tests must run without a real cluster, Proxmox API, or SSH access. All external dependencies mocked. `npm test` works in any environment. | Medium | Mock layers for SSH, Proxmox API, Claude API |
+| Download audio/video from URL | "Download the JARVIS compilation from YouTube" -- extract audio from video URLs. Foundation for the entire voice retraining pipeline. | Medium | yt-dlp or similar tool for video download, FFmpeg for audio extraction |
+| Audio extraction from video | Convert downloaded video to WAV audio at the correct sample rate (22050Hz for XTTS v2). Strip video track entirely. | Low | FFmpeg: `ffmpeg -i input.mp4 -ar 22050 -ac 1 -f wav output.wav` |
+| Vocal isolation | Separate speech from background music/sound effects. JARVIS clips from Iron Man films have significant background audio (explosions, music, ambient noise). | High | Demucs or similar source separation model. GPU recommended but CPU possible. |
+| Audio segmentation | Split long audio into individual clips (6-30 seconds each). XTTS v2 training expects individual utterances, not hour-long files. | Medium | Voice Activity Detection (VAD) or silence-based splitting. WebRTC VAD or Silero VAD. |
+| Transcription | Generate text transcripts for each audio segment. The existing dataset has transcription errors ("Mr. Stalin" instead of "Mr. Stark"). Whisper provides much better accuracy. | Medium | OpenAI Whisper (can run locally on CPU). Output paired with audio segments. |
+| LJ Speech format output | Output dataset in the format the existing training pipeline expects: `metadata.csv` with pipe-delimited fields, `wavs/` directory with numbered WAV files. | Low | Script to format output matching existing `/training/dataset/` structure |
+| Merge with existing dataset | New samples should be added to the existing 10-sample dataset, not replace it. Cumulative improvement. | Low | Append to metadata.csv, add WAVs to wavs/ directory |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Dependencies |
 |---------|-------------------|------------|--------------|
-| WebSocket/Socket.IO chat flow tests | Test the full chat lifecycle: connect, send message, receive streaming tokens, receive done event. Validates the real-time pipeline that is core to the UX. | High | Playwright or socket.io-client test harness, test server instance |
-| LLM routing decision tests | Verify that the router sends tool-requiring messages to Claude and conversational messages to the local LLM. Test edge cases: ambiguous messages, override passkey, Claude unavailable fallback. | Medium | Vitest, mock both LLM backends |
-| Safety tier E2E tests | Full flow: user sends "stop VM 100" -> Claude calls stop_vm -> system returns confirmation_needed -> user confirms -> tool executes. Tests the entire RED-tier flow end-to-end. | High | Socket.IO test client, mock Claude responses, mock PVE API |
-| Docker deployment smoke tests | After `docker compose up`, verify: backend health check passes, frontend serves HTML, WebSocket connects, auth flow works. Validates the deployment is functional. | Medium | Shell script or Playwright, Docker Compose test environment |
-| Memory persistence tests | Verify messages are saved to SQLite, retrieved across sessions, and injected into system prompts correctly. | Medium | Vitest, test database |
-| MCP tool execution tests | Each of the 18 MCP tools tested with mock SSH/API responses. Verify correct output format, error handling, and safety tier enforcement. | Medium | Vitest, mock SSH client, mock Proxmox API |
-| Snapshot testing for system prompts | System prompt is complex (personality + cluster context + safety rules + override state). Snapshot tests catch unintended changes to the prompt. | Low | Vitest snapshot assertions |
+| End-to-end pipeline automation | "Retrain my voice from this video" -- single command that downloads, extracts, isolates, segments, transcribes, formats, and triggers retraining. The full pipeline, not manual steps. | High | All table stakes features chained together, pipeline orchestration |
+| Audio quality scoring | Automatically score each extracted clip for quality (noise level, clarity, speech-to-noise ratio). Reject low-quality clips before they enter the training set. | Medium | Signal-to-noise ratio analysis, spectral analysis for noise detection |
+| Speaker diarization | When a video has multiple speakers (Tony Stark + JARVIS dialogue), identify and extract only JARVIS's lines. Critical for Iron Man compilation videos. | High | Speaker diarization model (pyannote-audio), speaker clustering |
+| Transcript correction UI | Show extracted transcripts and let operator correct errors before they enter the training set. Poor transcriptions degrade voice quality. | Medium | REST API for transcript review/edit, simple web form or chat-based correction |
+| Training monitoring | Show training progress: epoch, loss, samples processed. "Training is 60% complete, loss has decreased from 0.85 to 0.32." | Medium | Parse trainer output, expose via Socket.IO events |
+| A/B voice comparison | After retraining, synthesize the same text with old and new voice model. Let operator compare and choose which to deploy. | Medium | Dual synthesis, audio playback in UI or via TTS endpoint |
+| Incremental fine-tuning | Add new samples and fine-tune from the last checkpoint rather than from scratch. Saves significant training time (hours to minutes). | Medium | Checkpoint management, resume-from-checkpoint in training script |
 
 ### Anti-Features
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Tests against real cluster | E2E tests that SSH into real nodes or call real Proxmox API are flaky (nodes may be offline), slow, and dangerous (could trigger real actions). | Mock all external systems. Use recorded responses for realistic test data. Test against real cluster manually during development only. |
-| Visual regression testing | Screenshot comparison of the eDEX-UI dashboard is fragile due to animations, dynamic data, and theme variations. High maintenance, low value. | Test structure and behavior, not pixels. Verify elements exist and respond to events. Visual quality is assessed manually. |
-| LLM response content testing | Asserting exact LLM output text is impossible -- responses vary. Even testing for "mentions the word status" is fragile with personality variations. | Test structural properties: response is non-empty, streaming events fire in correct order, tool calls have valid format, token counts are reported. Don't assert prose content. |
-| 100% code coverage target | Chasing coverage on generated code, type definitions, and simple re-exports wastes time. Diminishing returns past ~70% on a project this size. | Focus coverage on critical paths: safety tiers, command sanitization, routing logic, memory operations. Accept lower coverage on boilerplate. |
-| Browser compatibility matrix | Testing across Chrome, Firefox, Safari, Edge adds CI time. Single-operator homelab accessed from known devices. | Test on Chromium only (Playwright default). The operator knows their browser. |
-| Performance/load testing | The system serves one user. Load testing WebSocket with 1000 concurrent connections is irrelevant. | Test single-user flows. Monitor real-world performance with simple timing logs. |
+| Real-time voice cloning from live audio | Cloning a voice from a live microphone stream adds latency, requires continuous processing, and has privacy implications. | Use pre-recorded audio files or video downloads. Process offline, deploy when ready. |
+| Multi-voice training | Training multiple voice profiles (JARVIS, FRIDAY, etc.) multiplies training time and storage. One voice is the core feature. | Perfect one voice first. The architecture supports multiple voices (the TTS server already has a `voice` parameter), but training each one is a separate manual decision. |
+| Automatic voice deployment | Automatically swapping the production voice after training without operator review could result in a degraded voice being deployed. | Train, compare, and let the operator explicitly deploy the new voice. A/B comparison before deployment. |
+| Copyright-aware source filtering | Building a system to determine whether audio sources are legally usable for voice training is a legal question, not a technical one. | Log all source URLs for the operator's records. The operator is responsible for ensuring they have appropriate rights to use the source material. |
+| Emotion/style transfer | Training the voice model to express different emotions (happy JARVIS, concerned JARVIS) requires labeled emotion datasets and specialized training. | Focus on a consistent, high-quality neutral voice. Emotion comes through word choice in the text, not vocal variation. |
 
 ---
 
-## Feature Dependencies (New Features on Existing Foundation)
+## Feature Dependencies (Cross-Domain)
 
 ```
-Existing Foundation (already working):
-  Express 5 + Socket.IO + MCP tools + Safety framework
-  Claude API agentic loop + Local LLM text fallback
-  SQLite (events, conversations, preferences, autonomy_actions)
-  Dockerfiles (backend + frontend, compose partial)
+Existing Foundation:
+  MCP tools + Safety framework + SSH + Project Registry + TTS Pipeline
     |
     v
-Phase 1: Testing Foundation (enables safe changes):
-  Vitest setup + unit tests for safety/sanitization
-  Mock layers for SSH, Proxmox API, Claude API
-  API integration tests with Supertest
-  Socket.IO chat flow tests
+Domain 1: File Operations (foundation for everything else)
+  download_file tool (RED tier -- downloads from internet)
+  Path validation + size limits + type restrictions
+  Download history logging
     |
-    v
-Phase 2: Hybrid LLM Routing (requires tests for safe refactoring):
-  Replace keyword-based needsTools() with intent classifier
-  Confidence-based cascade (Qwen first, Claude escalation)
-  Token cost tracking + DB persistence
-  Cost dashboard panel in UI
-  Fallback handling (Claude timeout/error -> Qwen)
-  Provider indicator in chat UI
+    +---> Domain 2: Project Browsing (requires file reading)
+    |       list_projects tool (GREEN tier -- reads registry)
+    |       browse_directory tool (GREEN tier -- reads filesystem)
+    |       read_file tool (GREEN tier -- reads file contents)
+    |       search_files tool (GREEN tier -- searches content)
+    |       |
+    |       +---> Domain 3: Project Analysis (requires browsing)
+    |               analyze_code tool (GREEN tier -- LLM analysis)
+    |               security_audit tool (GREEN tier -- LLM analysis)
+    |               explain_code tool (GREEN tier -- LLM analysis)
     |
-    v
-Phase 3: Persistent Memory (requires routing to work):
-  Memory facts table + schema migration
-  Post-conversation fact extraction (via local LLM)
-  Tiered TTL (session / 7-day / permanent)
-  Memory retrieval + system prompt injection
-  Memory management API + UI panel
-  Autonomy action recall
-    |
-    v
-Phase 4: Docker Deployment (requires all features stable):
-  Enable frontend in Docker Compose
-  .env.example template
-  Resource limits + logging
-  Deployment script for management VM
-  Smoke tests for containerized deployment
+    +---> Domain 4: Voice Retraining (requires file download)
+            Audio extraction (FFmpeg)
+            Vocal isolation (Demucs)
+            Segmentation + Transcription (Whisper)
+            Dataset formatting (LJ Speech)
+            Training trigger (existing pipeline)
 ```
 
 ### Critical Path Dependencies
 
 | New Feature | Hard Dependencies | Soft Dependencies |
 |-------------|-------------------|-------------------|
-| Hybrid LLM routing | Both LLM backends working, existing chat handler | Cost tracking DB table |
-| Confidence scoring | Local LLM streaming response, evaluation heuristic | Rating data from operator |
-| Token cost tracking | Conversations table extension, pricing lookup | Cost dashboard UI |
-| Cross-session memory | Conversations table (exists), memory retrieval | Summarization pipeline |
-| Memory fact extraction | Working LLM (local preferred for cost), fact schema | Session completion hook |
-| Tiered TTL | Memory tables, cleanup cron/interval | None |
-| Context injection | Memory retrieval, system prompt builder | Token budget logic |
-| Docker full-stack | Working Dockerfiles (exist), compose config | NGINX frontend config |
-| E2E safety tests | Vitest, mock layers, safety framework (exists) | None |
-| Socket.IO tests | Test server instance, socket.io-client | Mock LLM responses |
-| Deployment smoke tests | Docker Compose, health endpoints | CI environment |
+| File download from URL | Path validation, size limits, safety tier | Download history table |
+| Cross-node file transfer | SSH execution (exists), SCP command | Progress reporting |
+| Project listing | Project registry access (exists on agent1) | Registry cache on Home node |
+| Directory browsing | SSH execution (exists), path validation | Cross-node routing from registry |
+| File reading | SSH execution (exists), path validation, size cap | Syntax detection |
+| File search | SSH execution (exists), grep/rg on target node | Context lines, pagination |
+| Code explanation | File reading, Claude API | None |
+| Security audit | Multi-file reading, Claude API | Structured output format |
+| Architecture overview | Multi-file reading, registry data, Claude API | None |
+| Video download | yt-dlp installation, storage path | URL validation |
+| Audio extraction | FFmpeg (likely already installed), video file | None |
+| Vocal isolation | Demucs installation, GPU access (optional) | Quality scoring |
+| Audio segmentation | VAD model, extracted audio | Speaker diarization |
+| Transcription | Whisper installation, audio segments | Transcript correction UI |
+| Dataset formatting | All audio pipeline steps, LJ Speech format | Merge with existing dataset |
+| Training trigger | Formatted dataset, existing training pipeline | Training monitoring |
 
 ---
 
-## Routing Strategy Recommendation
+## Safety Tier Recommendations for New Tools
 
-Based on research into RouteLLM, LiteLLM, FrugalGPT, and hybrid cloud-edge architectures, here is the recommended routing strategy for Jarvis 3.1:
-
-### Routing Decision Tree
-
-```
-User message arrives
-  |
-  +--> Contains override passkey? --> Claude (always, needs tool authority)
-  |
-  +--> Explicitly requests cluster action? --> Claude (needs MCP tools)
-  |     (start, stop, restart, reboot, execute, run command)
-  |
-  +--> References cluster entities? --> Claude (likely needs context + tools)
-  |     (node names, VMIDs, service names, storage names)
-  |
-  +--> Is follow-up to a tool-using conversation? --> Claude (maintain context)
-  |
-  +--> Claude unavailable (no key, API down, budget exceeded)? --> Qwen
-  |
-  +--> Default: Qwen (conversational, fast, free)
-```
-
-### Why Not Confidence-Based Cascade Initially
-
-Research shows confidence-based routing (Qwen first, evaluate, escalate to Claude) saves 60-85% on API costs. However, for Jarvis 3.1 this introduces two problems:
-
-1. **Latency doubling on escalated requests**: Qwen generates a response (~3-5 seconds at 6.5 tok/s), then we evaluate it, then Claude generates another (~2-3 seconds). Tool-requiring messages would always escalate, adding 3-5s latency to every cluster action.
-
-2. **Tool-calling gap**: Qwen (via llama-server OpenAI-compatible endpoint) does not support tool calling. Any message needing MCP tools must go to Claude regardless. The cascade only helps for messages that could be answered by either model.
-
-**Recommendation**: Start with intent-based routing (improved keyword matching), track routing decisions and costs, then evaluate whether confidence-based cascade is worth adding for the conversational tier. The data from cost tracking will inform this decision.
+| Tool | Recommended Tier | Rationale |
+|------|-----------------|-----------|
+| `list_projects` | GREEN | Read-only, queries existing registry |
+| `browse_directory` | GREEN | Read-only directory listing |
+| `read_file` | GREEN | Read-only file access with size limits |
+| `search_files` | GREEN | Read-only grep/search |
+| `analyze_code` | GREEN | Read-only analysis (LLM interprets, no execution) |
+| `explain_code` | GREEN | Read-only explanation |
+| `download_file` | RED | Downloads from internet -- requires confirmation. Source URLs could be malicious, files could fill disk. |
+| `transfer_file` | YELLOW | Moves files between known cluster nodes. Controlled environment, but has write side effects. |
+| `trigger_voice_training` | RED | Starts GPU-intensive training process that affects system resources. Requires confirmation. |
+| `extract_audio` | YELLOW | Processes files locally, writes output to designated directory. Side effects but controlled. |
 
 ---
 
-## Memory Architecture Recommendation
+## MVP Recommendation
 
-Based on research into Mem0, MemGPT, Microsoft Foundry Agent Memory, and the "Memory in the Age of AI Agents" survey:
+For the first iteration of this milestone, prioritize in this order:
 
-### Three-Tier Memory Model for Jarvis
+### Must Have (Phase 1: File & Project Browsing)
+1. `list_projects` -- Query registry, return project list (GREEN)
+2. `browse_directory` -- List directory contents with depth control (GREEN)
+3. `read_file` -- Read file contents with size limits (GREEN)
+4. `search_files` -- Search file contents in a project (GREEN)
+5. `download_file` -- Download from URL with restrictions (RED)
 
-| Tier | Content | Storage | TTL | Token Budget |
-|------|---------|---------|-----|-------------|
-| **Working** | Current conversation messages | In-memory (conversation array) | Session lifetime | 2000 tokens (last 20 messages per config) |
-| **Episodic** | Summarized past conversations, key events | SQLite `memory_episodes` table | 30 days | 300 tokens (top 3 relevant episodes) |
-| **Semantic** | Extracted facts, preferences, cluster knowledge | SQLite `memory_facts` table | Indefinite | 500 tokens (all relevant facts) |
+**Rationale:** These 5 tools enable the entire "JARVIS can see and understand your code" experience. They are low-complexity, follow existing MCP patterns, and have clear safety boundaries.
 
-### Memory Pipeline
+### Should Have (Phase 2: Analysis & Intelligence)
+6. Code explanation via Claude analysis
+7. Bug/issue identification
+8. Architecture overview generation
+9. Cross-node project browsing (route to correct node from registry)
+10. Git history integration (log, diff, blame)
 
-```
-Conversation ends
-  |
-  +--> Extract facts: "pve disk expanded to 112GB on Jan 25"
-  |    (use local Qwen -- this is a text task, saves Claude API costs)
-  |
-  +--> Generate episode summary: "Operator asked about disk space on pve.
-  |    Diagnosed 73% usage. Cleaned 11GB of old backups and expanded
-  |    root partition from 96GB to 112GB."
-  |
-  +--> Store with metadata: timestamp, entities mentioned, topic tags
-  |
-  +--> Cleanup: delete episodes older than 30 days,
-       keep facts indefinitely
-```
+**Rationale:** These build on Phase 1 tools and add the "intelligence" layer. They require Claude API (cost implications) but provide the most operator value.
 
-### Why SQLite Over Vector DB
+### Nice to Have (Phase 3: Voice Retraining Pipeline)
+11. Video/audio download pipeline (yt-dlp + FFmpeg)
+12. Vocal isolation (Demucs)
+13. Audio segmentation + transcription (Whisper)
+14. Dataset formatting and merge
+15. Training trigger and monitoring
 
-For a single-user homelab assistant generating ~10-50 messages/day, the total memory corpus after a year is ~5000-15000 entries. At this scale:
+**Rationale:** Voice retraining is self-contained and has the heaviest infrastructure requirements (yt-dlp, Demucs, Whisper installations). The existing 10-sample voice works. Improvement is desirable but not blocking.
 
-- SQLite FTS5 (full-text search) handles keyword retrieval in <1ms
-- No external service to run, monitor, or restart
-- Already using SQLite for everything else (events, conversations, preferences)
-- If semantic search becomes necessary, sqlite-vss adds vector similarity without a new service
+### Defer (Post-Milestone)
+- File editing/writing (too risky for now)
+- Full codebase indexing/embeddings (overkill for scale)
+- Automated refactoring (scope creep)
+- Multi-voice training (perfect one voice first)
+- Speaker diarization (nice to have, complex)
 
 ---
 
-## Testing Strategy Recommendation
+## Complexity Estimates
 
-Based on research into Vitest, Playwright, Node.js testing best practices (goldbergyoni/nodejs-testing-best-practices), and WebSocket testing patterns:
+| Feature Group | Tool Count | Est. Implementation | Risk |
+|---------------|-----------|-------------------|------|
+| File operations (download, transfer) | 2 tools | 2-3 days | Low -- well-understood patterns |
+| Project browsing (list, browse, read, search) | 4 tools | 2-3 days | Low -- extends existing SSH infrastructure |
+| Code analysis (explain, audit, overview) | 3 tools (or LLM prompting layer) | 3-4 days | Medium -- quality depends on prompt engineering |
+| Voice pipeline (download, extract, isolate, segment, transcribe, format) | 5-6 tools or 1 orchestrated pipeline | 5-7 days | High -- multiple tool installations, GPU considerations |
+| Training integration (trigger, monitor, compare) | 2-3 tools | 2-3 days | Medium -- integrates with existing training code |
 
-### Test Pyramid for Jarvis 3.1
-
-```
-                    /\
-                   /  \       E2E (Playwright)
-                  / 5  \      - Full chat flow with mock LLM
-                 /------\     - Docker deployment smoke test
-                /        \
-               / 15-20    \   Integration
-              /            \  - Socket.IO chat lifecycle
-             / Supertest +  \ - MCP tool execution
-            /    mock SSH    \- Memory persistence
-           /------------------\
-          /                    \
-         /     30-40 unit       \  Unit (Vitest)
-        /                        \ - Safety tiers
-       / vi.mock for SSH, PVE,    \- Command sanitization
-      /  Claude, Qwen              \- Routing decisions
-     /------------------------------\- Memory operations
-```
-
-### Critical Test Scenarios
-
-| Scenario | Type | Priority |
-|----------|------|----------|
-| GREEN tool auto-executes | Unit | P0 |
-| RED tool requires confirmation | Unit | P0 |
-| BLACK tool always blocked | Unit | P0 |
-| Override passkey elevates RED/BLACK | Unit | P0 |
-| Protected resource (VMID 103) always blocked | Unit | P0 |
-| Dangerous SSH commands rejected | Unit | P0 |
-| Safe SSH commands allowed | Unit | P0 |
-| Message routed to Claude when tools needed | Unit | P1 |
-| Message routed to Qwen for conversation | Unit | P1 |
-| Claude unavailable falls back to Qwen | Unit | P1 |
-| Chat message saved to conversations table | Integration | P1 |
-| Session messages retrieved in order | Integration | P1 |
-| Token usage persisted with cost | Integration | P1 |
-| WebSocket chat:send -> chat:token -> chat:done | Integration | P1 |
-| RED-tier confirmation flow via Socket.IO | Integration | P2 |
-| Memory facts extracted after conversation | Integration | P2 |
-| Memory injected into system prompt | Integration | P2 |
-| Docker compose up -> health check passes | E2E | P2 |
-| Full chat flow in browser (Playwright) | E2E | P3 |
+**Total estimated effort:** 14-20 days for full milestone.
 
 ---
 
 ## Sources
 
-### Hybrid LLM Routing
-- [Hybrid Cloud Architecture for LLM Deployment](https://journal-isi.org/index.php/isi/article/download/1170/595) -- Confidence-based routing, 60% API cost reduction
-- [RouteLLM](https://github.com/lm-sys/RouteLLM) -- Framework for LLM routing, 85% cost reduction with 95% GPT-4 quality
-- [vLLM Semantic Router v0.1 Iris](https://blog.vllm.ai/2026/01/05/vllm-sr-iris.html) -- Production semantic routing (Jan 2026)
-- [LiteLLM Cost Tracking](https://docs.litellm.ai/docs/proxy/cost_tracking) -- Token cost tracking across providers
-- [NVIDIA LLM Router Blueprint](https://github.com/NVIDIA-AI-Blueprints/llm-router) -- Intent-based and auto-routing patterns
-- [Implementing LLM Model Routing with Ollama and LiteLLM](https://medium.com/@michael.hannecke/implementing-llm-model-routing-a-practical-guide-with-ollama-and-litellm-b62c1562f50f) -- Practical routing guide
-- [Learning to Route LLMs with Confidence Tokens](https://arxiv.org/html/2410.13284v2) -- Self-REF confidence scoring
-- [Helicone LLM Cost Monitoring](https://www.helicone.ai/blog/monitor-and-optimize-llm-costs) -- Cost monitoring best practices
-- [Langfuse Token and Cost Tracking](https://langfuse.com/docs/observability/features/token-and-cost-tracking) -- Open-source cost tracking
+### File Operations & MCP Patterns
+- [Filesystem MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) -- Anthropic's reference implementation for file operations via MCP (HIGH confidence)
+- [MCP File System Server](https://github.com/MarcusJellinghaus/mcp_server_filesystem) -- Community implementation with path validation and security controls (MEDIUM confidence)
+- [AI Agent Architecture Best Practices](https://techbytes.app/posts/ai-agent-architecture-mcp-sandboxing-skills/) -- Sandboxing and security for AI file operations (MEDIUM confidence)
+- [OpenSSF Security Guide for AI Code Assistants](https://best.openssf.org/Security-Focused-Guide-for-AI-Code-Assistant-Instructions) -- Security best practices for AI-generated file operations (HIGH confidence)
 
-### Persistent Memory
-- [Memory in the Age of AI Agents Survey](https://github.com/Shichun-Liu/Agent-Memory-Paper-List) -- Comprehensive memory taxonomy (HF Daily Paper #1, Dec 2025)
-- [Mem0: Production-Ready AI Agents with Scalable Long-Term Memory](https://arxiv.org/abs/2504.19413) -- 90% token cost reduction via memory
-- [Building Persistent Memory via MCP](https://medium.com/@linvald/building-persistent-memory-for-ai-assistants-a-model-context-protocol-implementation-80b6e6398d40) -- MCP-based memory implementation
-- [Context Window Management Strategies](https://www.getmaxim.ai/articles/context-window-management-strategies-for-long-context-ai-agents-and-chatbots/) -- Summarization, pruning, chunking
-- [LLM Chat History Summarization Guide](https://mem0.ai/blog/llm-chat-history-summarization-guide-2025) -- Compression techniques
-- [MemGPT Adaptive Retention](https://informationmatters.org/2025/10/memgpt-engineering-semantic-memory-through-adaptive-retention-and-context-summarization/) -- Cognitive triage, 89-95% compression
-- [Microsoft Foundry Agent Long-Term Memory](https://www.infoq.com/news/2025/12/foundry-agent-memory-preview/) -- Production memory patterns
-- [OpenAI Agents SDK Session Memory](https://cookbook.openai.com/examples/agents_sdk/session_memory) -- Short-term memory management
-- [Architecting Short-Term Memory for Agentic AI](https://www.jit.io/resources/ai-security/its-not-magic-its-memory-how-to-architect-short-term-memory-for-agentic-ai) -- TTL patterns, checkpoint cleanup
+### Code Analysis & Review
+- [Code Review in the Age of AI](https://addyo.substack.com/p/code-review-in-the-age-of-ai) -- Addy Osmani's survey of AI code review patterns (MEDIUM confidence)
+- [AI Code Review Tools 2026](https://www.qodo.ai/blog/best-ai-code-review-tools-2026/) -- Enterprise patterns for AI code review (MEDIUM confidence)
+- [State of AI Code Quality 2025](https://www.qodo.ai/reports/state-of-ai-code-quality/) -- 41% of commits AI-assisted, 75% more logic errors (MEDIUM confidence)
+- [Codebase Digest](https://github.com/kamilstanuch/codebase-digest) -- Tool for packing codebases for LLM analysis (MEDIUM confidence)
+- [Repomix](https://repomix.com/) -- Codebase packing with token counting and security checks (MEDIUM confidence)
 
-### Docker Deployment
-- [Docker Official: Containerize Node.js](https://docs.docker.com/guides/nodejs/containerize/) -- Official Node.js Docker guide
-- [Docker Official: Containerize React.js](https://docs.docker.com/guides/reactjs/containerize/) -- Official React Docker guide
-- [9 Tips for Containerizing Node.js](https://www.docker.com/blog/9-tips-for-containerizing-your-node-js-application/) -- Docker best practices
-- [10 Best Practices for Node.js Docker](https://snyk.io/blog/10-best-practices-to-containerize-nodejs-web-applications-with-docker/) -- Security-focused containerization
-- [SSH Keys in Docker Volume Mount](https://nickjanetakis.com/blog/docker-tip-56-volume-mounting-ssh-keys-into-a-docker-container) -- SSH key mounting patterns
-- [Docker Compose SSH Key Security](https://betterstack.com/community/questions/how-to-use-ssh-key-inside-docker-container/) -- Secure SSH key handling
+### Voice Retraining Pipeline
+- [Building Voice Cloning Datasets](https://medium.com/@prakashshanbhag/building-high-quality-voice-cloning-datasets-for-ai-applications-1ef174c2b34e) -- End-to-end dataset building guide (MEDIUM confidence)
+- [XTTS v2 on HuggingFace](https://huggingface.co/coqui/XTTS-v2) -- Model card with training data requirements (HIGH confidence)
+- [Voice-Pro](https://github.com/abus-aikorea/voice-pro) -- Open-source pipeline: YouTube download + Demucs + Whisper + voice cloning (MEDIUM confidence)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) -- Feature-rich audio/video downloader (HIGH confidence)
+- [VocalForge Dataset Toolkit](https://sep.com/blog/helpful-tools-to-make-your-first-voice-clone-dataset-easy-to-build/) -- Tools for voice dataset creation (LOW confidence)
 
-### E2E Testing
-- [Playwright WebSocket Testing](https://dzone.com/articles/playwright-for-real-time-applications-testing-webs) -- WebSocket and live data stream testing
-- [Playwright WebSocket Class](https://playwright.dev/docs/api/class-websocket) -- Official WebSocket API
-- [WebSocket Testing with MSW](https://egghead.io/lessons/test-web-sockets-in-playwright-with-msw~rdsus) -- Mock Service Worker for WebSocket
-- [Vitest Mocking Guide](https://vitest.dev/guide/mocking) -- Module mocking for SSH, API clients
-- [Node.js Testing Best Practices](https://github.com/goldbergyoni/nodejs-testing-best-practices) -- Comprehensive testing patterns (April 2025)
-- [vitest-mock-express](https://github.com/eagleera/vitest-mock-express) -- Express mocking for Vitest
-- [API Testing with Vitest](https://adequatica.medium.com/api-testing-with-vitest-391697942527) -- Vitest vs Jest performance comparison
+### Project Browsing & Codebase Intelligence
+- [AnythingLLM](https://anythingllm.com/) -- Self-hosted AI with document and codebase analysis (MEDIUM confidence)
+- [Structuring Codebases for AI Tools](https://www.propelcode.ai/blog/structuring-codebases-for-ai-tools-2025-guide) -- Context engineering for AI code understanding (MEDIUM confidence)
 
 ---
 
@@ -406,15 +333,13 @@ Based on research into Vitest, Playwright, Node.js testing best practices (goldb
 
 | Area | Confidence | Reason |
 |------|------------|--------|
-| Hybrid LLM routing patterns | HIGH | Multiple research papers and production frameworks (RouteLLM, LiteLLM, FrugalGPT) agree on patterns. Confidence-based cascade and intent-based routing are well-documented. |
-| Token cost tracking | HIGH | Langfuse, LiteLLM, Helicone all provide proven approaches. Simple token * price arithmetic. |
-| Persistent memory architecture | MEDIUM | Rapidly evolving field (Mem0, MemGPT, Microsoft Foundry all different). Three-tier model is a reasonable synthesis but hasn't been validated at Jarvis's specific scale. Fact extraction quality depends heavily on prompt engineering. |
-| Memory TTL and cleanup | MEDIUM | TTL patterns documented but specific durations (7 days for episodes, indefinite for facts) are educated guesses. Will need tuning based on actual usage patterns. |
-| Docker deployment | HIGH | Existing Dockerfiles work. Compose patterns are well-established. Main work is enabling frontend and hardening config. |
-| E2E testing strategy | HIGH | Vitest for unit/integration, Playwright for E2E is industry standard for TypeScript projects. WebSocket testing support in Playwright since v1.48 is well-documented. |
-| SSH mocking in tests | MEDIUM | vi.mock for ssh2/node-ssh is straightforward in theory but no specific Jarvis-shaped examples found. Will need custom mock implementations for the existing SSH client. |
-| Semantic memory search | LOW | sqlite-vss exists but maturity unclear for production use. Simple keyword search may suffice and is much simpler to implement. Flagging for deeper research if needed. |
+| File operation tools | HIGH | Well-established MCP patterns (Anthropic's own filesystem server). Existing SSH infrastructure handles cross-node execution. |
+| Project browsing | HIGH | Direct extension of existing tools. Project registry already indexes everything. |
+| Code analysis quality | MEDIUM | Depends heavily on Claude prompt engineering. No existing JARVIS-specific code analysis has been tested. Quality will need iteration. |
+| Voice pipeline feasibility | MEDIUM | Individual tools (yt-dlp, FFmpeg, Demucs, Whisper) are all proven. Integration into a single automated pipeline on this specific hardware (CPU-only for most nodes) is untested. |
+| Voice training improvement | LOW | Current 10-sample dataset with transcription errors is a weak baseline. Adding more samples should improve quality, but the magnitude of improvement is unpredictable. XTTS v2 fine-tuning with small datasets (<100 samples) is an area with limited documented results. |
+| Safety tier assignments | HIGH | Follows established patterns from existing 18 tools. Read operations are GREEN, write operations are YELLOW/RED. |
 
 ---
 
-*Feature landscape research (Milestone 2): 2026-01-26*
+*Feature landscape research (Milestone 3: File & Project Intelligence): 2026-01-26*
