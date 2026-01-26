@@ -1,6 +1,10 @@
 /**
  * Socket.IO /chat namespace handler for AI chat interactions.
  *
+ * Uses intent-based routing to dispatch messages to either:
+ *  - Claude (agentic with tools) for cluster management tasks
+ *  - Qwen (conversational) for general conversation
+ *
  * Events:
  *  - chat:send    { sessionId?, message }   -- Client sends a message
  *  - chat:confirm { sessionId, toolUseId, confirmed }  -- Client confirms/denies a RED-tier action
@@ -11,54 +15,34 @@
  *  - chat:tool_result     { sessionId, toolUseId, result, isError }
  *  - chat:confirm_needed  { sessionId, toolName, toolInput, toolUseId, tier }
  *  - chat:blocked         { sessionId, toolName, reason, tier }
- *  - chat:done            { sessionId, usage }
+ *  - chat:done            { sessionId, usage, provider }
  *  - chat:error           { sessionId, error }
  */
 
 import type { Namespace, Socket } from 'socket.io';
-
-// ---------------------------------------------------------------------------
-// Smart routing: local LLM for conversation, Claude for tool-requiring messages
-// ---------------------------------------------------------------------------
-
-/** Keywords that suggest the message needs cluster tools */
-const TOOL_KEYWORDS = [
-  // cluster infrastructure
-  'status', 'cluster', 'node', 'nodes', 'quorum',
-  'vm', 'vms', 'container', 'containers', 'lxc', 'qemu',
-  'storage', 'disk', 'backup', 'temperature', 'temp',
-  'cpu', 'memory', 'ram', 'uptime',
-  // actions
-  'start', 'stop', 'restart', 'reboot', 'shutdown',
-  'update', 'upgrade', 'wake', 'wol',
-  'run', 'execute', 'ssh', 'command',
-  'check', 'show', 'list', 'get', 'fetch',
-  // specific resources
-  'pve', 'agent1', 'agent', 'home',
-  'management', 'twingate', 'adguard', 'homeassistant',
-  'ubuntu', 'displayvm',
-  'service', 'systemctl', 'docker',
-  // override always needs Claude
-  'override',
-];
-
-function needsTools(message: string): boolean {
-  const lower = message.toLowerCase();
-  return TOOL_KEYWORDS.some((kw) => lower.includes(kw));
-}
 import crypto from 'node:crypto';
-import { buildSystemPrompt, buildClusterSummary } from '../ai/system-prompt.js';
 import {
-  runAgenticLoop,
+  buildClaudeSystemPrompt,
+  buildQwenSystemPrompt,
+  buildClusterSummary,
+} from '../ai/system-prompt.js';
+import {
   resumeAfterConfirmation,
   type PendingConfirmation,
   type StreamCallbacks,
 } from '../ai/loop.js';
-import { runLocalChat } from '../ai/local-llm.js';
-import { claudeAvailable } from '../ai/claude.js';
+import { routeMessage } from '../ai/router.js';
+import { claudeProvider } from '../ai/providers/claude-provider.js';
+import { qwenProvider } from '../ai/providers/qwen-provider.js';
+import type { LLMProvider } from '../ai/providers.js';
 import { memoryStore } from '../db/memory.js';
 import { config } from '../config.js';
-import type Anthropic from '@anthropic-ai/sdk';
+
+// Provider lookup map
+const providers: Record<string, LLMProvider> = {
+  claude: claudeProvider,
+  qwen: qwenProvider,
+};
 
 // ---------------------------------------------------------------------------
 // Types for incoming events
@@ -89,6 +73,8 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
     // Per-socket state
     const pendingConfirmations = new Map<string, PendingConfirmation>();
     const abortControllers = new Map<string, AbortController>();
+    /** Track last provider used per session for follow-up routing */
+    const sessionLastProvider = new Map<string, string>();
 
     // ------------------------------------------------------------------
     // chat:send -- user sends a message
@@ -145,18 +131,21 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           console.log(`[Chat] Override passkey detected in message from ${socket.id}`);
         }
 
-        // Build system prompt with live cluster context
+        // Route message to appropriate provider
+        const lastProvider = sessionLastProvider.get(sessionId);
+        const decision = routeMessage(message, overrideActive, lastProvider);
+        const provider = providers[decision.provider];
+        console.log(`[Chat] Routing to ${decision.provider}: ${decision.reason}`);
+
+        // Build provider-specific system prompt with live cluster context
         const summary = await buildClusterSummary();
-        const systemPrompt = buildSystemPrompt(summary, overrideActive);
+        const systemPrompt = decision.provider === 'claude'
+          ? buildClaudeSystemPrompt(summary, overrideActive)
+          : buildQwenSystemPrompt(summary);
 
         // Create abort controller for this session
         const abortController = new AbortController();
         abortControllers.set(sessionId, abortController);
-
-        // Smart routing: use Claude only when tools are likely needed
-        const useClaude = claudeAvailable && (needsTools(message) || overrideActive);
-        const provider = useClaude ? 'claude' : 'local';
-        console.log(`[Chat] Routing to ${provider} (tools needed: ${needsTools(message)}, override: ${overrideActive})`);
 
         // Accumulate text for DB persistence
         let accumulatedText = '';
@@ -200,7 +189,7 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
                   sessionId,
                   role: 'assistant',
                   content: accumulatedText,
-                  model: provider,
+                  model: decision.provider,
                   tokensUsed: usage.inputTokens + usage.outputTokens,
                 });
               } catch {
@@ -208,7 +197,10 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
               }
             }
 
-            socket.emit('chat:done', { sessionId, usage });
+            // Track provider for follow-up routing
+            sessionLastProvider.set(sessionId, decision.provider);
+
+            socket.emit('chat:done', { sessionId, usage, provider: decision.provider });
             abortControllers.delete(sessionId);
           },
 
@@ -218,17 +210,17 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           },
         };
 
-        if (useClaude) {
-          // Full agentic loop with tools via Claude API
-          const messages: Anthropic.MessageParam[] = chatMessages;
-          const pending = await runAgenticLoop(messages, systemPrompt, callbacks, abortController.signal, overrideActive);
+        // Dispatch to provider
+        const pending = await provider.chat(
+          chatMessages,
+          systemPrompt,
+          callbacks,
+          abortController.signal,
+          overrideActive,
+        );
 
-          if (pending) {
-            pendingConfirmations.set(sessionId, pending);
-          }
-        } else {
-          // Local LLM: text-only conversation (saves Claude tokens)
-          await runLocalChat(chatMessages, systemPrompt, callbacks, abortController.signal);
+        if (pending) {
+          pendingConfirmations.set(sessionId, pending);
         }
       } catch (err) {
         socket.emit('chat:error', {
@@ -266,9 +258,9 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
       pendingConfirmations.delete(sessionId);
 
       try {
-        // Build fresh system prompt
+        // Build fresh Claude system prompt (confirmations are always Claude)
         const summary = await buildClusterSummary();
-        const systemPrompt = buildSystemPrompt(summary);
+        const systemPrompt = buildClaudeSystemPrompt(summary);
 
         // Create abort controller
         const abortController = new AbortController();
@@ -323,7 +315,8 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
               }
             }
 
-            socket.emit('chat:done', { sessionId, usage });
+            sessionLastProvider.set(sessionId, 'claude');
+            socket.emit('chat:done', { sessionId, usage, provider: 'claude' });
             abortControllers.delete(sessionId);
           },
 
@@ -369,10 +362,11 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
       }
       abortControllers.clear();
       pendingConfirmations.clear();
+      sessionLastProvider.clear();
     });
   });
 
-  const provider = claudeAvailable ? 'Claude API (agentic + tools)' : `Local LLM (${config.localLlmEndpoint})`;
   console.log(`[Chat] AI chat handler registered on /chat namespace`);
-  console.log(`[Chat] Provider: ${provider}`);
+  console.log(`[Chat] Providers: Claude (agentic + tools), Qwen (conversational)`);
+  console.log(`[Chat] Routing: intent-based decision tree`);
 }

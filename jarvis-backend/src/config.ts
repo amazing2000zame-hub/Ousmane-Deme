@@ -36,17 +36,28 @@ export const config = {
     { name: 'agent', host: '192.168.1.62' },
   ] as ClusterNode[],
 
+  // Override passkey for elevated operations
+  overrideKey: process.env.JARVIS_OVERRIDE_KEY || '',
+
   // Claude AI
   claudeModel: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
   claudeMaxTokens: parseInt(process.env.CLAUDE_MAX_TOKENS || '4096', 10),
   chatHistoryLimit: parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10),
   chatMaxLoopIterations: parseInt(process.env.CHAT_MAX_LOOP || '10', 10),
 
+  // Local LLM fallback (OpenAI-compatible endpoint)
+  localLlmEndpoint: process.env.LOCAL_LLM_ENDPOINT || 'http://192.168.1.50:8080',
+  localLlmModel: process.env.LOCAL_LLM_MODEL || 'qwen2.5-7b-instruct-q4_k_m.gguf',
+  qwenContextWindow: parseInt(process.env.QWEN_CONTEXT_WINDOW || '4096', 10),
+  qwenHistoryLimit: parseInt(process.env.QWEN_HISTORY_LIMIT || '10', 10),
+
   // CORS
   corsOrigins: [
     'http://192.168.1.65:3004',
     'http://localhost:3004',
     'http://localhost:5173',
+    'http://localhost:5174',
     'http://192.168.1.50:5173',
+    'http://192.168.1.50:5174',
   ] as string[],
 } as const;
