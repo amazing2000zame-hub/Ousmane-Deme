@@ -4,6 +4,12 @@ import { createChatSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useChatStore } from '../stores/chat';
 
+/** uid() requires secure context (HTTPS). Fallback for HTTP. */
+const uid = (): string =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? uid()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 interface ChatSocketActions {
   sendMessage: (message: string) => void;
   confirmTool: (toolUseId: string, confirmed: boolean) => void;
@@ -90,7 +96,7 @@ export function useChatSocket(): ChatSocketActions {
       useChatStore.getState().addToolCall({
         name: data.toolName,
         input: {},
-        toolUseId: crypto.randomUUID(),
+        toolUseId: uid(),
         status: 'blocked',
         tier: data.tier,
         reason: data.reason,
@@ -145,7 +151,7 @@ export function useChatSocket(): ChatSocketActions {
   const sendMessage = useCallback((message: string) => {
     const store = useChatStore.getState();
     store.sendMessage(message);
-    const messageId = crypto.randomUUID();
+    const messageId = uid();
     store.startStreaming(messageId);
     socketRef.current?.emit('chat:send', {
       sessionId: store.sessionId,

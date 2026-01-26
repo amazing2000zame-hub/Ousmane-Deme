@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
+/** uid() requires secure context (HTTPS). Fallback for HTTP. */
+const uid = (): string =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? uid()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 export interface ToolCall {
   name: string;
   input: Record<string, unknown>;
@@ -41,13 +47,13 @@ export const useChatStore = create<ChatState>()(
   devtools(
     (set, get) => ({
       messages: [],
-      sessionId: crypto.randomUUID(),
+      sessionId: uid(),
       isStreaming: false,
       streamingMessageId: null,
 
       sendMessage: (content) => {
         const message: ChatMessage = {
-          id: crypto.randomUUID(),
+          id: uid(),
           role: 'user',
           content,
           timestamp: Date.now(),
@@ -143,7 +149,7 @@ export const useChatStore = create<ChatState>()(
 
       newSession: () =>
         set(
-          { messages: [], sessionId: crypto.randomUUID(), isStreaming: false, streamingMessageId: null },
+          { messages: [], sessionId: uid(), isStreaming: false, streamingMessageId: null },
           false,
           'chat/newSession',
         ),
