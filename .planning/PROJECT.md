@@ -47,7 +47,7 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 
 ### Out of Scope
 
-- Voice / text-to-speech -- deferred to future version
+- ~~Voice / text-to-speech~~ -- **planned for v1.2** (Phase 11: JARVIS Voice Engine)
 - Face / user recognition -- future feature
 - Predictive maintenance / anomaly detection -- future, needs data collection first
 - Multi-user permissions -- single operator for now
@@ -127,7 +127,7 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 | React + TypeScript frontend | Existing scaffold, rich ecosystem for complex UI | Confirmed -- React 19 + Vite 6 + Tailwind v4 |
 | SQLite + markdown for memory | SQLite for structured events, markdown for LLM context injection | Confirmed -- better-sqlite3 + Drizzle ORM |
 | Act + report autonomy model | Fix problems automatically, report after -- availability first | Confirmed -- 5-level autonomy model with runbooks |
-| Text-only for v1 | TTS deferred, focus on core dashboard + AI actions | Confirmed |
+| Text-only for v1 | TTS deferred, focus on core dashboard + AI actions | Confirmed -- Voice planned for v1.2 Phase 11 |
 | Express 5 backend | MCP SDK has official Express middleware adapter | Confirmed -- Phase 1 |
 | Modular monolith architecture | Single Node.js process, 6 clean modules, no microservices | Confirmed -- research HIGH confidence |
 | Safety-first Phase 1 | CRITICAL pitfalls must be architectural, not retrofitted | Confirmed -- dependency DAG + command allowlist |

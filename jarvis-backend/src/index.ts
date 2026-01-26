@@ -15,6 +15,7 @@ import { setupChatHandlers } from './realtime/chat.js';
 import { costRouter } from './api/cost.js';
 import { authMiddleware } from './auth/jwt.js';
 import { memoryStore } from './db/memory.js';
+import { startMemoryCleanup, stopMemoryCleanup } from './services/memory-cleanup.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -46,6 +47,9 @@ try {
   console.error('Failed to run database migrations:', err);
   console.warn('Starting server without database -- persistence will be unavailable');
 }
+
+// Start memory cleanup service (hourly TTL expiration)
+startMemoryCleanup();
 
 // Initialize MCP tool server
 const tools = getToolList();
@@ -99,6 +103,7 @@ server.listen(config.port, () => {
 // Graceful shutdown
 function shutdown(signal: string) {
   console.log(`\n[${signal}] Shutting down gracefully...`);
+  stopMemoryCleanup();
   stopMonitor();
   stopEmitter();
   closeAllConnections();

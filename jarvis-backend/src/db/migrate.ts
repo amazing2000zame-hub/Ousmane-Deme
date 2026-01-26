@@ -98,6 +98,27 @@ export async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_autonomy_actions_timestamp ON autonomy_actions(timestamp);
     CREATE INDEX IF NOT EXISTS idx_autonomy_actions_incident_key ON autonomy_actions(incident_key);
     CREATE INDEX IF NOT EXISTS idx_autonomy_actions_result ON autonomy_actions(result);
+
+    CREATE TABLE IF NOT EXISTS memories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tier TEXT NOT NULL,
+      category TEXT NOT NULL,
+      key TEXT NOT NULL UNIQUE,
+      content TEXT NOT NULL,
+      source TEXT NOT NULL,
+      session_id TEXT,
+      node_id TEXT,
+      created_at TEXT NOT NULL,
+      expires_at TEXT,
+      access_count INTEGER NOT NULL DEFAULT 0,
+      last_accessed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memories_tier ON memories(tier);
+    CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+    CREATE INDEX IF NOT EXISTS idx_memories_expires ON memories(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key);
+    CREATE INDEX IF NOT EXISTS idx_memories_node ON memories(node_id);
   `);
 
   // Cost tracking columns (07-02): add if missing on existing databases

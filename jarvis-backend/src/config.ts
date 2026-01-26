@@ -54,6 +54,12 @@ export const config = {
   // Cost tracking
   dailyCostLimit: parseFloat(process.env.DAILY_COST_LIMIT || '10.0'),
 
+  // Memory TTL tiers
+  memoryConversationTTLDays: parseInt(process.env.MEMORY_CONVERSATION_TTL_DAYS || '7', 10),
+  memoryEpisodicTTLDays: parseInt(process.env.MEMORY_EPISODIC_TTL_DAYS || '30', 10),
+  memoryCleanupIntervalMinutes: parseInt(process.env.MEMORY_CLEANUP_INTERVAL_MIN || '60', 10),
+  memoryContextTokenBudget: parseInt(process.env.MEMORY_CONTEXT_BUDGET || '600', 10),
+
   // CORS
   corsOrigins: [
     'http://192.168.1.65:3004',

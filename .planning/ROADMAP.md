@@ -8,6 +8,7 @@ Jarvis 3.1 v1.1 transforms the working v1.0 prototype into a production-ready AI
 
 - ✅ **v1.0 MVP** - Phases 1-6 (shipped 2026-01-26)
 - 🚧 **v1.1 Hybrid Intelligence & Deployment** - Phases 7-10 (in progress)
+- 📋 **v1.2 JARVIS Voice & Personality** - Phase 11 (planned)
 
 ## Phases
 
@@ -43,22 +44,16 @@ Jarvis 3.1 v1.1 transforms the working v1.0 prototype into a production-ready AI
 
 **Milestone Goal:** Add hybrid LLM intelligence (Claude + Qwen routing), persistent memory with tiered TTLs, Docker deployment to management VM, and end-to-end testing against live cluster.
 
-#### Phase 7: Hybrid LLM Router + Cost Tracking
+#### ✅ Phase 7: Hybrid LLM Router + Cost Tracking
 **Goal**: Intelligent routing between Claude API and local Qwen with cost tracking and provider abstraction
 **Depends on**: Phase 6 (v1.0 complete)
 **Requirements**: ROUTE-01, ROUTE-02, ROUTE-03, ROUTE-04, ROUTE-05, ROUTE-06, ROUTE-07, ROUTE-08, ROUTE-09, ROUTE-10
-**Success Criteria** (what must be TRUE):
-  1. User messages requiring tools automatically route to Claude, conversational messages route to Qwen
-  2. When Claude API is unavailable, system automatically falls back to Qwen with visible notification
-  3. Each chat message displays a provider badge showing whether Claude or Qwen generated the response
-  4. Dashboard panel shows running cost totals (daily/weekly/monthly) updated in real-time after each Claude API call
-  5. System prompt for Qwen is under 500 tokens (no tool instructions), Claude gets full 1500-token prompt with tool definitions
-**Plans**: 3 plans
+**Status**: Complete (3 commits: 464b01c, 767771a, ab30877)
 
 Plans:
-- [ ] 07-01-PLAN.md — LLMProvider interface + intent-based routing engine
-- [ ] 07-02-PLAN.md — Cost tracking with token persistence and budget enforcement
-- [ ] 07-03-PLAN.md — Provider badge UI + cost dashboard panel
+- [x] 07-01-PLAN.md — LLMProvider interface + intent-based routing engine
+- [x] 07-02-PLAN.md — Cost tracking with token persistence and budget enforcement
+- [x] 07-03-PLAN.md — Provider badge UI + cost dashboard panel
 
 #### Phase 8: Persistent Memory with TTL Tiers
 **Goal**: Cross-session memory with three-tier TTL model enabling context recall and cluster state persistence
@@ -70,11 +65,12 @@ Plans:
   3. User preferences ("I prefer email alerts for critical issues") persist across sessions and are respected in future interactions
   4. System prompt includes relevant historical context (recent events, facts, preferences) within token budget limits
   5. Database cleanup runs automatically every hour, expiring conversations after 7 days and episodic memories after 30 days
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: TBD
-- [ ] 08-02: TBD
+- [ ] 08-01-PLAN.md — Memory schema, TTL tiers & cleanup service
+- [ ] 08-02-PLAN.md — Memory extraction & context injection
+- [ ] 08-03-PLAN.md — Memory recall API & chat integration
 
 #### Phase 9: Docker Deployment Full Stack
 **Goal**: Production-ready Docker Compose deployment to management VM with persistent volumes and security hardening
@@ -108,6 +104,33 @@ Plans:
 - [ ] 10-01: TBD
 - [ ] 10-02: TBD
 
+### 📋 v1.2 JARVIS Voice & Personality (Planned)
+
+**Milestone Goal:** Give Jarvis a voice. Text-to-speech output with a JARVIS (Iron Man) personality — British, formal, witty, confident. Optional voice input via speech-to-text. Audio visualization in the HUD. The AI assistant should *sound* like a real JARVIS, not a generic TTS robot.
+
+#### Phase 11: JARVIS Voice Engine
+**Goal**: Text-to-speech and speech-to-text integration giving Jarvis an Iron Man JARVIS voice with full personality
+**Depends on**: Phase 10 (v1.1 complete, stable deployed system)
+**Requirements**: VOICE-01, VOICE-02, VOICE-03, VOICE-04, VOICE-05, VOICE-06, VOICE-07, VOICE-08, VOICE-09, VOICE-10, VOICE-11, VOICE-12
+**Success Criteria** (what must be TRUE):
+  1. Every Jarvis response can be played as audio with a British male voice that sounds like a refined AI butler (not robotic)
+  2. User can toggle voice on/off — when enabled, responses auto-play; when disabled, text-only (existing behavior preserved)
+  3. Audio visualizer in the HUD shows waveform/spectrum while Jarvis speaks, matching the Iron Man aesthetic
+  4. User can speak to Jarvis via microphone — speech-to-text converts voice to chat input
+  5. Jarvis personality is distinctly JARVIS: formal address ("sir"), dry wit, understated confidence, concise situational commentary
+  6. Voice latency is under 2 seconds from response completion to audio playback start (streaming TTS if possible)
+  7. TTS works with both Claude and Qwen responses (provider-agnostic)
+  8. Voice settings (speed, pitch, volume, auto-play) persist in localStorage
+  9. Wake-word detection ("JARVIS") optionally activates voice input without clicking
+  10. Cost tracking extends to TTS API usage (if using cloud TTS like ElevenLabs)
+**Plans**: TBD
+
+Plans:
+- [ ] 11-01: TBD — TTS provider integration (ElevenLabs / local Piper TTS / browser SpeechSynthesis)
+- [ ] 11-02: TBD — Speech-to-text input (Web Speech API / Whisper local)
+- [ ] 11-03: TBD — Audio visualizer HUD component + voice settings panel
+- [ ] 11-04: TBD — JARVIS personality tuning (system prompt, voice characteristics, wake word)
+
 ---
 
 ## Requirements Mapping
@@ -116,8 +139,9 @@ Plans:
 **Phase 8 (Persistent Memory):** MEM-01 through MEM-10
 **Phase 9 (Docker Deployment):** DOCK-01 through DOCK-11
 **Phase 10 (E2E Testing):** TEST-01 through TEST-12
+**Phase 11 (JARVIS Voice):** VOICE-01 through VOICE-12
 
-Total requirements: 43 (10 + 10 + 11 + 12)
+Total requirements: 55 (10 + 10 + 11 + 12 + 12)
 
 ---
 
@@ -149,12 +173,12 @@ Total requirements: 43 (10 + 10 + 11 + 12)
 
 ---
 
-## Future Enhancements (Post-v1.1)
+## Future Enhancements (Post-v1.2)
 
-- **Phase 11**: Claude Multimodal Support (analyze cluster metrics visually, screenshot-based diagnostics)
-- **Phase 12**: Natural Language Runbook Creation (user describes remediation → Jarvis generates YAML runbook)
-- **Phase 13**: Predictive Monitoring (ML-based anomaly detection using historical cluster data)
-- **Phase 14**: Mobile Dashboard (React Native app with push notifications for critical alerts)
+- **Phase 12**: Claude Multimodal Support (analyze cluster metrics visually, screenshot-based diagnostics)
+- **Phase 13**: Natural Language Runbook Creation (user describes remediation → Jarvis generates YAML runbook)
+- **Phase 14**: Predictive Monitoring (ML-based anomaly detection using historical cluster data)
+- **Phase 15**: Mobile Dashboard (React Native app with push notifications for critical alerts)
 
 ---
 

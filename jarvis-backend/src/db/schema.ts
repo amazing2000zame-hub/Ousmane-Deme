@@ -54,6 +54,24 @@ export const preferences = sqliteTable('preferences', {
 });
 
 // ---------------------------------------------------------------------------
+// Memories -- persistent memory with TTL tiers
+// ---------------------------------------------------------------------------
+export const memories = sqliteTable('memories', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tier: text('tier').notNull(),             // 'conversation' | 'episodic' | 'semantic'
+  category: text('category').notNull(),     // 'session_summary' | 'node_event' | 'user_preference' | 'learned_fact' | 'incident' | 'cluster_state'
+  key: text('key').notNull().unique(),
+  content: text('content').notNull(),
+  source: text('source').notNull(),         // 'chat' | 'event' | 'user' | 'system'
+  sessionId: text('session_id'),
+  nodeId: text('node_id'),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at'),            // null = permanent (semantic tier)
+  accessCount: integer('access_count').notNull().default(0),
+  lastAccessedAt: text('last_accessed_at'),
+});
+
+// ---------------------------------------------------------------------------
 // Autonomy Actions -- audit log for autonomous remediation actions
 // ---------------------------------------------------------------------------
 export const autonomyActions = sqliteTable('autonomy_actions', {
