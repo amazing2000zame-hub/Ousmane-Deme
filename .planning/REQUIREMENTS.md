@@ -1,4 +1,4 @@
-# Requirements: Jarvis 3.1 — v1.3 File Operations & Project Intelligence
+# Requirements: Jarvis 3.1 -- v1.3 File Operations & Project Intelligence
 
 **Defined:** 2026-01-26
 **Core Value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
@@ -54,11 +54,11 @@ Deferred to later milestones.
 
 | Feature | Reason |
 |---------|--------|
-| File editing/writing by JARVIS | Too dangerous for v1.3 — read-only project access first |
+| File editing/writing by JARVIS | Too dangerous for v1.3 -- read-only project access first |
 | Git push/commit operations | Write operations deferred, safety implications too high |
 | Real-time file watching | Complexity for little value in homelab context |
-| IDE integration | Out of scope — JARVIS is a chat assistant, not an IDE |
-| Arbitrary command execution for analysis | Already have execute_ssh — project tools should be purpose-built |
+| IDE integration | Out of scope -- JARVIS is a chat assistant, not an IDE |
+| Arbitrary command execution for analysis | Already have execute_ssh -- project tools should be purpose-built |
 
 ## Traceability
 
@@ -66,30 +66,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FILE-01 | TBD | Pending |
-| FILE-02 | TBD | Pending |
-| FILE-03 | TBD | Pending |
-| FILE-04 | TBD | Pending |
-| FILE-05 | TBD | Pending |
-| FILE-06 | TBD | Pending |
-| FILE-07 | TBD | Pending |
-| PROJ-01 | TBD | Pending |
-| PROJ-02 | TBD | Pending |
-| PROJ-03 | TBD | Pending |
-| PROJ-04 | TBD | Pending |
-| PROJ-05 | TBD | Pending |
-| PROJ-06 | TBD | Pending |
-| PROJ-07 | TBD | Pending |
-| VOICE-13 | TBD | Pending |
-| VOICE-14 | TBD | Pending |
-| VOICE-15 | TBD | Pending |
-| VOICE-16 | TBD | Pending |
+| FILE-01 | Phase 12 | Pending |
+| FILE-02 | Phase 12 | Pending |
+| FILE-03 | Phase 12 | Pending |
+| FILE-04 | Phase 12 | Pending |
+| FILE-05 | Phase 12 | Pending |
+| FILE-06 | Phase 12 | Pending |
+| FILE-07 | Phase 12 | Pending |
+| PROJ-01 | Phase 13 | Pending |
+| PROJ-02 | Phase 13 | Pending |
+| PROJ-03 | Phase 13 | Pending |
+| PROJ-04 | Phase 14 | Pending |
+| PROJ-05 | Phase 13 | Pending |
+| PROJ-06 | Phase 13 | Pending |
+| PROJ-07 | Phase 14 | Pending |
+| VOICE-13 | Phase 15 | Pending |
+| VOICE-14 | Phase 15 | Pending |
+| VOICE-15 | Phase 15 | Pending |
+| VOICE-16 | Phase 15 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 18 total
-- Mapped to phases: 0 (pending roadmap creation)
-- Unmapped: 18
+- Mapped to phases: 18
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-26*
-*Last updated: 2026-01-26 after initial definition*
+*Last updated: 2026-01-26 after roadmap creation (traceability filled)*
