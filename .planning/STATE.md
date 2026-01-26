@@ -10,27 +10,28 @@ See: .planning/PROJECT.md (updated 2026-01-26)
 ## Current Position
 
 Phase: 2 of 5 (Real-Time Dashboard & eDEX-UI Visual Identity)
-Plan: 0 of 4 in current phase
-Status: Ready to plan
-Last activity: 2026-01-26 -- Phase 1 complete and verified (5/5 criteria passed)
+Plan: 1 of 6 in current phase
+Status: In progress (plan 02-01 complete, 5 remaining)
+Last activity: 2026-01-26 -- Completed 02-01-PLAN.md (frontend infrastructure)
 
-Progress: [##........] 1/5 phases complete (20%)
+Progress: [##........] 1/5 phases complete, plan 1/6 in phase 2
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 5 min
-- Total execution time: 22 min
+- Total plans completed: 5
+- Average duration: 5.6 min
+- Total execution time: 28 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 4/4 | 22 min | 5.5 min |
+| 02 | 1/6 | 6 min | 6 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (7 min), 01-02 (3 min), 01-04 (5 min), 01-03 (7 min)
+- Last 5 plans: 01-02 (3 min), 01-04 (5 min), 01-03 (7 min), 02-01 (6 min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -59,6 +60,10 @@ Recent decisions affecting current work:
 - [01-04]: Dual migration strategy (drizzle migrator + direct SQL fallback)
 - [01-04]: onConflictDoUpdate for preference upsert semantics
 - [01-04]: JS Date for resolvedAt to avoid drizzle type complexity
+- [02-01]: Events stored in cluster store (not separate) with 100-item ring buffer
+- [02-01]: All socket handlers use named functions for reliable .off() cleanup
+- [02-01]: Auth persist only stores token (isAuthenticated derived on hydration)
+- [02-01]: UI store persists only visualMode (not bootComplete or focusedPanel)
 
 ### Pending Todos
 
@@ -72,6 +77,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-26
-Stopped at: Phase 1 complete and verified. Ready to plan Phase 2.
+Last session: 2026-01-26T08:56:00Z
+Stopped at: Completed 02-01-PLAN.md (frontend infrastructure)
 Resume file: None
