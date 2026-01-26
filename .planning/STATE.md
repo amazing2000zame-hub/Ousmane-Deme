@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Phase 6 -- HUD & Feed Data Pipeline (wire temperature, seed feed, chat events, heartbeat)
+**Current focus:** Phase 6 complete -- all HUD & Feed data pipeline gaps closed
 
 ## Current Position
 
-Phase: 6 of 6 (HUD & Feed Data Pipeline) -- executing
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-01-26 -- Completed 06-01-PLAN.md (event pipeline wiring)
+Phase: 6 of 6 (HUD & Feed Data Pipeline) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: All phases complete
+Last activity: 2026-01-26 -- Completed 06-02-PLAN.md (frontend temperature and event seed)
 
-Progress: [#################.] 17/18 plans complete
+Progress: [##################] 18/18 plans complete
 
 ### Roadmap Evolution
 - Phase 6 added: HUD & Feed Data Pipeline -- wire temperature data to frontend, seed ActivityFeed with event history, emit chat tool executions to feed, implement health heartbeat and storage alerts
@@ -22,9 +22,9 @@ Progress: [#################.] 17/18 plans complete
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
-- Average duration: 5.6 min
-- Total execution time: 99 min
+- Total plans completed: 18
+- Average duration: 5.4 min
+- Total execution time: 102 min
 
 **By Phase:**
 
@@ -34,11 +34,11 @@ Progress: [#################.] 17/18 plans complete
 | 02 | 6/6 | 32 min | 5.3 min |
 | 03 | 3/3 | 19 min | 6.3 min |
 | 04 | 3/3 | 23 min | 7.7 min |
-| 06 | 1/2 | 3 min | 3.0 min |
+| 06 | 2/2 | 6 min | 3.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 06-01 (3 min), 04-02 (11 min), 04-03 (~8 min), 03-01 (~8 min), 03-02 (~6 min)
-- Trend: improving
+- Last 5 plans: 06-02 (3 min), 06-01 (3 min), 04-02 (11 min), 04-03 (~8 min), 03-01 (~8 min)
+- Trend: fast execution on pipeline wiring
 
 *Updated after each plan completion*
 
@@ -120,6 +120,9 @@ Recent decisions affecting current work:
 - [06-01]: eventsNs injected as second parameter to setupChatHandlers (same DI pattern as monitor routes)
 - [06-01]: One event per tool execution (onToolUse only) -- no events for onToolResult/onBlocked to avoid feed spam
 - [06-01]: Storage check has inner try/catch in pollBackground so failures don't block audit cleanup
+- [06-02]: Temperature merge uses n.node field match (NodeData.node always populated by backend)
+- [06-02]: Event mapper parses summary field with bracket-prefix and colon-split heuristics
+- [06-02]: setEvents replaces entire event array (not append) for clean seed on reconnect
 
 ### Pending Todos
 
@@ -133,6 +136,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-26T16:41:46Z
-Stopped at: Completed 06-01-PLAN.md (event pipeline wiring). Next: 06-02-PLAN.md
+Last session: 2026-01-26T16:41:41Z
+Stopped at: Completed 06-02-PLAN.md (frontend temperature and event seed). All 18 plans across 6 phases complete.
 Resume file: None
