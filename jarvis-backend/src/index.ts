@@ -14,6 +14,7 @@ import { setupTerminalHandlers } from './realtime/terminal.js';
 import { setupChatHandlers } from './realtime/chat.js';
 import { costRouter } from './api/cost.js';
 import { memoryRouter } from './api/memory.js';
+import { ttsRouter } from './api/tts.js';
 import { authMiddleware } from './auth/jwt.js';
 import { memoryStore } from './db/memory.js';
 import { startMemoryCleanup, stopMemoryCleanup } from './services/memory-cleanup.js';
@@ -35,6 +36,7 @@ app.use(express.json());
 app.use(router);
 app.use('/api/cost', authMiddleware, costRouter);
 app.use('/api/memory', authMiddleware, memoryRouter);
+app.use('/api/tts', authMiddleware, ttsRouter);
 
 // Set up Socket.IO on the HTTP server
 const { io, clusterNs, eventsNs, terminalNs, chatNs } = setupSocketIO(server);
