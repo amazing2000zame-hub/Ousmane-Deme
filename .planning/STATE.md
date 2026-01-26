@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-01-26)
 ## Current Position
 
 Phase: 2 of 5 (Real-Time Dashboard & eDEX-UI Visual Identity)
-Plan: 1 of 6 in current phase
-Status: In progress (plan 02-01 complete, 5 remaining)
-Last activity: 2026-01-26 -- Completed 02-01-PLAN.md (frontend infrastructure)
+Plan: 2 of 6 in current phase
+Status: In progress (plans 02-01, 02-02 complete, 4 remaining)
+Last activity: 2026-01-26 -- Completed 02-02-PLAN.md (real-time emitter, tool execution, terminal)
 
-Progress: [##........] 1/5 phases complete, plan 1/6 in phase 2
+Progress: [##........] 1/5 phases complete, plan 2/6 in phase 2
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 5.6 min
-- Total execution time: 28 min
+- Total plans completed: 6
+- Average duration: 5.7 min
+- Total execution time: 35 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 4/4 | 22 min | 5.5 min |
-| 02 | 1/6 | 6 min | 6 min |
+| 02 | 2/6 | 13 min | 6.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (3 min), 01-04 (5 min), 01-03 (7 min), 02-01 (6 min)
+- Last 5 plans: 01-04 (5 min), 01-03 (7 min), 02-01 (6 min), 02-02 (7 min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -64,6 +64,11 @@ Recent decisions affecting current work:
 - [02-01]: All socket handlers use named functions for reliable .off() cleanup
 - [02-01]: Auth persist only stores token (isAuthenticated derived on hydration)
 - [02-01]: UI store persists only visualMode (not bootComplete or focusedPanel)
+- [02-02]: Quorum polled at 10s (same as nodes) -- critical cluster health, lightweight API call
+- [02-02]: Temperature via SSH paste command combining zone type + temp in one call
+- [02-02]: On-demand emit before API response return for instant WebSocket client updates
+- [02-02]: Terminal namespace uses case-insensitive node name resolution
+- [02-02]: External timeout for SSH commands via Promise.race (ssh2 ExecOptions lacks timeout)
 
 ### Pending Todos
 
@@ -77,6 +82,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-26T08:56:00Z
-Stopped at: Completed 02-01-PLAN.md (frontend infrastructure)
+Last session: 2026-01-26T08:57:25Z
+Stopped at: Completed 02-02-PLAN.md (real-time emitter, tool execution, terminal)
 Resume file: None
