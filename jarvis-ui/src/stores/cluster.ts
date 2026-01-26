@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { NodeData, VMData, StorageData, QuorumData } from '../types/cluster';
-import type { JarvisEvent } from '../types/events';
+import type { JarvisEvent, MonitorStatus } from '../types/events';
 
 interface ClusterState {
   nodes: NodeData[];
@@ -11,6 +11,7 @@ interface ClusterState {
   events: JarvisEvent[];
   connected: boolean;
   lastUpdate: Record<string, number>;
+  monitorStatus: MonitorStatus | null;
 
   setNodes: (nodes: NodeData[]) => void;
   setVMs: (vms: VMData[]) => void;
@@ -19,6 +20,8 @@ interface ClusterState {
   addEvent: (event: JarvisEvent) => void;
   setConnected: (connected: boolean) => void;
   isStale: (key: string, maxAgeMs: number) => boolean;
+  setMonitorStatus: (status: MonitorStatus) => void;
+  setKillSwitch: (active: boolean) => void;
 }
 
 export const useClusterStore = create<ClusterState>()(
@@ -31,6 +34,7 @@ export const useClusterStore = create<ClusterState>()(
       events: [],
       connected: false,
       lastUpdate: {},
+      monitorStatus: null,
 
       setNodes: (nodes) =>
         set(
@@ -72,6 +76,20 @@ export const useClusterStore = create<ClusterState>()(
 
       setConnected: (connected) =>
         set({ connected }, false, 'cluster/setConnected'),
+
+      setMonitorStatus: (status) =>
+        set({ monitorStatus: status }, false, 'cluster/setMonitorStatus'),
+
+      setKillSwitch: (active) =>
+        set(
+          (state) => ({
+            monitorStatus: state.monitorStatus
+              ? { ...state.monitorStatus, killSwitch: active }
+              : { killSwitch: active, autonomyLevel: 3, running: true },
+          }),
+          false,
+          'cluster/setKillSwitch',
+        ),
 
       isStale: (key, maxAgeMs) => {
         const last = get().lastUpdate[key];

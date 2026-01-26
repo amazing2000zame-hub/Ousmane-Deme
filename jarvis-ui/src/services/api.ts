@@ -47,3 +47,43 @@ export async function executeToolApi(
   }, token);
   return data.result;
 }
+
+/* ── Monitor API ─────────────────────────────────────────────── */
+
+import type { MonitorStatus } from '../types/events';
+
+/** Get current monitor service status */
+export async function getMonitorStatus(token: string): Promise<MonitorStatus> {
+  return apiCall<MonitorStatus>('/api/monitor/status', {}, token);
+}
+
+/** Toggle the autonomous-action kill switch */
+export async function toggleKillSwitch(
+  active: boolean,
+  token: string,
+): Promise<{ killSwitch: boolean }> {
+  return apiCall<{ killSwitch: boolean }>('/api/monitor/killswitch', {
+    method: 'PUT',
+    body: JSON.stringify({ active }),
+  }, token);
+}
+
+/** Set the autonomy level (0-4) */
+export async function setAutonomyLevel(
+  level: number,
+  token: string,
+): Promise<{ autonomyLevel: number }> {
+  return apiCall<{ autonomyLevel: number }>('/api/monitor/autonomy-level', {
+    method: 'PUT',
+    body: JSON.stringify({ level }),
+  }, token);
+}
+
+/** Retrieve recent autonomous actions from the audit log */
+export async function getMonitorActions(
+  token: string,
+  limit?: number,
+): Promise<{ actions: unknown[] }> {
+  const query = limit ? `?limit=${limit}` : '';
+  return apiCall<{ actions: unknown[] }>(`/api/monitor/actions${query}`, {}, token);
+}

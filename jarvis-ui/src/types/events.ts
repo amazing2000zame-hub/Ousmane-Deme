@@ -6,8 +6,16 @@ export interface JarvisEvent {
   title: string;
   message: string;
   node?: string;
+  source?: 'monitor' | 'user' | 'jarvis' | 'system';  // event origin for UI filtering
   timestamp: string;     // ISO 8601
   resolvedAt?: string;   // ISO 8601
+}
+
+/** Monitor service status for dashboard display */
+export interface MonitorStatus {
+  killSwitch: boolean;
+  autonomyLevel: number;
+  running: boolean;
 }
 
 /** Result of an MCP tool execution */
