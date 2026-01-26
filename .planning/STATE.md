@@ -5,33 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Phase 2 -- Real-Time Dashboard & eDEX-UI Visual Identity
+**Current focus:** Phase 3 -- AI Chat & Claude Integration
 
 ## Current Position
 
-Phase: 2 of 5 (Real-Time Dashboard & eDEX-UI Visual Identity)
-Plan: 5 of 6 in current phase
-Status: In progress (plans 02-01 through 02-05 complete; 02-06 remaining)
-Last activity: 2026-01-26 -- Completed 02-04-PLAN.md (VM controls, storage panel, activity feed)
+Phase: 3 of 5 (AI Chat & Claude Integration)
+Plan: 0 of 3 in current phase
+Status: Ready to plan
+Last activity: 2026-01-26 -- Completed Phase 2 (dashboard, eDEX-UI, globe HUD, 5-theme system)
 
-Progress: [##........] 1/5 phases complete, plan 5/6 in phase 2
+Progress: [####......] 2/5 phases complete
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
-- Average duration: 5.3 min
-- Total execution time: 48 min
+- Total plans completed: 10
+- Average duration: 5.4 min
+- Total execution time: 54 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 4/4 | 22 min | 5.5 min |
-| 02 | 5/6 | 26 min | 5.2 min |
+| 02 | 6/6 | 32 min | 5.3 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (6 min), 02-02 (7 min), 02-05 (3 min), 02-03 (5 min), 02-04 (5 min)
+- Last 5 plans: 02-02 (7 min), 02-05 (3 min), 02-03 (5 min), 02-04 (5 min), 02-06 (6 min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -80,6 +80,11 @@ Recent decisions affecting current work:
 - [02-04]: GlowBorder enhanced with cyan color, visual mode awareness, className prop
 - [02-04]: ConfirmDialog uses Escape key and backdrop click for cancel (accessibility)
 - [02-04]: ActivityFeed auto-scrolls to top on new events (newest first rendering)
+- [02-06]: 5-colorway theme system via CSS custom property overrides ([data-theme="X"] selectors)
+- [02-06]: Iron Man 3 wireframe globe HUD with CSS 3D transforms (no Three.js dependency)
+- [02-06]: RadialDataRing SVG arcs for per-node CPU visualization around globe
+- [02-06]: Theme picker hidden behind CFG dropdown in TopBar to reduce clutter
+- [02-06]: Terminal toggle (>_) button in TopBar, collapsed terminal fully hides (0px) preserving xterm state
 
 ### Pending Todos
 
@@ -93,6 +98,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-26T09:09:47Z
-Stopped at: Completed 02-04-PLAN.md (VM controls, storage panel, activity feed)
+Last session: 2026-01-26
+Stopped at: Phase 2 complete, ready for Phase 3 planning
 Resume file: None

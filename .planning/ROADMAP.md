@@ -7,7 +7,7 @@ Jarvis 3.1 transforms a 4-node Proxmox homelab cluster into an AI-operated comma
 ## Milestone 1: MVP
 
 - [x] **Phase 1: Backend Foundation & Safety Layer** - Express 5 API, MCP tool server, SQLite memory schema, Proxmox REST client, SSH client, safety framework
-- [ ] **Phase 2: Real-Time Dashboard & eDEX-UI Visual Identity** - React 19 SPA, 3-column layout, live cluster monitoring, xterm.js terminal, sci-fi aesthetic
+- [x] **Phase 2: Real-Time Dashboard & eDEX-UI Visual Identity** - React 19 SPA, 3-column layout, live cluster monitoring, xterm.js terminal, sci-fi aesthetic
 - [ ] **Phase 3: AI Chat & Claude Integration** - Chat interface, Claude API tool calling, JARVIS personality, action confirmation UX
 - [ ] **Phase 4: Autonomous Monitoring & Remediation** - Background monitoring loop, threshold alerts, auto-remediation runbooks, activity feed, email reports
 - [ ] **Phase 5: Hybrid LLM Intelligence & Persistent Memory** - Qwen routing, unified LLM abstraction, persistent memory with TTLs, cost tracking, context management
@@ -130,12 +130,12 @@ Plans:
 **Plans**: 6 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Frontend scaffold upgrade (Tailwind v4, Zustand, Socket.IO client, types, stores, hooks, theme)
-- [ ] 02-02-PLAN.md -- Backend additions (real-time emitter, tool execution endpoint, terminal Socket.IO namespace)
-- [ ] 02-03-PLAN.md -- Dashboard layout + node health grid (3-column shell, TopBar, NodeGrid, NodeCard, shared components)
-- [ ] 02-04-PLAN.md -- VM/CT controls + storage + center display (VMList, VMCard, StoragePanel, ActivityFeed, ConfirmDialog)
-- [ ] 02-05-PLAN.md -- Terminal panel (xterm.js, SSH PTY via Socket.IO, node selector, useTerminal hook)
-- [ ] 02-06-PLAN.md -- eDEX-UI visual layer (boot sequence, scan lines, glow effects, visual modes, keyboard shortcuts, responsive)
+- [x] 02-01-PLAN.md -- Frontend scaffold upgrade (Tailwind v4, Zustand, Socket.IO client, types, stores, hooks, theme)
+- [x] 02-02-PLAN.md -- Backend additions (real-time emitter, tool execution endpoint, terminal Socket.IO namespace)
+- [x] 02-03-PLAN.md -- Dashboard layout + node health grid (3-column shell, TopBar, NodeGrid, NodeCard, shared components)
+- [x] 02-04-PLAN.md -- VM/CT controls + storage + center display (VMList, VMCard, StoragePanel, ActivityFeed, ConfirmDialog)
+- [x] 02-05-PLAN.md -- Terminal panel (xterm.js, SSH PTY via Socket.IO, node selector, useTerminal hook)
+- [x] 02-06-PLAN.md -- eDEX-UI visual layer (boot sequence, scan lines, glow effects, visual modes, keyboard shortcuts, responsive)
 
 ---
 
@@ -381,7 +381,7 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
 | 1. Backend Foundation & Safety Layer | 4/4 | Complete | 2026-01-26 |
-| 2. Real-Time Dashboard & eDEX-UI | 0/6 | Planning complete | - |
+| 2. Real-Time Dashboard & eDEX-UI | 6/6 | Complete | 2026-01-26 |
 | 3. AI Chat & Claude Integration | 0/3 | Not started | - |
 | 4. Autonomous Monitoring & Remediation | 0/3 | Not started | - |
 | 5. Hybrid LLM Intelligence & Persistent Memory | 0/3 | Not started | - |
