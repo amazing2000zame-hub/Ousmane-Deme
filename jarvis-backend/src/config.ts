@@ -36,6 +36,12 @@ export const config = {
     { name: 'agent', host: '192.168.1.62' },
   ] as ClusterNode[],
 
+  // Claude AI
+  claudeModel: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+  claudeMaxTokens: parseInt(process.env.CLAUDE_MAX_TOKENS || '4096', 10),
+  chatHistoryLimit: parseInt(process.env.CHAT_HISTORY_LIMIT || '20', 10),
+  chatMaxLoopIterations: parseInt(process.env.CHAT_MAX_LOOP || '10', 10),
+
   // CORS
   corsOrigins: [
     'http://192.168.1.65:3004',
