@@ -5,23 +5,26 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Phase 4 -- Autonomous Monitoring & Remediation
+**Current focus:** Phase 6 -- HUD & Feed Data Pipeline (wire temperature, seed feed, chat events, heartbeat)
 
 ## Current Position
 
-Phase: 4 of 5 (Autonomous Monitoring & Remediation)
-Plan: 2 of 3 in current phase
+Phase: 6 of 6 (HUD & Feed Data Pipeline) -- executing
+Plan: 1 of 2 in current phase
 Status: In progress
-Last activity: 2026-01-26 -- Completed 04-02-PLAN.md (remediation engine, guardrails, reporter)
+Last activity: 2026-01-26 -- Completed 06-01-PLAN.md (event pipeline wiring)
 
-Progress: [############....] 12/16 plans complete (75%)
+Progress: [#################.] 17/18 plans complete
+
+### Roadmap Evolution
+- Phase 6 added: HUD & Feed Data Pipeline -- wire temperature data to frontend, seed ActivityFeed with event history, emit chat tool executions to feed, implement health heartbeat and storage alerts
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 5.8 min
-- Total execution time: 69 min
+- Total plans completed: 17
+- Average duration: 5.6 min
+- Total execution time: 99 min
 
 **By Phase:**
 
@@ -29,11 +32,13 @@ Progress: [############....] 12/16 plans complete (75%)
 |-------|-------|-------|----------|
 | 01 | 4/4 | 22 min | 5.5 min |
 | 02 | 6/6 | 32 min | 5.3 min |
-| 04 | 2/3 | 15 min | 7.5 min |
+| 03 | 3/3 | 19 min | 6.3 min |
+| 04 | 3/3 | 23 min | 7.7 min |
+| 06 | 1/2 | 3 min | 3.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-04 (5 min), 02-06 (6 min), 04-01 (4 min), 04-02 (11 min)
-- Trend: consistent
+- Last 5 plans: 06-01 (3 min), 04-02 (11 min), 04-03 (~8 min), 03-01 (~8 min), 03-02 (~6 min)
+- Trend: improving
 
 *Updated after each plan completion*
 
@@ -96,6 +101,25 @@ Recent decisions affecting current work:
 - [04-02]: Escalation emails bypass 5-minute rate limit -- always sent
 - [04-02]: Runbook execution fire-and-forget from pollCritical() -- never blocks poll loop
 - [04-02]: Stale remediation cleanup at 10-minute timeout prevents blast radius deadlock
+- [04-03]: Source field optional on JarvisEvent for backward compat with pre-monitor events
+- [04-03]: Optimistic kill switch toggle -- setKillSwitch before API, revert on error
+- [04-03]: Remediation border color derived from title keywords (detected=amber, remediating=cyan, resolved=green, escalation=red)
+- [04-03]: Filter buttons match J/O/M mode button styling for eDEX-UI consistency
+- [04-03]: Monitor status fetched on socket connect (not separate polling) to avoid redundant API calls
+- [03-01]: Claude client null when ANTHROPIC_API_KEY not set -- claudeAvailable flag gates usage
+- [03-01]: Tool definitions hardcoded for LLM-optimized descriptions, not auto-converted from Zod
+- [03-01]: Smart routing: keyword detection routes to Claude (tools) or local Qwen (conversation)
+- [03-01]: Override passkey ('override alpha') temporarily elevates BLACK/RED restrictions
+- [03-01]: Max loop iterations (10) with final iteration omitting tools to force text response
+- [03-02]: uid() fallback for crypto.randomUUID in HTTP (non-secure) contexts
+- [03-02]: Chat store not persisted -- sessions ephemeral until Phase 5 memory
+- [03-02]: useChatStore.getState() in socket handlers avoids stale closures
+- [03-03]: ConfirmCard internal responded state prevents double-click on AUTHORIZE/DENY
+- [03-03]: describeAction() generates readable summaries from toolName + input params
+- [03-03]: GlowBorder amber for confirm, red for blocked -- matches eDEX-UI severity aesthetic
+- [06-01]: eventsNs injected as second parameter to setupChatHandlers (same DI pattern as monitor routes)
+- [06-01]: One event per tool execution (onToolUse only) -- no events for onToolResult/onBlocked to avoid feed spam
+- [06-01]: Storage check has inner try/catch in pollBackground so failures don't block audit cleanup
 
 ### Pending Todos
 
@@ -109,6 +133,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-26
-Stopped at: Completed 04-02-PLAN.md, ready for 04-03
+Last session: 2026-01-26T16:41:46Z
+Stopped at: Completed 06-01-PLAN.md (event pipeline wiring). Next: 06-02-PLAN.md
 Resume file: None
