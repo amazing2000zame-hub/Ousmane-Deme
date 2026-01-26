@@ -5,32 +5,32 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Phase 1 -- Backend Foundation & Safety Layer
+**Current focus:** Phase 1 COMPLETE -- Backend Foundation & Safety Layer
 
 ## Current Position
 
 Phase: 1 of 5 (Backend Foundation & Safety Layer)
-Plan: 3 of 4 in current phase
-Status: In progress
-Last activity: 2026-01-26 -- Completed 01-04-PLAN.md (SQLite Persistence Layer)
+Plan: 4 of 4 in current phase
+Status: Phase complete
+Last activity: 2026-01-26 -- Completed 01-03-PLAN.md (MCP Tools & Safety Layer)
 
-Progress: [#######...] 3/4 Phase 1 plans complete (75%)
+Progress: [##########] 4/4 Phase 1 plans complete (100%)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 5 min
-- Total execution time: 15 min
+- Total execution time: 22 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 3/4 | 15 min | 5 min |
+| 01 | 4/4 | 22 min | 5.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (7 min), 01-02 (3 min), 01-04 (5 min)
+- Last 5 plans: 01-01 (7 min), 01-02 (3 min), 01-04 (5 min), 01-03 (7 min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -52,6 +52,10 @@ Recent decisions affecting current work:
 - [01-01]: All Phase 1 deps installed upfront in 01-01
 - [01-02]: PVEAPIToken auth format, self-signed TLS via env var, SSH privateKeyPath not privateKey
 - [01-02]: SSH connection pool with auto-reconnect on stale connections
+- [01-03]: 4-tier safety with BLACK default (unknown tools blocked by fail-safe)
+- [01-03]: Command allowlist (default-deny) for SSH commands with 50+ safe patterns
+- [01-03]: Handler capture via McpServer.tool() monkey-patch for in-process executeTool()
+- [01-03]: SSH closeAllConnections() integrated into graceful shutdown
 - [01-04]: Dual migration strategy (drizzle migrator + direct SQL fallback)
 - [01-04]: onConflictDoUpdate for preference upsert semantics
 - [01-04]: JS Date for resolvedAt to avoid drizzle type complexity
@@ -64,10 +68,10 @@ None.
 
 - Proxmox API tokens (`root@pam!jarvis`) do not exist yet -- must be created manually on each PVE node before Phase 1 backend can connect
 - Self-signed TLS on Proxmox nodes handled via NODE_TLS_REJECT_UNAUTHORIZED=0 env var
-- closeAllConnections() should be integrated into server shutdown handler
+- ~~closeAllConnections() should be integrated into server shutdown handler~~ (RESOLVED in 01-03)
 
 ## Session Continuity
 
-Last session: 2026-01-26T07:19:44Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-01-26T07:29:24Z
+Stopped at: Completed 01-03-PLAN.md (Phase 1 complete)
 Resume file: None
