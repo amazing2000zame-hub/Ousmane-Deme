@@ -25,17 +25,25 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 
 ### Active
 
-- [ ] eDEX-UI / Iron Man style dashboard with 3-column layout
-- [ ] Live Proxmox cluster status (nodes, VMs, containers, resources)
-- [ ] Jarvis activity panel (status, feed, chat interface)
-- [ ] System terminal panel (eDEX-style command input)
-- [ ] MCP tool server exposing Proxmox API, system commands, Docker management
-- [ ] Hybrid LLM backend (Claude API for complex tasks, local Qwen for routine ops)
-- [ ] JARVIS personality (Iron Man -- witty, formal, British butler humor)
-- [ ] Autonomous monitoring and remediation (act + report)
-- [ ] Persistent memory system (cluster state, actions, preferences, history)
-- [ ] Real-time data updates via WebSocket
-- [ ] Multi-device responsive (dedicated display, desktop, mobile)
+- [ ] Hybrid LLM backend (Claude API for complex tasks, local Qwen for routine ops) -- Phase 5: Qwen routing, unified abstraction, cost tracking
+- [ ] Persistent memory system with tiered TTLs (cluster state, actions, preferences, history) -- Phase 5: TTLs, consolidation, context management
+- [ ] Docker deployment to management VM (192.168.1.65) -- code complete, needs containerization and deployment
+- [ ] End-to-end testing against live cluster -- validate all features work with real Proxmox API
+
+### Validated
+
+- eDEX-UI / Iron Man style dashboard with 3-column layout -- v1.0
+- Live Proxmox cluster status (nodes, VMs, containers, resources) -- v1.0
+- Jarvis activity panel (status, feed, chat interface) -- v1.0
+- System terminal panel (eDEX-style command input) -- v1.0
+- MCP tool server exposing Proxmox API, system commands, Docker management -- v1.0 (18 tools, 4-tier safety)
+- JARVIS personality (Iron Man -- witty, formal, British butler humor) -- v1.0
+- Autonomous monitoring and remediation (act + report) -- v1.0 (runbooks, kill switch, email escalation)
+- Real-time data updates via WebSocket -- v1.0 (Socket.IO 4 namespaces)
+- Multi-device responsive (dedicated display, desktop, mobile) -- v1.0
+- HUD temperature data pipeline -- v1.0 (backend emitter to NodeCard display)
+- ActivityFeed event history seeding -- v1.0 (DB events fetched on page load)
+- Health heartbeat and storage alerts -- v1.0 (5-min heartbeat, 30-min storage check)
 
 ### Out of Scope
 
@@ -45,6 +53,15 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - Multi-user permissions -- single operator for now
 - Smart home integration -- Proxmox cluster focus only for v1
 - Mobile native app -- responsive web handles mobile
+
+## Current State (v1.0 shipped 2026-01-26)
+
+- **Backend**: 6,196 LOC TypeScript -- Express 5, Socket.IO, MCP SDK, better-sqlite3, Drizzle ORM
+- **Frontend**: 4,393 LOC TypeScript/TSX + 209 LOC CSS -- React 19, Vite 6, Tailwind v4, Zustand, xterm.js
+- **Source files**: 93 across backend and frontend
+- **Git commits**: 75
+- **Tech stack**: Node.js 22, React 19, Socket.IO 4, Claude API, Qwen 2.5 7B, SQLite, Docker
+- **Deployment**: Not yet deployed to management VM (code on Home node at /root/jarvis-backend and /root/jarvis-ui)
 
 ## Context
 
@@ -106,4 +123,4 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 | Safety-first Phase 1 | CRITICAL pitfalls must be architectural, not retrofitted | Confirmed -- dependency DAG + command allowlist |
 
 ---
-*Last updated: 2026-01-26 after research and roadmap completion*
+*Last updated: 2026-01-26 after v1.0 milestone*
