@@ -1,0 +1,53 @@
+# Jarvis 3.1 - Proxmox Homelab Cluster Management
+# ================================================
+
+services:
+  jarvis-backend:
+    build:
+      context: ./jarvis-backend
+    container_name: jarvis-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - jarvis-data:/data
+      - /root/.ssh/id_ed25519:/app/.ssh/id_ed25519:ro
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=4000
+      - DB_PATH=/data/jarvis.db
+      - JWT_SECRET=${JWT_SECRET}
+      - JARVIS_PASSWORD=${JARVIS_PASSWORD}
+      - PVE_TOKEN_ID=${PVE_TOKEN_ID:-root@pam!jarvis}
+      - PVE_TOKEN_SECRET=${PVE_TOKEN_SECRET}
+      - SSH_KEY_PATH=/app/.ssh/id_ed25519
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+    networks:
+      - jarvis-net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # jarvis-frontend:
+  #   build:
+  #     context: ./jarvis-ui
+  #   container_name: jarvis-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3004:3004"
+  #   networks:
+  #     - jarvis-net
+  #   depends_on:
+  #     jarvis-backend:
+  #       condition: service_healthy
+
+volumes:
+  jarvis-data:
+    driver: local
+
+networks:
+  jarvis-net:
+    driver: bridge
