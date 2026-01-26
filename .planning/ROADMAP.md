@@ -8,7 +8,7 @@ Jarvis 3.1 v1.1 transforms the working v1.0 prototype into a production-ready AI
 
 - ✅ **v1.0 MVP** - Phases 1-6 (shipped 2026-01-26)
 - ✅ **v1.1 Hybrid Intelligence & Deployment** - Phases 7-10 (shipped 2026-01-26)
-- 📋 **v1.2 JARVIS Voice & Personality** - Phase 11 (planned)
+- ✅ **v1.2 JARVIS Voice & Personality** - Phase 11 (shipped 2026-01-26)
 
 ## Phases
 
@@ -86,32 +86,21 @@ Plans:
 - [x] 10-01-PLAN.md — Vitest config, router tests (18), safety tests (21), cost tracker tests (6)
 - [x] 10-02-PLAN.md — Memory extractor tests (9), memory recall tests (10)
 
-### 📋 v1.2 JARVIS Voice & Personality (Planned)
+### ✅ v1.2 JARVIS Voice & Personality (Shipped 2026-01-26)
 
 **Milestone Goal:** Give Jarvis a voice. Text-to-speech output with a JARVIS (Iron Man) personality — British, formal, witty, confident. Optional voice input via speech-to-text. Audio visualization in the HUD. The AI assistant should *sound* like a real JARVIS, not a generic TTS robot.
 
-#### Phase 11: JARVIS Voice Engine
+#### ✅ Phase 11: JARVIS Voice Engine
 **Goal**: Text-to-speech and speech-to-text integration giving Jarvis an Iron Man JARVIS voice with full personality
 **Depends on**: Phase 10 (v1.1 complete, stable deployed system)
 **Requirements**: VOICE-01, VOICE-02, VOICE-03, VOICE-04, VOICE-05, VOICE-06, VOICE-07, VOICE-08, VOICE-09, VOICE-10, VOICE-11, VOICE-12
-**Success Criteria** (what must be TRUE):
-  1. Every Jarvis response can be played as audio with a British male voice that sounds like a refined AI butler (not robotic)
-  2. User can toggle voice on/off — when enabled, responses auto-play; when disabled, text-only (existing behavior preserved)
-  3. Audio visualizer in the HUD shows waveform/spectrum while Jarvis speaks, matching the Iron Man aesthetic
-  4. User can speak to Jarvis via microphone — speech-to-text converts voice to chat input
-  5. Jarvis personality is distinctly JARVIS: formal address ("sir"), dry wit, understated confidence, concise situational commentary
-  6. Voice latency is under 2 seconds from response completion to audio playback start (streaming TTS if possible)
-  7. TTS works with both Claude and Qwen responses (provider-agnostic)
-  8. Voice settings (speed, pitch, volume, auto-play) persist in localStorage
-  9. Wake-word detection ("JARVIS") optionally activates voice input without clicking
-  10. Cost tracking extends to TTS API usage (if using cloud TTS like ElevenLabs)
-**Plans**: TBD
+**Status**: Complete (4 commits: 0271364, f4669ea, a83e8b5, 9ac79b2)
 
 Plans:
-- [ ] 11-01: TBD — TTS provider integration (ElevenLabs / local Piper TTS / browser SpeechSynthesis)
-- [ ] 11-02: TBD — Speech-to-text input (Web Speech API / Whisper local)
-- [ ] 11-03: TBD — Audio visualizer HUD component + voice settings panel
-- [ ] 11-04: TBD — JARVIS personality tuning (system prompt, voice characteristics, wake word)
+- [x] 11-01-PLAN.md — TTS backend endpoint (OpenAI TTS API) + voice store
+- [x] 11-02-PLAN.md — Frontend audio playback, auto-play & audio visualizer
+- [x] 11-03-PLAN.md — Speech-to-text input with mic button & wake word
+- [x] 11-04-PLAN.md — Voice settings panel + voice-aware personality tuning
 
 ---
 
