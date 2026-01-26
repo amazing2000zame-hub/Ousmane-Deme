@@ -21,6 +21,7 @@ export function setupSocketIO(server: HttpServer) {
   const clusterNs = io.of('/cluster');
   const eventsNs = io.of('/events');
   const terminalNs = io.of('/terminal');
+  const chatNs = io.of('/chat');
 
   // JWT auth middleware for namespaces
   const socketAuthMiddleware = (
@@ -45,6 +46,7 @@ export function setupSocketIO(server: HttpServer) {
   clusterNs.use(socketAuthMiddleware);
   eventsNs.use(socketAuthMiddleware);
   terminalNs.use(socketAuthMiddleware);
+  chatNs.use(socketAuthMiddleware);
 
   // Connection logging
   clusterNs.on('connection', (socket) => {
@@ -61,7 +63,7 @@ export function setupSocketIO(server: HttpServer) {
     });
   });
 
-  console.log('[Socket.IO] WebSocket server initialized with /cluster, /events, and /terminal namespaces');
+  console.log('[Socket.IO] WebSocket server initialized with /cluster, /events, /terminal, and /chat namespaces');
 
-  return { io, clusterNs, eventsNs, terminalNs };
+  return { io, clusterNs, eventsNs, terminalNs, chatNs };
 }

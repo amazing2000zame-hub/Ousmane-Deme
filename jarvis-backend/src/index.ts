@@ -9,6 +9,7 @@ import { getToolList } from './mcp/server.js';
 import { closeAllConnections } from './clients/ssh.js';
 import { startEmitter, stopEmitter } from './realtime/emitter.js';
 import { setupTerminalHandlers } from './realtime/terminal.js';
+import { setupChatHandlers } from './realtime/chat.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -27,10 +28,10 @@ app.use(express.json());
 app.use(router);
 
 // Set up Socket.IO on the HTTP server
-const { io, clusterNs, eventsNs, terminalNs } = setupSocketIO(server);
+const { io, clusterNs, eventsNs, terminalNs, chatNs } = setupSocketIO(server);
 
 // Export for use by other modules (e.g., emitting events)
-export { io, clusterNs, eventsNs, terminalNs };
+export { io, clusterNs, eventsNs, terminalNs, chatNs };
 
 // Run database migrations, then start listening
 try {
@@ -52,6 +53,10 @@ startEmitter(clusterNs);
 
 // Register SSH PTY terminal handlers on the /terminal namespace
 setupTerminalHandlers(terminalNs);
+
+// Register AI chat handlers on the /chat namespace
+setupChatHandlers(chatNs);
+console.log('[Chat] AI chat handler initialized on /chat namespace');
 
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
 server.listen(config.port, () => {
