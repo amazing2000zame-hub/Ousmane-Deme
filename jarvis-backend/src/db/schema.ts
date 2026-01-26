@@ -49,3 +49,25 @@ export const preferences = sqliteTable('preferences', {
   value: text('value').notNull(),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 });
+
+// ---------------------------------------------------------------------------
+// Autonomy Actions -- audit log for autonomous remediation actions
+// ---------------------------------------------------------------------------
+export const autonomyActions = sqliteTable('autonomy_actions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  timestamp: text('timestamp').notNull().default(sql`(datetime('now'))`),
+  incidentKey: text('incident_key').notNull(),
+  incidentId: text('incident_id').notNull(),
+  runbookId: text('runbook_id').notNull(),
+  condition: text('condition').notNull(),
+  action: text('action').notNull(),
+  actionArgs: text('action_args'),
+  result: text('result', { enum: ['success', 'failure', 'blocked', 'escalated'] }).notNull(),
+  resultDetails: text('result_details'),
+  verificationResult: text('verification_result'),
+  autonomyLevel: integer('autonomy_level').notNull(),
+  node: text('node'),
+  attemptNumber: integer('attempt_number').notNull().default(1),
+  escalated: integer('escalated', { mode: 'boolean' }).notNull().default(false),
+  emailSent: integer('email_sent', { mode: 'boolean' }).notNull().default(false),
+});

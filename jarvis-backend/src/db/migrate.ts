@@ -73,6 +73,29 @@ export async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_events_resolved ON events(resolved);
     CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id);
     CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON cluster_snapshots(timestamp);
+
+    CREATE TABLE IF NOT EXISTS autonomy_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+      incident_key TEXT NOT NULL,
+      incident_id TEXT NOT NULL,
+      runbook_id TEXT NOT NULL,
+      condition TEXT NOT NULL,
+      action TEXT NOT NULL,
+      action_args TEXT,
+      result TEXT NOT NULL,
+      result_details TEXT,
+      verification_result TEXT,
+      autonomy_level INTEGER NOT NULL,
+      node TEXT,
+      attempt_number INTEGER NOT NULL DEFAULT 1,
+      escalated INTEGER NOT NULL DEFAULT 0,
+      email_sent INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_autonomy_actions_timestamp ON autonomy_actions(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_autonomy_actions_incident_key ON autonomy_actions(incident_key);
+    CREATE INDEX IF NOT EXISTS idx_autonomy_actions_result ON autonomy_actions(result);
   `);
 
   console.log('Database migrations applied (direct SQL)');

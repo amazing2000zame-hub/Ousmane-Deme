@@ -1,6 +1,6 @@
-import { eq, desc, gte, sql } from 'drizzle-orm';
+import { eq, desc, gte, and, sql, count } from 'drizzle-orm';
 import { db } from './index.js';
-import { events, conversations, clusterSnapshots, preferences } from './schema.js';
+import { events, conversations, clusterSnapshots, preferences, autonomyActions } from './schema.js';
 
 // ---------------------------------------------------------------------------
 // Event operations
@@ -140,6 +140,78 @@ function getAllPreferences() {
 }
 
 // ---------------------------------------------------------------------------
+// Autonomy Action operations
+// ---------------------------------------------------------------------------
+
+interface SaveAutonomyActionInput {
+  incidentKey: string;
+  incidentId: string;
+  runbookId: string;
+  condition: string;
+  action: string;
+  actionArgs?: string | null;
+  result: 'success' | 'failure' | 'blocked' | 'escalated';
+  resultDetails?: string | null;
+  verificationResult?: string | null;
+  autonomyLevel: number;
+  node?: string | null;
+  attemptNumber?: number;
+  escalated?: boolean;
+  emailSent?: boolean;
+}
+
+function saveAutonomyAction(input: SaveAutonomyActionInput) {
+  return db.insert(autonomyActions).values({
+    incidentKey: input.incidentKey,
+    incidentId: input.incidentId,
+    runbookId: input.runbookId,
+    condition: input.condition,
+    action: input.action,
+    actionArgs: input.actionArgs ?? null,
+    result: input.result,
+    resultDetails: input.resultDetails ?? null,
+    verificationResult: input.verificationResult ?? null,
+    autonomyLevel: input.autonomyLevel,
+    node: input.node ?? null,
+    attemptNumber: input.attemptNumber ?? 1,
+    escalated: input.escalated ?? false,
+    emailSent: input.emailSent ?? false,
+  }).returning().get();
+}
+
+function getAutonomyActions(limit = 50) {
+  return db.select().from(autonomyActions).orderBy(desc(autonomyActions.timestamp)).limit(limit).all();
+}
+
+function getActionsByIncidentKey(key: string, limit = 20) {
+  return db.select().from(autonomyActions)
+    .where(eq(autonomyActions.incidentKey, key))
+    .orderBy(desc(autonomyActions.timestamp))
+    .limit(limit)
+    .all();
+}
+
+function getAttemptCountSince(incidentKey: string, sinceTimestamp: string) {
+  const result = db.select({ value: count() }).from(autonomyActions)
+    .where(and(
+      eq(autonomyActions.incidentKey, incidentKey),
+      gte(autonomyActions.timestamp, sinceTimestamp),
+    ))
+    .get();
+  return result?.value ?? 0;
+}
+
+function cleanupOldActions(olderThanDays = 30) {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace('T', ' ')
+    .slice(0, 19);
+  return db.delete(autonomyActions)
+    .where(sql`${autonomyActions.timestamp} < ${cutoff}`)
+    .run();
+}
+
+// ---------------------------------------------------------------------------
 // Export public API
 // ---------------------------------------------------------------------------
 
@@ -167,4 +239,11 @@ export const memoryStore = {
   getPreference,
   setPreference,
   getAllPreferences,
+
+  // Autonomy Actions
+  saveAutonomyAction,
+  getAutonomyActions,
+  getActionsByIncidentKey,
+  getAttemptCountSince,
+  cleanupOldActions,
 };
