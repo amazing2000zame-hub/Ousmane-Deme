@@ -1,5 +1,7 @@
 # Jarvis 3.1 - Proxmox Homelab Cluster Management
 # ================================================
+# Deploy: docker compose up -d --build
+# Remote:  ssh root@192.168.1.65 'cd /opt/jarvis && docker compose up -d --build'
 
 services:
   jarvis-backend:
@@ -7,11 +9,13 @@ services:
       context: ./jarvis-backend
     container_name: jarvis-backend
     restart: unless-stopped
+    stop_grace_period: 15s
     ports:
       - "4000:4000"
     volumes:
       - jarvis-data:/data
       - /root/.ssh/id_ed25519:/app/.ssh/id_ed25519:ro
+      - /root/.ssh/known_hosts:/app/.ssh/known_hosts:ro
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=4000
@@ -22,6 +26,10 @@ services:
       - PVE_TOKEN_SECRET=${PVE_TOKEN_SECRET}
       - SSH_KEY_PATH=/app/.ssh/id_ed25519
       - NODE_TLS_REJECT_UNAUTHORIZED=0
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - JARVIS_OVERRIDE_KEY=${JARVIS_OVERRIDE_KEY}
+      - LOCAL_LLM_ENDPOINT=${LOCAL_LLM_ENDPOINT:-http://192.168.1.50:8080}
+      - DAILY_COST_LIMIT=${DAILY_COST_LIMIT:-10.0}
     networks:
       - jarvis-net
     healthcheck:
@@ -30,19 +38,36 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # jarvis-frontend:
-  #   build:
-  #     context: ./jarvis-ui
-  #   container_name: jarvis-frontend
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3004:3004"
-  #   networks:
-  #     - jarvis-net
-  #   depends_on:
-  #     jarvis-backend:
-  #       condition: service_healthy
+  jarvis-frontend:
+    build:
+      context: ./jarvis-ui
+      args:
+        VITE_BACKEND_URL: ""
+    container_name: jarvis-frontend
+    restart: unless-stopped
+    ports:
+      - "3004:80"
+    networks:
+      - jarvis-net
+    depends_on:
+      jarvis-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
 volumes:
   jarvis-data:

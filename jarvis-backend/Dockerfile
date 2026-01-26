@@ -35,4 +35,9 @@ RUN mkdir -p /data
 
 EXPOSE 4000
 
+STOPSIGNAL SIGTERM
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+  CMD wget --spider -q http://localhost:4000/api/health || exit 1
+
 CMD ["node", "dist/index.js"]
