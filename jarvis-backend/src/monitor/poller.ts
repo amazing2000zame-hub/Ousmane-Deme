@@ -19,8 +19,9 @@ import type { NodeData, VMData } from '../realtime/emitter.js';
 import { StateTracker } from './state-tracker.js';
 import { ThresholdEvaluator } from './thresholds.js';
 import { memoryStore } from '../db/memory.js';
-import type { StateChange, ThresholdViolation } from './types.js';
+import type { StateChange, ThresholdViolation, Incident } from './types.js';
 import { config, type ClusterNode } from '../config.js';
+import { executeRunbook } from './runbooks.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -145,6 +146,26 @@ export async function pollCritical(
       });
 
       console.log(`[Monitor] State change: ${title} -- ${message}`);
+    }
+
+    // Trigger runbook execution for each state change (fire-and-forget)
+    for (const change of allChanges) {
+      const incident: Incident = {
+        id: crypto.randomUUID(),
+        key: `${change.type}:${change.target}`,
+        type: change.type,
+        node: change.node,
+        target: change.target,
+        detectedAt: new Date().toISOString(),
+        details: {
+          previousState: change.previousState,
+          currentState: change.currentState,
+        },
+      };
+
+      executeRunbook(incident, eventsNs).catch(err =>
+        console.error('[Monitor] Runbook error:', err instanceof Error ? err.message : err)
+      );
     }
   } catch (err) {
     console.error('[Monitor] Critical poll error:', err instanceof Error ? err.message : err);

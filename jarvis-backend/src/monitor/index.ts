@@ -14,6 +14,7 @@ import type { Namespace } from 'socket.io';
 import { StateTracker } from './state-tracker.js';
 import { ThresholdEvaluator } from './thresholds.js';
 import { pollCritical, pollImportant, pollRoutine, pollBackground } from './poller.js';
+import { isKillSwitchActive, getCurrentAutonomyLevel, getActiveRemediationCount } from './guardrails.js';
 
 const intervals: ReturnType<typeof setInterval>[] = [];
 let running = false;
@@ -115,4 +116,21 @@ export function stopMonitor(): void {
  */
 export function isMonitorRunning(): boolean {
   return running;
+}
+
+/**
+ * Get aggregated monitor status for the REST API.
+ */
+export function getMonitorStatus(): {
+  running: boolean;
+  autonomyLevel: number;
+  killSwitch: boolean;
+  activeRemediations: number;
+} {
+  return {
+    running,
+    autonomyLevel: getCurrentAutonomyLevel(),
+    killSwitch: isKillSwitchActive(),
+    activeRemediations: getActiveRemediationCount(),
+  };
 }

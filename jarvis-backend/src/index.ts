@@ -2,7 +2,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import cors from 'cors';
 import { config } from './config.js';
-import { router } from './api/routes.js';
+import { router, setupMonitorRoutes } from './api/routes.js';
 import { setupSocketIO } from './realtime/socket.js';
 import { runMigrations } from './db/migrate.js';
 import { getToolList } from './mcp/server.js';
@@ -51,6 +51,9 @@ for (const t of tools) {
 
 // Start real-time data emitter (polls Proxmox and pushes to /cluster namespace)
 startEmitter(clusterNs);
+
+// Wire monitor REST API routes (dependency injection: eventsNs passed as parameter)
+setupMonitorRoutes(router, eventsNs);
 
 // Start autonomous monitoring service (detects state changes and threshold violations)
 startMonitor(eventsNs);
