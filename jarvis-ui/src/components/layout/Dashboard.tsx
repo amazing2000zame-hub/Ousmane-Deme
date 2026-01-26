@@ -13,9 +13,9 @@ export function Dashboard() {
 
   const isCollapsed = useTerminalStore((s) => s.isCollapsed);
 
-  // Dynamic right column width for desktop breakpoints
-  const rightXl = isCollapsed ? '40px' : '380px';
-  const rightLg = isCollapsed ? '40px' : '320px';
+  // Dynamic right column width for desktop breakpoints (0 when collapsed)
+  const rightXl = isCollapsed ? '0px' : '380px';
+  const rightLg = isCollapsed ? '0px' : '320px';
 
   return (
     <div className="flex flex-col h-screen bg-jarvis-bg">
@@ -62,9 +62,9 @@ export function Dashboard() {
           <CenterDisplay />
         </main>
 
-        {/* Right column: Terminal */}
+        {/* Right column: Terminal (0-width when collapsed, stays mounted for xterm state) */}
         <aside
-          className="flex flex-col min-h-0 max-md:border-t max-md:border-jarvis-amber/10"
+          className="flex flex-col min-h-0 max-md:border-t max-md:border-jarvis-amber/10 overflow-hidden"
           data-panel="right"
         >
           <TerminalPanel />

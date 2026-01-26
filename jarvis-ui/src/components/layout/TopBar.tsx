@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useClusterStore } from '../../stores/cluster';
 import { useUIStore } from '../../stores/ui';
+import { useTerminalStore } from '../../stores/terminal';
 import { StatusDot } from '../shared/StatusDot';
 import { DataPulse } from '../../effects/DataPulse';
 import { RadialThemePicker } from './RadialThemePicker';
@@ -17,12 +18,28 @@ export function TopBar() {
   const connected = useClusterStore((s) => s.connected);
   const visualMode = useUIStore((s) => s.visualMode);
   const setVisualMode = useUIStore((s) => s.setVisualMode);
+  const isTerminalCollapsed = useTerminalStore((s) => s.isCollapsed);
+  const toggleTerminal = useTerminalStore((s) => s.toggleCollapse);
   const [time, setTime] = useState(() => new Date());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Close settings dropdown when clicking outside
+  useEffect(() => {
+    if (!settingsOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [settingsOpen]);
 
   // Quorum display
   const quorumText = quorum
@@ -61,7 +78,7 @@ export function TopBar() {
         </span>
       </div>
 
-      {/* Right: Connection + DataPulse + Mode + Clock */}
+      {/* Right: Connection + DataPulse + Terminal + Settings + Clock */}
       <div className="flex items-center gap-4">
         {/* Connection status + DataPulse */}
         <div className="flex items-center gap-1.5">
@@ -96,8 +113,49 @@ export function TopBar() {
           ))}
         </div>
 
-        {/* Color theme picker */}
-        <RadialThemePicker />
+        {/* Terminal toggle */}
+        <button
+          type="button"
+          onClick={toggleTerminal}
+          title={isTerminalCollapsed ? 'Show terminal' : 'Hide terminal'}
+          className={`
+            px-1.5 py-0.5 text-[10px] font-mono tracking-wider rounded
+            transition-all duration-200
+            ${!isTerminalCollapsed
+              ? 'bg-jarvis-amber/20 text-jarvis-amber border border-jarvis-amber/30'
+              : 'text-jarvis-text-dim hover:text-jarvis-amber-dim border border-transparent'}
+          `}
+        >
+          {'>_'}
+        </button>
+
+        {/* Settings gear (opens theme picker dropdown) */}
+        <div className="relative" ref={settingsRef}>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((o) => !o)}
+            title="Settings"
+            className={`
+              px-1.5 py-0.5 text-[10px] font-display tracking-wider rounded
+              transition-all duration-200
+              ${settingsOpen
+                ? 'bg-jarvis-amber/20 text-jarvis-amber border border-jarvis-amber/30'
+                : 'text-jarvis-text-dim hover:text-jarvis-amber-dim border border-transparent'}
+            `}
+          >
+            CFG
+          </button>
+
+          {/* Settings dropdown */}
+          {settingsOpen && (
+            <div className="absolute right-0 top-full mt-2 z-50 bg-jarvis-bg-panel border border-jarvis-amber/20 rounded-md shadow-lg p-3 min-w-[180px]">
+              <span className="font-display text-[9px] tracking-wider text-jarvis-text-muted uppercase block mb-2">
+                COLOR THEME
+              </span>
+              <RadialThemePicker />
+            </div>
+          )}
+        </div>
 
         {/* Clock */}
         <span className="font-mono text-xs text-jarvis-text-dim tabular-nums">
