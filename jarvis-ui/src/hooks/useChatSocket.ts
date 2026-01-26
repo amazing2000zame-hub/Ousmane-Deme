@@ -3,6 +3,7 @@ import type { Socket } from 'socket.io-client';
 import { createChatSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useChatStore } from '../stores/chat';
+import { useVoiceStore } from '../stores/voice';
 
 /** crypto.randomUUID() requires secure context (HTTPS). Fallback for HTTP. */
 const uid = (): string =>
@@ -160,6 +161,7 @@ export function useChatSocket(): ChatSocketActions {
     socketRef.current?.emit('chat:send', {
       sessionId: store.sessionId,
       message,
+      voiceMode: useVoiceStore.getState().enabled,
     });
   }, []);
 

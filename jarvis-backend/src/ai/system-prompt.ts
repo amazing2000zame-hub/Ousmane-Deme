@@ -22,6 +22,7 @@ export function buildClaudeSystemPrompt(
   overrideActive: boolean = false,
   userMessage?: string,
   recallBlock?: string,
+  voiceMode: boolean = false,
 ): string {
   const overrideBlock = overrideActive
     ? `\n\n## Override Active
@@ -89,7 +90,17 @@ ${clusterSummary}
 </cluster_context>${userMessage ? buildMemoryContext(userMessage, 'claude') : ''}${recallBlock ? '\n' + recallBlock : ''}
 
 ## Memory
-You have persistent memory across sessions. The <memory_context> section (when present) contains recalled preferences, past events, and conversation summaries. Reference specific memories when relevant to the user's query. If no memory context is present, this is a fresh interaction.`;
+You have persistent memory across sessions. The <memory_context> section (when present) contains recalled preferences, past events, and conversation summaries. Reference specific memories when relevant to the user's query. If no memory context is present, this is a fresh interaction.${voiceMode ? `
+
+## Voice Mode Active
+Your responses will be spoken aloud via text-to-speech. Adjust accordingly:
+- Keep responses under 100 words -- brevity is critical for spoken delivery.
+- Use natural spoken language. Avoid bullet points, markdown, code blocks, or formatted lists.
+- Spell out abbreviations and units naturally: "32 gigabytes" not "32 GB", "VM one-oh-one" not "VM 101".
+- Use short, declarative sentences. Pause-friendly phrasing.
+- Lead with the essential information. Skip pleasantries when answering direct questions.
+- For status reports: summarize in 2-3 sentences, not a table.
+- Numbers: round where appropriate. "About 60 percent" not "59.7%".` : ''}`;
 }
 
 /**
@@ -101,6 +112,7 @@ export function buildQwenSystemPrompt(
   clusterSummary: string,
   userMessage?: string,
   recallBlock?: string,
+  voiceMode: boolean = false,
 ): string {
   return `You are J.A.R.V.I.S. -- Just A Rather Very Intelligent System. You are a conversational AI assistant for the HomeCluster, a 4-node Proxmox VE homelab.
 
@@ -114,7 +126,10 @@ export function buildQwenSystemPrompt(
 You are in conversational mode without cluster management tools. If the operator asks you to perform cluster actions (start/stop VMs, check node status, execute commands, etc.), let them know that their request requires the full JARVIS system with tool access, and suggest they rephrase or try again -- the system will route tool-requiring messages to the appropriate handler automatically.
 
 ## Cluster Context
-${clusterSummary}${userMessage ? buildMemoryContext(userMessage, 'qwen') : ''}${recallBlock ? '\n' + recallBlock : ''}`;
+${clusterSummary}${userMessage ? buildMemoryContext(userMessage, 'qwen') : ''}${recallBlock ? '\n' + recallBlock : ''}${voiceMode ? `
+
+## Voice Mode
+Responses will be spoken aloud. Keep answers under 60 words. Use natural spoken English, no formatting or lists. Short sentences.` : ''}`;
 }
 
 /**

@@ -55,6 +55,7 @@ const providers: Record<string, LLMProvider> = {
 interface ChatSendPayload {
   sessionId?: string;
   message: string;
+  voiceMode?: boolean;
 }
 
 interface ChatConfirmPayload {
@@ -167,10 +168,11 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         }
 
         // Build provider-specific system prompt with live cluster context + memory
+        const voiceMode = !!payload.voiceMode;
         const summary = await buildClusterSummary();
         const systemPrompt = decision.provider === 'claude'
-          ? buildClaudeSystemPrompt(summary, overrideActive, message, recallBlock)
-          : buildQwenSystemPrompt(summary, message, recallBlock);
+          ? buildClaudeSystemPrompt(summary, overrideActive, message, recallBlock, voiceMode)
+          : buildQwenSystemPrompt(summary, message, recallBlock, voiceMode);
 
         // Create abort controller for this session
         const abortController = new AbortController();

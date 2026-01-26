@@ -1,16 +1,37 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ActivityFeed } from './ActivityFeed';
 import { ChatPanel } from './ChatPanel';
 import { GlobeHUD } from './GlobeHUD';
+import { VoiceSettings } from './VoiceSettings';
+import { useVoiceStore } from '../../stores/voice';
 
 type CenterView = 'hud' | 'feed' | 'chat';
 
 /**
  * CenterDisplay -- split view with Iron Man-style Globe HUD above
  * and ActivityFeed below. Toggle tabs switch between full-HUD and full-feed views.
+ * Chat view includes voice toggle button for JARVIS TTS/STT controls.
  */
 export function CenterDisplay() {
   const [view, setView] = useState<CenterView>('hud');
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+  const voiceEnabled = useVoiceStore((s) => s.enabled);
+  const setVoiceEnabled = useVoiceStore((s) => s.setEnabled);
+  const isPlaying = useVoiceStore((s) => s.isPlaying);
+  const isRecording = useVoiceStore((s) => s.isRecording);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  // Close settings panel when clicking outside
+  useEffect(() => {
+    if (!showVoiceSettings) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setShowVoiceSettings(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showVoiceSettings]);
 
   return (
     <div className="flex flex-col h-full" data-panel="center">
@@ -19,21 +40,83 @@ export function CenterDisplay() {
         <span className="font-display text-jarvis-amber-dim text-xs tracking-wider uppercase">
           JARVIS {view === 'hud' ? 'HUD' : view === 'feed' ? 'ACTIVITY' : 'CHAT'}
         </span>
-        <div className="flex gap-0.5">
-          {(['hud', 'feed', 'chat'] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              className={`px-2 py-0.5 text-[9px] font-display tracking-wider rounded transition-all duration-200 ${
-                view === v
-                  ? 'bg-jarvis-amber/15 text-jarvis-amber border border-jarvis-amber/30'
-                  : 'text-jarvis-text-dim hover:text-jarvis-amber-dim border border-transparent'
-              }`}
-            >
-              {v.toUpperCase()}
-            </button>
-          ))}
+
+        <div className="flex items-center gap-2">
+          {/* Voice toggle (shown in chat view) */}
+          {view === 'chat' && (
+            <div className="relative" ref={settingsRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!voiceEnabled) {
+                    setVoiceEnabled(true);
+                  } else {
+                    setShowVoiceSettings(!showVoiceSettings);
+                  }
+                }}
+                onDoubleClick={() => {
+                  setVoiceEnabled(!voiceEnabled);
+                  setShowVoiceSettings(false);
+                }}
+                title={voiceEnabled ? 'Voice settings (double-click to disable)' : 'Enable JARVIS voice'}
+                className={`px-2 py-0.5 text-[9px] font-display tracking-wider rounded transition-all duration-200 flex items-center gap-1 ${
+                  voiceEnabled
+                    ? isPlaying
+                      ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 animate-pulse'
+                      : isRecording
+                        ? 'bg-red-500/15 text-red-400 border border-red-500/30 animate-pulse'
+                        : 'bg-jarvis-amber/15 text-jarvis-amber border border-jarvis-amber/30'
+                    : 'text-jarvis-text-dim hover:text-jarvis-amber-dim border border-transparent'
+                }`}
+              >
+                {/* Speaker/mic icon */}
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                  {isRecording ? (
+                    // Mic icon when recording
+                    <>
+                      <path d="M8 1a2.5 2.5 0 00-2.5 2.5v4a2.5 2.5 0 005 0v-4A2.5 2.5 0 008 1z" />
+                      <path d="M3.5 7.5a.5.5 0 011 0 3.5 3.5 0 007 0 .5.5 0 011 0 4.5 4.5 0 01-4 4.473V14h2a.5.5 0 010 1h-5a.5.5 0 010-1h2v-2.027a4.5 4.5 0 01-4-4.473z" />
+                    </>
+                  ) : (
+                    // Speaker icon
+                    <>
+                      <path d="M8 1.5L4 5H1v6h3l4 3.5V1.5z" />
+                      {voiceEnabled && (
+                        <>
+                          <path d="M11.5 4.5a4.5 4.5 0 010 7" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                          <path d="M13.5 2.5a7.5 7.5 0 010 11" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                        </>
+                      )}
+                    </>
+                  )}
+                </svg>
+                VOICE
+              </button>
+
+              {/* Voice settings dropdown */}
+              {showVoiceSettings && (
+                <VoiceSettings onClose={() => setShowVoiceSettings(false)} />
+              )}
+            </div>
+          )}
+
+          {/* View tabs */}
+          <div className="flex gap-0.5">
+            {(['hud', 'feed', 'chat'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={`px-2 py-0.5 text-[9px] font-display tracking-wider rounded transition-all duration-200 ${
+                  view === v
+                    ? 'bg-jarvis-amber/15 text-jarvis-amber border border-jarvis-amber/30'
+                    : 'text-jarvis-text-dim hover:text-jarvis-amber-dim border border-transparent'
+                }`}
+              >
+                {v.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
