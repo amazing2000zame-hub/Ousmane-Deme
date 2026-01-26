@@ -88,9 +88,14 @@ export async function execOnNode(
   }
 
   try {
-    const result = await ssh.execCommand(command, {
-      execOptions: { timeout: execTimeout },
+    const resultPromise = ssh.execCommand(command);
+
+    // Apply timeout externally since ssh2 ExecOptions doesn't support timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`Command timed out after ${execTimeout}ms`)), execTimeout);
     });
+
+    const result = await Promise.race([resultPromise, timeoutPromise]);
 
     return {
       stdout: result.stdout,

@@ -11,7 +11,11 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
-  "keywords": ["jarvis", "proxmox", "homelab"],
+  "keywords": [
+    "jarvis",
+    "proxmox",
+    "homelab"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -32,6 +36,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.0.10",
+    "@types/ssh2": "^1.15.5",
     "drizzle-kit": "^0.31.8",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

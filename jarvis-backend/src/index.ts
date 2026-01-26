@@ -8,6 +8,7 @@ import { runMigrations } from './db/migrate.js';
 import { getToolList } from './mcp/server.js';
 import { closeAllConnections } from './clients/ssh.js';
 import { startEmitter, stopEmitter } from './realtime/emitter.js';
+import { setupTerminalHandlers } from './realtime/terminal.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -26,10 +27,10 @@ app.use(express.json());
 app.use(router);
 
 // Set up Socket.IO on the HTTP server
-const { io, clusterNs, eventsNs } = setupSocketIO(server);
+const { io, clusterNs, eventsNs, terminalNs } = setupSocketIO(server);
 
 // Export for use by other modules (e.g., emitting events)
-export { io, clusterNs, eventsNs };
+export { io, clusterNs, eventsNs, terminalNs };
 
 // Run database migrations, then start listening
 try {
@@ -48,6 +49,9 @@ for (const t of tools) {
 
 // Start real-time data emitter (polls Proxmox and pushes to /cluster namespace)
 startEmitter(clusterNs);
+
+// Register SSH PTY terminal handlers on the /terminal namespace
+setupTerminalHandlers(terminalNs);
 
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
 server.listen(config.port, () => {

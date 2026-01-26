@@ -4,8 +4,8 @@ import { verifyJWT } from '../auth/jwt.js';
 import { config } from '../config.js';
 
 /**
- * Set up Socket.IO with /cluster and /events namespaces.
- * Both namespaces require JWT authentication via handshake.auth.token.
+ * Set up Socket.IO with /cluster, /events, and /terminal namespaces.
+ * All namespaces require JWT authentication via handshake.auth.token.
  */
 export function setupSocketIO(server: HttpServer) {
   const io = new SocketServer(server, {
@@ -20,6 +20,7 @@ export function setupSocketIO(server: HttpServer) {
   // Create namespaces
   const clusterNs = io.of('/cluster');
   const eventsNs = io.of('/events');
+  const terminalNs = io.of('/terminal');
 
   // JWT auth middleware for namespaces
   const socketAuthMiddleware = (
@@ -43,6 +44,7 @@ export function setupSocketIO(server: HttpServer) {
 
   clusterNs.use(socketAuthMiddleware);
   eventsNs.use(socketAuthMiddleware);
+  terminalNs.use(socketAuthMiddleware);
 
   // Connection logging
   clusterNs.on('connection', (socket) => {
@@ -59,7 +61,7 @@ export function setupSocketIO(server: HttpServer) {
     });
   });
 
-  console.log('[Socket.IO] WebSocket server initialized with /cluster and /events namespaces');
+  console.log('[Socket.IO] WebSocket server initialized with /cluster, /events, and /terminal namespaces');
 
-  return { io, clusterNs, eventsNs };
+  return { io, clusterNs, eventsNs, terminalNs };
 }
