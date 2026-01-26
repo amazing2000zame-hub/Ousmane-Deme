@@ -72,6 +72,8 @@ export async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_events_node ON events(node);
     CREATE INDEX IF NOT EXISTS idx_events_resolved ON events(resolved);
     CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id);
+    CREATE INDEX IF NOT EXISTS idx_conversations_timestamp ON conversations(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_conversations_model ON conversations(model);
     CREATE INDEX IF NOT EXISTS idx_snapshots_timestamp ON cluster_snapshots(timestamp);
 
     CREATE TABLE IF NOT EXISTS autonomy_actions (
@@ -97,6 +99,17 @@ export async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_autonomy_actions_incident_key ON autonomy_actions(incident_key);
     CREATE INDEX IF NOT EXISTS idx_autonomy_actions_result ON autonomy_actions(result);
   `);
+
+  // Cost tracking columns (07-02): add if missing on existing databases
+  try {
+    sqlite.exec(`ALTER TABLE conversations ADD COLUMN input_tokens INTEGER;`);
+  } catch { /* column already exists */ }
+  try {
+    sqlite.exec(`ALTER TABLE conversations ADD COLUMN output_tokens INTEGER;`);
+  } catch { /* column already exists */ }
+  try {
+    sqlite.exec(`ALTER TABLE conversations ADD COLUMN cost_usd TEXT;`);
+  } catch { /* column already exists */ }
 
   console.log('Database migrations applied (direct SQL)');
 }

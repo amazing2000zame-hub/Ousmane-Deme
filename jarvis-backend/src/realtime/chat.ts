@@ -32,6 +32,7 @@ import {
   type StreamCallbacks,
 } from '../ai/loop.js';
 import { routeMessage } from '../ai/router.js';
+import { calculateCost } from '../ai/cost-tracker.js';
 import { claudeProvider } from '../ai/providers/claude-provider.js';
 import { qwenProvider } from '../ai/providers/qwen-provider.js';
 import type { LLMProvider } from '../ai/providers.js';
@@ -183,6 +184,8 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           },
 
           onDone: (usage) => {
+            const cost = calculateCost(decision.provider, usage);
+
             if (accumulatedText.length > 0) {
               try {
                 memoryStore.saveMessage({
@@ -191,6 +194,9 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
                   content: accumulatedText,
                   model: decision.provider,
                   tokensUsed: usage.inputTokens + usage.outputTokens,
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                  costUsd: cost,
                 });
               } catch {
                 // Non-critical
@@ -200,7 +206,7 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
             // Track provider for follow-up routing
             sessionLastProvider.set(sessionId, decision.provider);
 
-            socket.emit('chat:done', { sessionId, usage, provider: decision.provider });
+            socket.emit('chat:done', { sessionId, usage, provider: decision.provider, cost });
             abortControllers.delete(sessionId);
           },
 
@@ -301,6 +307,8 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           },
 
           onDone: (usage) => {
+            const cost = calculateCost('claude', usage);
+
             if (accumulatedText.length > 0) {
               try {
                 memoryStore.saveMessage({
@@ -309,6 +317,9 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
                   content: accumulatedText,
                   model: 'claude',
                   tokensUsed: usage.inputTokens + usage.outputTokens,
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                  costUsd: cost,
                 });
               } catch {
                 // Non-critical
@@ -316,7 +327,7 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
             }
 
             sessionLastProvider.set(sessionId, 'claude');
-            socket.emit('chat:done', { sessionId, usage, provider: 'claude' });
+            socket.emit('chat:done', { sessionId, usage, provider: 'claude', cost });
             abortControllers.delete(sessionId);
           },
 

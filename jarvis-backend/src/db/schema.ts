@@ -28,7 +28,10 @@ export const conversations = sqliteTable('conversations', {
   role: text('role', { enum: ['user', 'assistant', 'system', 'tool'] }).notNull(),
   content: text('content').notNull(),
   model: text('model'), // 'claude' | 'qwen' | null
-  tokensUsed: integer('tokens_used'),
+  tokensUsed: integer('tokens_used'), // legacy: use inputTokens + outputTokens instead
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  costUsd: text('cost_usd'), // stored as text for precision, parsed as float
   toolCalls: text('tool_calls'), // JSON string
 });
 

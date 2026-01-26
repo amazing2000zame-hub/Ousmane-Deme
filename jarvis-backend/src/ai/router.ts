@@ -11,11 +11,13 @@
  *  2. Explicit cluster action keywords    → CLAUDE
  *  3. References specific cluster entity  → CLAUDE
  *  4. Follow-up to a tool conversation    → CLAUDE
- *  5. Claude unavailable                  → QWEN (fallback)
- *  6. Default conversational              → QWEN
+ *  5. Daily budget cap exceeded            → QWEN (cost fallback)
+ *  6. Claude unavailable                  → QWEN (fallback)
+ *  7. Default conversational              → QWEN
  */
 
 import { claudeAvailable } from './claude.js';
+import { checkDailyBudget } from './cost-tracker.js';
 
 export interface RoutingDecision {
   provider: 'claude' | 'qwen';
@@ -74,11 +76,47 @@ export function routeMessage(
 ): RoutingDecision {
   const lower = message.toLowerCase();
 
-  // Stage 1: Override passkey always routes to Claude
+  // Stage 1: Override passkey always routes to Claude (bypasses budget check)
   if (override) {
     return { provider: 'claude', reason: 'override passkey detected' };
   }
 
+  // Compute intent-based routing decision
+  const intentDecision = resolveIntent(lower, lastProvider);
+
+  // If intent says Claude, apply budget and availability checks
+  if (intentDecision) {
+    // Stage 5: Budget cap enforcement
+    try {
+      const budget = checkDailyBudget();
+      if (budget.exceeded) {
+        console.log(`[Router] Budget exceeded: $${budget.spent.toFixed(4)}/$${budget.limit}`);
+        return {
+          provider: 'qwen',
+          reason: `daily budget cap reached ($${budget.spent.toFixed(2)}/$${budget.limit})`,
+        };
+      }
+    } catch {
+      // If budget check fails, don't block routing
+    }
+
+    // Stage 6: Claude unavailable → Qwen fallback
+    if (!claudeAvailable) {
+      return { provider: 'qwen', reason: 'Claude API unavailable, using local fallback' };
+    }
+
+    return intentDecision;
+  }
+
+  // Stage 7: Default conversational → Qwen
+  return { provider: 'qwen', reason: 'conversational message' };
+}
+
+/**
+ * Resolve message intent to determine if Claude is needed.
+ * Returns a RoutingDecision for Claude, or null if conversational.
+ */
+function resolveIntent(lower: string, lastProvider?: string): RoutingDecision | null {
   // Stage 2: Explicit action keywords → Claude
   for (const kw of ACTION_KEYWORDS) {
     if (lower.includes(kw)) {
@@ -95,7 +133,6 @@ export function routeMessage(
   }
 
   // Stage 3b: Query keywords (status, check, show, etc.) → Claude
-  // These imply the user wants information that requires tools
   for (const kw of QUERY_KEYWORDS) {
     if (lower.includes(kw)) {
       return { provider: 'claude', reason: `query keyword: "${kw}"` };
@@ -103,11 +140,7 @@ export function routeMessage(
   }
 
   // Stage 4: Follow-up to a tool conversation → Claude
-  // If the last message in this session used Claude, the user is likely
-  // continuing a cluster management conversation
   if (lastProvider === 'claude') {
-    // Only follow-up if the message looks like it could be a continuation
-    // (short responses, pronouns, "yes", "do it", "and also", etc.)
     const followUpPatterns = [
       /^(yes|no|ok|okay|sure|do it|go ahead|proceed|confirm|deny|cancel)/i,
       /^(and |also |what about |how about |now |then )/i,
@@ -121,11 +154,5 @@ export function routeMessage(
     }
   }
 
-  // Stage 5: Claude unavailable → Qwen fallback
-  if (!claudeAvailable) {
-    return { provider: 'qwen', reason: 'Claude API unavailable, using local fallback' };
-  }
-
-  // Stage 6: Default conversational → Qwen
-  return { provider: 'qwen', reason: 'conversational message' };
+  return null;
 }

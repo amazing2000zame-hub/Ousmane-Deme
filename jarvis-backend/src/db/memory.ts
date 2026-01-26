@@ -68,6 +68,9 @@ interface SaveMessageInput {
   content: string;
   model?: string | null;
   tokensUsed?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  costUsd?: number | null;
   toolCalls?: string | null;
 }
 
@@ -78,6 +81,9 @@ function saveMessage(msg: SaveMessageInput) {
     content: msg.content,
     model: msg.model ?? null,
     tokensUsed: msg.tokensUsed ?? null,
+    inputTokens: msg.inputTokens ?? null,
+    outputTokens: msg.outputTokens ?? null,
+    costUsd: msg.costUsd != null ? String(msg.costUsd) : null,
     toolCalls: msg.toolCalls ?? null,
   }).returning().get();
 }

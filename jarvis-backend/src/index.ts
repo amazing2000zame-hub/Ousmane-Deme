@@ -12,6 +12,8 @@ import { startEmitter, stopEmitter } from './realtime/emitter.js';
 import { startMonitor, stopMonitor } from './monitor/index.js';
 import { setupTerminalHandlers } from './realtime/terminal.js';
 import { setupChatHandlers } from './realtime/chat.js';
+import { costRouter } from './api/cost.js';
+import { authMiddleware } from './auth/jwt.js';
 import { memoryStore } from './db/memory.js';
 
 // Create Express app and HTTP server
@@ -29,6 +31,7 @@ app.use(express.json());
 
 // Mount routes
 app.use(router);
+app.use('/api/cost', authMiddleware, costRouter);
 
 // Set up Socket.IO on the HTTP server
 const { io, clusterNs, eventsNs, terminalNs, chatNs } = setupSocketIO(server);

@@ -51,6 +51,9 @@ export const config = {
   qwenContextWindow: parseInt(process.env.QWEN_CONTEXT_WINDOW || '4096', 10),
   qwenHistoryLimit: parseInt(process.env.QWEN_HISTORY_LIMIT || '10', 10),
 
+  // Cost tracking
+  dailyCostLimit: parseFloat(process.env.DAILY_COST_LIMIT || '10.0'),
+
   // CORS
   corsOrigins: [
     'http://192.168.1.65:3004',
