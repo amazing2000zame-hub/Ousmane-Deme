@@ -231,12 +231,12 @@ Plans:
 - Rate limiting must prevent restart loops (VM crashes on start -> Jarvis retries indefinitely)
 - The monitoring loop competes with user requests for Proxmox API and SSH resources
 
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: Monitor service event loop with tiered polling and threshold detection
-- [ ] 04-02: Remediation runbooks, guardrails (rate limiting, blast radius, escalation), kill switch
-- [ ] 04-03: Activity feed panel, audit log persistence, email report integration
+- [ ] 04-01-PLAN.md -- Monitor types, audit log schema, state tracker, threshold evaluator, pollers, and monitor lifecycle
+- [ ] 04-02-PLAN.md -- Runbook engine, guardrails (kill switch, rate limiter, blast radius, escalation), email reporter, REST API
+- [ ] 04-03-PLAN.md -- Enhanced ActivityFeed with source filtering, TopBar kill switch toggle, frontend API integration
 
 ---
 
@@ -383,5 +383,5 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 | 1. Backend Foundation & Safety Layer | 4/4 | Complete | 2026-01-26 |
 | 2. Real-Time Dashboard & eDEX-UI | 6/6 | Complete | 2026-01-26 |
 | 3. AI Chat & Claude Integration | 0/3 | Planning complete | - |
-| 4. Autonomous Monitoring & Remediation | 0/3 | Not started | - |
+| 4. Autonomous Monitoring & Remediation | 0/3 | Planning complete | - |
 | 5. Hybrid LLM Intelligence & Persistent Memory | 0/3 | Not started | - |
