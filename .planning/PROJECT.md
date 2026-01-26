@@ -54,6 +54,16 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - Smart home integration -- Proxmox cluster focus only for v1
 - Mobile native app -- responsive web handles mobile
 
+## Current Milestone: v1.1 Hybrid Intelligence & Deployment
+
+**Goal:** Add hybrid LLM intelligence (Claude + Qwen routing), persistent memory with tiered TTLs, Docker deployment to management VM, and end-to-end testing against live cluster.
+
+**Target features:**
+- Hybrid LLM backend -- unified abstraction routing complex tasks to Claude API, routine ops to local Qwen, with cost tracking and fallback
+- Persistent memory system -- tiered TTLs for cluster state, actions, preferences, and conversation history with context consolidation
+- Docker deployment -- containerize backend and frontend, deploy to management VM (192.168.1.65) with Docker Compose
+- End-to-end testing -- validate all features against live Proxmox cluster API, including safety tiers and tool execution
+
 ## Current State (v1.0 shipped 2026-01-26)
 
 - **Backend**: 6,196 LOC TypeScript -- Express 5, Socket.IO, MCP SDK, better-sqlite3, Drizzle ORM
@@ -123,4 +133,4 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 | Safety-first Phase 1 | CRITICAL pitfalls must be architectural, not retrofitted | Confirmed -- dependency DAG + command allowlist |
 
 ---
-*Last updated: 2026-01-26 after v1.0 milestone*
+*Last updated: 2026-01-26 after v1.1 milestone started*

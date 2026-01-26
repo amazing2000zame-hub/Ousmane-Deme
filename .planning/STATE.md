@@ -5,24 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** v1.0 MVP shipped -- planning next milestone
+**Current focus:** v1.1 Hybrid Intelligence & Deployment
 
 ## Current Position
 
-Milestone: v1.0 MVP -- SHIPPED 2026-01-26
-Status: Milestone complete, archived to .planning/milestones/
-Next: /gsd:new-milestone to define v1.1
-
-Progress: [##################] 18/18 plans complete (5 phases)
+Milestone: v1.1 Hybrid Intelligence & Deployment
+Phase: Not started (defining requirements)
+Plan: --
+Status: Defining requirements
+Last activity: 2026-01-26 -- Milestone v1.1 started
 
 ## Performance Metrics
 
-**Velocity:**
+**Velocity (from v1.0):**
 - Total plans completed: 18
 - Average duration: 5.4 min
 - Total execution time: 102 min
 
-**By Phase:**
+**By Phase (v1.0):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
@@ -51,11 +51,10 @@ None.
 ### Blockers/Concerns
 
 - Proxmox API tokens (`root@pam!jarvis`) must be created manually on each PVE node before deployment
-- Docker deployment to management VM not yet performed
-- Phase 5 (Hybrid LLM) deferred to next milestone
+- Phase 5 (Hybrid LLM) deferred from v1.0, now primary focus for v1.1
 
 ## Session Continuity
 
 Last session: 2026-01-26
-Stopped at: v1.0 milestone archived. Ready for /gsd:new-milestone.
+Stopped at: Milestone v1.1 initialized. Defining requirements.
 Resume file: None
