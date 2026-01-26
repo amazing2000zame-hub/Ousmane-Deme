@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import express from 'express';
 import { createServer } from 'node:http';
 import cors from 'cors';
@@ -11,6 +12,7 @@ import { startEmitter, stopEmitter } from './realtime/emitter.js';
 import { startMonitor, stopMonitor } from './monitor/index.js';
 import { setupTerminalHandlers } from './realtime/terminal.js';
 import { setupChatHandlers } from './realtime/chat.js';
+import { memoryStore } from './db/memory.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -62,7 +64,7 @@ startMonitor(eventsNs);
 setupTerminalHandlers(terminalNs);
 
 // Register AI chat handlers on the /chat namespace
-setupChatHandlers(chatNs);
+setupChatHandlers(chatNs, eventsNs);
 console.log('[Chat] AI chat handler initialized on /chat namespace');
 
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
@@ -70,6 +72,25 @@ server.listen(config.port, () => {
   console.log(`Jarvis backend running on port ${config.port}`);
   console.log(`  Environment: ${config.nodeEnv}`);
   console.log(`  Health check: http://localhost:${config.port}/api/health`);
+
+  // Emit JARVIS Online startup event
+  const startupEvent = {
+    id: crypto.randomUUID(),
+    type: 'status' as const,
+    severity: 'info' as const,
+    title: 'JARVIS Online',
+    message: 'Backend services initialized -- monitoring active',
+    source: 'system' as const,
+    timestamp: new Date().toISOString(),
+  };
+  eventsNs.emit('event', startupEvent);
+  memoryStore.saveEvent({
+    type: 'status',
+    severity: 'info',
+    source: 'system',
+    summary: '[System] JARVIS Online: Backend services initialized -- monitoring active',
+  });
+  console.log('[System] JARVIS Online event emitted');
 });
 
 // Graceful shutdown
