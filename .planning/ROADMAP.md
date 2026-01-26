@@ -127,13 +127,15 @@ Plans:
 - Management VM has limited GPU -- CSS animations must use GPU-composited properties only (transform, opacity)
 - eDEX-UI aesthetic is the product identity but the original eDEX-UI was archived for performance issues
 
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
-- [ ] 02-01: React SPA scaffold upgrade (Tailwind v4, Zustand, TanStack Query, Socket.IO client, routing)
-- [ ] 02-02: 3-column layout with node health grid, VM/CT list, storage overview, quorum status
-- [ ] 02-03: xterm.js terminal panel with SSH PTY backend and node selector
-- [ ] 02-04: eDEX-UI visual layer (sci-fi styling, animations, visual modes, responsive breakpoints)
+- [ ] 02-01-PLAN.md -- Frontend scaffold upgrade (Tailwind v4, Zustand, Socket.IO client, types, stores, hooks, theme)
+- [ ] 02-02-PLAN.md -- Backend additions (real-time emitter, tool execution endpoint, terminal Socket.IO namespace)
+- [ ] 02-03-PLAN.md -- Dashboard layout + node health grid (3-column shell, TopBar, NodeGrid, NodeCard, shared components)
+- [ ] 02-04-PLAN.md -- VM/CT controls + storage + center display (VMList, VMCard, StoragePanel, ActivityFeed, ConfirmDialog)
+- [ ] 02-05-PLAN.md -- Terminal panel (xterm.js, SSH PTY via Socket.IO, node selector, useTerminal hook)
+- [ ] 02-06-PLAN.md -- eDEX-UI visual layer (boot sequence, scan lines, glow effects, visual modes, keyboard shortcuts, responsive)
 
 ---
 
@@ -379,7 +381,7 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
 | 1. Backend Foundation & Safety Layer | 4/4 | Complete | 2026-01-26 |
-| 2. Real-Time Dashboard & eDEX-UI | 0/4 | Not started | - |
+| 2. Real-Time Dashboard & eDEX-UI | 0/6 | Planning complete | - |
 | 3. AI Chat & Claude Integration | 0/3 | Not started | - |
 | 4. Autonomous Monitoring & Remediation | 0/3 | Not started | - |
 | 5. Hybrid LLM Intelligence & Persistent Memory | 0/3 | Not started | - |
