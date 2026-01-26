@@ -55,22 +55,16 @@ Plans:
 - [x] 07-02-PLAN.md — Cost tracking with token persistence and budget enforcement
 - [x] 07-03-PLAN.md — Provider badge UI + cost dashboard panel
 
-#### Phase 8: Persistent Memory with TTL Tiers
+#### ✅ Phase 8: Persistent Memory with TTL Tiers
 **Goal**: Cross-session memory with three-tier TTL model enabling context recall and cluster state persistence
 **Depends on**: Phase 7 (provider abstraction needed for context budgets)
 **Requirements**: MEM-01, MEM-02, MEM-03, MEM-04, MEM-05, MEM-06, MEM-07, MEM-08, MEM-09, MEM-10
-**Success Criteria** (what must be TRUE):
-  1. User can ask "What did we discuss yesterday about pve's disk?" and Jarvis retrieves relevant conversation history
-  2. Jarvis remembers cluster events (e.g., "node agent was offline for 2 hours last Tuesday") without being told again
-  3. User preferences ("I prefer email alerts for critical issues") persist across sessions and are respected in future interactions
-  4. System prompt includes relevant historical context (recent events, facts, preferences) within token budget limits
-  5. Database cleanup runs automatically every hour, expiring conversations after 7 days and episodic memories after 30 days
-**Plans**: 3 plans
+**Status**: Complete (3 commits: 0ad63bd, 8fa6566, c1d6536)
 
 Plans:
-- [ ] 08-01-PLAN.md — Memory schema, TTL tiers & cleanup service
-- [ ] 08-02-PLAN.md — Memory extraction & context injection
-- [ ] 08-03-PLAN.md — Memory recall API & chat integration
+- [x] 08-01-PLAN.md — Memory schema, TTL tiers & cleanup service
+- [x] 08-02-PLAN.md — Memory extraction & context injection
+- [x] 08-03-PLAN.md — Memory recall API & chat integration
 
 #### Phase 9: Docker Deployment Full Stack
 **Goal**: Production-ready Docker Compose deployment to management VM with persistent volumes and security hardening
