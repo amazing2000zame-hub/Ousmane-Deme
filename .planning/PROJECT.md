@@ -25,10 +25,10 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 
 ### Active
 
-- [ ] Hybrid LLM backend (Claude API for complex tasks, local Qwen for routine ops) -- Phase 5: Qwen routing, unified abstraction, cost tracking
-- [ ] Persistent memory system with tiered TTLs (cluster state, actions, preferences, history) -- Phase 5: TTLs, consolidation, context management
-- [ ] Docker deployment to management VM (192.168.1.65) -- code complete, needs containerization and deployment
-- [ ] End-to-end testing against live cluster -- validate all features work with real Proxmox API
+- [ ] Voice retraining with proper JARVIS video sources for improved voice quality -- v1.3
+- [ ] File import/download -- JARVIS can import and download files to the server -- v1.3
+- [ ] Project read/browse access -- JARVIS can pull, read, and browse projects on the server -- v1.3
+- [ ] Project discussion & improvements -- JARVIS can analyze projects and suggest improvements -- v1.3
 
 ### Validated
 
@@ -44,25 +44,30 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - HUD temperature data pipeline -- v1.0 (backend emitter to NodeCard display)
 - ActivityFeed event history seeding -- v1.0 (DB events fetched on page load)
 - Health heartbeat and storage alerts -- v1.0 (5-min heartbeat, 30-min storage check)
+- Hybrid LLM backend (Claude + Qwen routing with cost tracking) -- v1.1
+- Persistent memory system with tiered TTLs -- v1.1
+- Docker deployment to management VM -- v1.1
+- E2E testing infrastructure (64 unit tests) -- v1.1
+- JARVIS voice engine (XTTS v2 + ElevenLabs + OpenAI TTS, STT, audio visualizer) -- v1.2
+- Voice-aware personality tuning -- v1.2
 
 ### Out of Scope
 
-- ~~Voice / text-to-speech~~ -- **planned for v1.2** (Phase 11: JARVIS Voice Engine)
 - Face / user recognition -- future feature
 - Predictive maintenance / anomaly detection -- future, needs data collection first
 - Multi-user permissions -- single operator for now
 - Smart home integration -- Proxmox cluster focus only for v1
 - Mobile native app -- responsive web handles mobile
 
-## Current Milestone: v1.1 Hybrid Intelligence & Deployment
+## Current Milestone: v1.3 File Operations & Project Intelligence
 
-**Goal:** Add hybrid LLM intelligence (Claude + Qwen routing), persistent memory with tiered TTLs, Docker deployment to management VM, and end-to-end testing against live cluster.
+**Goal:** Give JARVIS the ability to interact with files and projects on the server -- importing/downloading files, reading and browsing project codebases, and analyzing projects to discuss improvements. Also redo voice training with proper JARVIS video sources for better voice quality.
 
 **Target features:**
-- Hybrid LLM backend -- unified abstraction routing complex tasks to Claude API, routine ops to local Qwen, with cost tracking and fallback
-- Persistent memory system -- tiered TTLs for cluster state, actions, preferences, and conversation history with context consolidation
-- Docker deployment -- containerize backend and frontend, deploy to management VM (192.168.1.65) with Docker Compose
-- End-to-end testing -- validate all features against live Proxmox cluster API, including safety tiers and tool execution
+- Voice retraining -- extract clean JARVIS audio from provided video sources, build larger training dataset, retrain XTTS v2 for improved voice quality
+- File import/download -- MCP tools for JARVIS to download files from URLs, import files to server directories, manage file transfers
+- Project read access -- MCP tools for JARVIS to browse project directories, read source files, list project structures (read-only)
+- Project discussion -- JARVIS can analyze project code, discuss architecture, suggest improvements, and provide code reviews via chat
 
 ## Current State (v1.0 shipped 2026-01-26)
 
@@ -133,4 +138,4 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 | Safety-first Phase 1 | CRITICAL pitfalls must be architectural, not retrofitted | Confirmed -- dependency DAG + command allowlist |
 
 ---
-*Last updated: 2026-01-26 after v1.1 milestone started*
+*Last updated: 2026-01-26 after v1.3 milestone started*
