@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
-/** uid() requires secure context (HTTPS). Fallback for HTTP. */
+/** crypto.randomUUID() requires secure context (HTTPS). Fallback for HTTP. */
 const uid = (): string =>
   typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? uid()
+    ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export interface ToolCall {
@@ -24,6 +24,7 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   toolCalls?: ToolCall[];
+  provider?: 'claude' | 'qwen';
 }
 
 interface ChatState {
@@ -39,6 +40,7 @@ interface ChatState {
   stopStreaming: () => void;
   addToolCall: (toolCall: ToolCall) => void;
   updateToolCall: (toolUseId: string, update: Partial<ToolCall>) => void;
+  updateLastMessageProvider: (provider: 'claude' | 'qwen') => void;
   clearChat: () => void;
   newSession: () => void;
 }
@@ -141,6 +143,23 @@ export const useChatStore = create<ChatState>()(
           }),
           false,
           'chat/updateToolCall',
+        );
+      },
+
+      updateLastMessageProvider: (provider) => {
+        set(
+          (state) => {
+            const msgs = [...state.messages];
+            for (let i = msgs.length - 1; i >= 0; i--) {
+              if (msgs[i].role === 'assistant') {
+                msgs[i] = { ...msgs[i], provider };
+                break;
+              }
+            }
+            return { messages: msgs };
+          },
+          false,
+          'chat/updateLastMessageProvider',
         );
       },
 

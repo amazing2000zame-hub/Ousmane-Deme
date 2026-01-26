@@ -4,10 +4,10 @@ import { createChatSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useChatStore } from '../stores/chat';
 
-/** uid() requires secure context (HTTPS). Fallback for HTTP. */
+/** crypto.randomUUID() requires secure context (HTTPS). Fallback for HTTP. */
 const uid = (): string =>
   typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? uid()
+    ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 interface ChatSocketActions {
@@ -103,8 +103,12 @@ export function useChatSocket(): ChatSocketActions {
       });
     }
 
-    function onDone(_data: { sessionId: string; usage?: unknown }) {
-      useChatStore.getState().stopStreaming();
+    function onDone(data: { sessionId: string; usage?: unknown; provider?: string; cost?: number }) {
+      const store = useChatStore.getState();
+      if (data.provider === 'claude' || data.provider === 'qwen') {
+        store.updateLastMessageProvider(data.provider);
+      }
+      store.stopStreaming();
     }
 
     function onChatError(data: { sessionId: string; error: string }) {

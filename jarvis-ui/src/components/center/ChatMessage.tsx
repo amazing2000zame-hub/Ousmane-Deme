@@ -2,6 +2,7 @@ import type { ChatMessage as ChatMessageType, ToolCall } from '../../stores/chat
 import { BlockedCard } from './BlockedCard';
 import { ConfirmCard } from './ConfirmCard';
 import { ToolStatusCard } from './ToolStatusCard';
+import { ProviderBadge } from './ProviderBadge';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -58,14 +59,19 @@ export function ChatMessage({ message, onConfirm, onDeny }: ChatMessageProps) {
 
   return (
     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-3`}>
-      {/* Role label */}
-      <span
-        className={`text-[9px] font-display tracking-wider uppercase mb-0.5 px-1 ${
-          isUser ? 'text-jarvis-amber-dim' : 'text-cyan-400'
-        }`}
-      >
-        {isUser ? 'YOU' : 'JARVIS'}
-      </span>
+      {/* Role label + provider badge */}
+      <div className="flex items-center gap-1.5 mb-0.5 px-1">
+        <span
+          className={`text-[9px] font-display tracking-wider uppercase ${
+            isUser ? 'text-jarvis-amber-dim' : 'text-cyan-400'
+          }`}
+        >
+          {isUser ? 'YOU' : 'JARVIS'}
+        </span>
+        {!isUser && message.provider && (
+          <ProviderBadge provider={message.provider} />
+        )}
+      </div>
 
       {/* Message bubble */}
       <div

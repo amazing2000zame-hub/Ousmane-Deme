@@ -4,6 +4,7 @@ import { VMList } from '../left/VMList';
 import { StoragePanel } from '../left/StoragePanel';
 import { CenterDisplay } from '../center/CenterDisplay';
 import TerminalPanel from '../right/TerminalPanel';
+import { CostPanel } from '../right/CostPanel';
 import { useKeyboardNav } from '../../hooks/useKeyboardNav';
 import { useTerminalStore } from '../../stores/terminal';
 
@@ -62,11 +63,14 @@ export function Dashboard() {
           <CenterDisplay />
         </main>
 
-        {/* Right column: Terminal (0-width when collapsed, stays mounted for xterm state) */}
+        {/* Right column: Cost panel + Terminal (0-width when collapsed, stays mounted for xterm state) */}
         <aside
           className="flex flex-col min-h-0 max-md:border-t max-md:border-jarvis-amber/10 overflow-hidden"
           data-panel="right"
         >
+          <div className="shrink-0 overflow-y-auto max-h-[40%]">
+            <CostPanel />
+          </div>
           <TerminalPanel />
         </aside>
       </div>
