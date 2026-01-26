@@ -1,359 +1,500 @@
-# Technology Stack
+# Technology Stack -- v1.1 Milestone Additions
 
-**Project:** Jarvis 3.1 -- Proxmox Cluster AI Control & Dashboard
+**Project:** Jarvis 3.1 v1.1 -- Hybrid LLM, Persistent Memory, Docker Deployment, E2E Testing
 **Researched:** 2026-01-26
-**Overall Confidence:** HIGH (most recommendations verified via npm registry and official docs)
+**Overall Confidence:** HIGH (versions verified via npm registry; patterns verified against actual codebase)
+
+**Scope:** This document covers ONLY the stack additions/changes for v1.1. The existing v1.0 stack (Express 5, React 19, Vite 6, Socket.IO 4, Anthropic SDK, MCP SDK, better-sqlite3, Drizzle ORM) is validated and unchanged. See the v1.0 STACK.md for those decisions.
 
 ---
 
-## Recommended Stack
+## Critical Context: What v1.0 Actually Built (vs. What Was Planned)
 
-### Frontend Framework
+The v1.0 planning STACK.md recommended Vercel AI SDK (`ai`, `@ai-sdk/openai-compatible`) for LLM abstraction. **This was NOT adopted.** The actual v1.0 codebase uses:
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| React | ^19.0.0 | UI framework | Already scaffolded in `jarvis-ui/`. React 19 is stable with concurrent features, streaming SSR, and improved Context API. No reason to change. | HIGH |
-| Vite | ^6.0.5 | Build tool + dev server | Already in scaffold. Vite 6 is current stable. Fast HMR, native ESM, excellent DX. Tailwind CSS v4 has a first-party Vite plugin. | HIGH |
-| TypeScript | ~5.6.2 | Type safety | Already in scaffold. Pin to 5.6.x for stability; TypeScript 5.7+ available but not required. | HIGH |
+- **Claude:** Native `@anthropic-ai/sdk` v0.71.2 with direct streaming via `claudeClient.messages.stream()`
+- **Local Qwen:** Raw `fetch()` against the OpenAI-compatible `/v1/chat/completions` endpoint with manual SSE parsing
+- **Routing:** Keyword-based `needsTools()` function in `chat.ts` -- if message contains tool keywords, route to Claude; otherwise, route to local
+- **Zod:** v4.3.6 (not v3.x as planned)
+- **Schema:** 5 tables: `events`, `conversations`, `cluster_snapshots`, `preferences`, `autonomy_actions`
 
-**Do NOT use:** Next.js. This is a self-hosted dashboard deployed as static files behind Nginx, not an SSR app. Vite SPA is the correct architecture. Adding Next.js would add server complexity for zero benefit.
-
-### Styling & Design System
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Tailwind CSS | ^4.0.0 | Utility CSS framework | Upgrade from v3 (in scaffold) to v4. New CSS-first config (`@import "tailwindcss"`, no `tailwind.config.js`), 5x faster builds via Rust Oxide engine. First-party Vite plugin. Custom theme via `@theme` directive for JARVIS amber/gold palette. | HIGH |
-| Custom CSS (CSS variables + `@theme`) | - | Sci-fi design tokens | JARVIS aesthetic (amber `#FF9500`, gold `#FFD700`, scan lines, glow effects) implemented via Tailwind v4 `@theme` directive + CSS custom properties. No third-party sci-fi framework needed. | HIGH |
-
-**Do NOT use:**
-- **Arwes** (sci-fi framework): Still in alpha (1.0.0-alpha), not production-ready, does not support React 19 strict mode or RSC. API unstable with breaking changes. Build custom sci-fi components instead -- the aesthetic is achievable with Tailwind + CSS animations + Motion.
-- **Cosmic UI**: Too new (July 2025), thin community, unclear maintenance. Risk of abandonment.
-- **MUI/Chakra/shadcn**: Wrong aesthetic. These are designed for conventional UIs. Fighting their design language to achieve eDEX-UI look is counterproductive.
-
-### Animation
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Motion (formerly Framer Motion) | ^12.27.0 | UI animations | Declarative React animation API. Handles the JARVIS aesthetic: scan line sweeps, panel transitions, glow pulses, text reveals. 8M+ weekly npm downloads, actively maintained (latest: Jan 2026). Layout animations work with React 19. Install as `motion` (new package name). | HIGH |
-
-**Do NOT use:** GSAP. It works but its imperative API fights React's declarative model. Motion's `<motion.div>` components are more natural in JSX. GSAP is better for vanilla JS or canvas-heavy work.
-
-### State Management
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Zustand | ^5.0.0 | Global client state | Minimal boilerplate (~3KB), single-store pattern ideal for dashboard: connection status, active panels, UI preferences, chat state, selected node. Middleware for devtools and persistence. | HIGH |
-| TanStack Query | ^5.90.0 | Server state & polling | Handles all Proxmox API data fetching with built-in caching, deduplication, background refetch, and `refetchInterval` for real-time polling. Pair with WebSocket for push-based invalidation. Already proven in the proxmox-ui codebase. | HIGH |
-
-**Architecture:** Zustand for client/UI state, TanStack Query for server/API state. This is the standard 2025/2026 pattern. Do NOT put API data in Zustand -- that is TanStack Query's job.
-
-**Do NOT use:**
-- **Redux/Redux Toolkit**: Overkill for this project. Zustand does everything needed with 90% less boilerplate.
-- **Jotai**: Better for complex interdependent atomic state. Dashboard state is more centralized (Zustand's strength).
-- **React Context alone**: No caching, no deduplication, no background refetch. Insufficient for real-time dashboard.
-
-### Data Visualization
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Recharts | ^2.15.0 | Charts (CPU, RAM, network, storage) | React-native composable API (JSX components). Good enough for dashboard-scale data (~100 data points per chart, not millions). Clean SVG rendering that can be styled to match JARVIS aesthetic. Active: 3M+ weekly downloads. | HIGH |
-
-**Alternative (if needed later):** Apache ECharts (`echarts-for-react`) for high-density time-series data (thousands of points, WebGL canvas rendering). Start with Recharts; switch specific panels to ECharts only if performance requires it.
-
-**Do NOT use:** Chart.js. Its canvas rendering makes it harder to style for the sci-fi aesthetic, and its React wrapper (`react-chartjs-2`) is less ergonomic than Recharts.
-
-### Real-Time Communication
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Socket.IO (server) | ^4.8.0 | WebSocket server | Auto-reconnection with exponential backoff, rooms/namespaces (per-node rooms, per-panel rooms), broadcasting, heartbeats -- all built-in. Matters for a dashboard that must maintain connection to streaming infrastructure data. The ~2x overhead vs raw `ws` is negligible for this use case (<100 concurrent clients). | HIGH |
-| Socket.IO (client) | ^4.8.0 | WebSocket client | Matches server. `socket.io-client` pairs with the server. Auto-reconnect is critical for a dashboard that runs 24/7 on a dedicated display. | HIGH |
-
-**Why not raw `ws`?** Raw `ws` is faster but you would need to build reconnection logic, heartbeats, room management, and message serialization from scratch. For a dashboard with <100 clients, Socket.IO's DX wins over `ws`'s performance edge.
-
-**Architecture pattern:**
-- Backend emits events: `cluster:status`, `node:metrics`, `vm:status`, `jarvis:activity`
-- Frontend joins rooms per-panel: `room:cluster`, `room:node:Home`, `room:jarvis`
-- TanStack Query cache invalidated on Socket.IO events (push-based freshness)
-
-### Terminal Emulator
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| @xterm/xterm | ^5.5.0 | Terminal emulator | Powers the eDEX-style terminal panel. Same engine VS Code uses. WebGL renderer for performance, fit addon for responsive sizing. | HIGH |
-| react-xtermjs | ^1.1.0 | React wrapper | By Qovery, modern hooks-based wrapper. Actively maintained. Provides `<XTerm>` component and `useXTerm` hook. | MEDIUM |
-| @xterm/addon-fit | ^0.11.0 | Terminal auto-resize | Responsive terminal that fits its container. | HIGH |
-| @xterm/addon-webgl | ^0.19.0 | GPU rendering | Canvas-based rendering for smooth terminal output. | HIGH |
-
-### Routing
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| React Router | ^7.12.0 | Client-side routing | Standard React router. Used for navigation between dashboard views (main dashboard, node detail, settings, logs). Already in the proxmox-ui codebase. | HIGH |
+All v1.1 recommendations below are grounded in THIS actual codebase, not the original plan.
 
 ---
 
-## Backend Framework
+## 1. Hybrid LLM Backend
+
+### Recommendation: Keep Native SDKs, Add `openai` Package for Local LLM
 
 | Technology | Version | Purpose | Why | Confidence |
 |------------|---------|---------|-----|------------|
-| Express | ^5.2.0 | HTTP API server | Express 5 is stable and production-ready. The MCP TypeScript SDK publishes `@modelcontextprotocol/express` middleware for direct integration. This is the deciding factor -- MCP + Express is a supported, tested combination. Fastify/Hono are faster but lack first-party MCP middleware. | HIGH |
-| Socket.IO | ^4.8.0 | WebSocket server | Attaches to Express's HTTP server. See real-time section above. | HIGH |
+| `openai` | ^6.16.0 | OpenAI-compatible client for local Qwen | Replaces raw `fetch()` + manual SSE parsing in `local-llm.ts`. Provides typed streaming, automatic retries, proper error handling, and abort support. Use `new OpenAI({ baseURL: 'http://192.168.1.50:8080/v1', apiKey: 'not-needed' })`. The `openai` npm package is the de facto standard for OpenAI-compatible endpoints (7,900+ dependents). | HIGH |
+| `@anthropic-ai/sdk` | ^0.71.2 | Claude API client (existing) | **No change.** Keep as-is. The native Anthropic SDK provides streaming, tool use, and type safety that no abstraction layer improves upon. The agentic loop in `loop.ts` is tightly coupled to Anthropic's `ContentBlock`, `ToolResultBlockParam`, and streaming event types. Switching to an abstraction would require rewriting the entire loop. | HIGH |
 
-**Why Express over Fastify/Hono?** Performance is not the bottleneck for a LAN-only dashboard with <10 concurrent users. The MCP SDK's official Express adapter (`@modelcontextprotocol/express`) eliminates glue code. Express 5 adds async error handling and proper promise support -- the main historical pain point is resolved.
+### What NOT to Add
 
-**Do NOT use:**
-- **Fastify**: Faster, but no official MCP middleware. Would require manual Streamable HTTP transport setup.
-- **Hono**: Designed for edge/serverless. Overkill portability for a Docker container on a LAN.
-- **NestJS**: Enterprise framework overhead for a single-purpose API. Decorator-heavy architecture adds complexity without benefit.
+- **Vercel AI SDK (`ai`, `@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`):** The v1.0 plan recommended this. **Do NOT adopt it now.** Reasons:
+  1. The agentic loop (`loop.ts`) uses Anthropic-specific types throughout: `Anthropic.MessageParam`, `Anthropic.ContentBlock`, `Anthropic.ToolResultBlockParam`, streaming via `claudeClient.messages.stream()`. The AI SDK would require rewriting all of this.
+  2. The local LLM has no tool use -- it is text-only chat. A unified provider abstraction solves a problem we do not have (provider-agnostic tool calling).
+  3. Adding AI SDK means 3 LLM-related packages (`ai`, `@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`) vs. 1 new package (`openai`). More dependencies for less benefit.
+  4. The `openai` package alone gives us typed streaming, error handling, and retries for the local LLM -- which is all we need.
 
----
+- **LangChain:** Heavy, unnecessary abstraction. Same reasons as v1.0 analysis.
 
-## MCP (Model Context Protocol) Server
+- **LiteLLM (Python proxy):** Adds a Python service just to proxy LLM calls. The `openai` npm package with custom `baseURL` achieves the same thing in-process.
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| @modelcontextprotocol/sdk | ^1.25.0 | MCP server SDK | Official TypeScript SDK. Defines tools, resources, prompts. Zod for schema validation. v1.x is production-recommended; v2 expected Q1 2026 but v1.x will get 6 months of maintenance after. 21K+ dependent packages. | HIGH |
-| @modelcontextprotocol/express | latest | Express adapter | Official thin adapter that wires MCP server into Express routes. Supports Streamable HTTP transport (recommended) with optional SSE fallback. | HIGH |
-| Zod | ^3.25.0 | Schema validation | Required peer dependency of MCP SDK. Defines tool input/output schemas. Also useful for API request validation throughout the backend. | HIGH |
+### Routing Architecture Enhancement
 
-**Transport:** Use **Streamable HTTP** (recommended by MCP spec) over Express, not stdio. The MCP server runs in the same process as the Express API server, exposed at `/mcp` endpoint. Claude Desktop/API can connect via HTTP. Local Qwen connects via the backend's internal MCP client.
+The existing keyword-based router in `chat.ts` works but is brittle. For v1.1:
 
-**Tool categories to expose:**
-1. **Proxmox tools** -- `get_cluster_status`, `get_node_metrics`, `list_vms`, `start_vm`, `stop_vm`, `get_storage`
-2. **System tools** -- `ssh_execute`, `check_service`, `restart_service`, `get_logs`
-3. **Docker tools** -- `list_containers`, `restart_container`, `get_container_logs`
-4. **Diagnostic tools** -- `run_health_check`, `check_network`, `test_connectivity`
-5. **Memory tools** -- `query_events`, `store_observation`, `get_cluster_history`
+**Enhance, do not replace.** The `needsTools()` function should be refactored into a proper router module (`src/ai/router.ts`) with:
+- Current keyword matching (keep, it works)
+- Message length heuristic (long analytical questions -> Claude)
+- Explicit model selection via chat UI (user picks Claude or Local)
+- Fallback logic: if Claude API is unavailable/rate-limited, fall back to local for non-tool messages
+- Cost tracking: log which provider handled each request and token counts
 
----
+**No new dependencies needed** for routing -- this is pure application logic.
 
-## LLM Integration
+### Integration Points
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| @anthropic-ai/sdk | ^0.71.0 | Claude API client | Official TypeScript SDK. Streaming via SSE, tool use (function calling), message batches. Used for complex reasoning tasks: diagnosis, multi-step remediation, architecture decisions. | HIGH |
-| @ai-sdk/openai-compatible | ^1.0.0 | Local LLM client | Vercel AI SDK's OpenAI-compatible provider. Connects to llama-server at `192.168.1.50:8080`. Handles streaming, retries, model selection. Unified interface so local and cloud LLMs share the same calling pattern. | MEDIUM |
-| ai (Vercel AI SDK) | ^5.0.0 | Unified LLM interface | AI SDK 5 provides `streamText`, `generateText` with unified provider abstraction. Swap between Claude and local Qwen with a provider change, not a code rewrite. Full TypeScript type safety. WebSocket transport support for real-time streaming. | HIGH |
-
-**Hybrid LLM routing strategy:**
-- **Claude API** (complex): Multi-step diagnosis, remediation plans, natural language analysis, code generation
-- **Local Qwen 2.5 7B** (routine): Status checks, simple commands, formatting responses, health summaries
-- **Router logic**: Backend decides based on task complexity. Simple heuristic: if the task requires tools or multi-step reasoning, route to Claude. If it is a status query or formatting task, route to local.
-
-**Do NOT use:**
-- **Direct fetch to OpenAI-compatible API** (current scaffold approach): Works but loses type safety, streaming abstractions, retry logic, and provider switching. The Vercel AI SDK wraps this properly.
-- **LangChain**: Massive abstraction layer, heavy dependency tree, frequent breaking changes. The Vercel AI SDK is lighter and sufficient for this use case.
-- **Ollama provider**: The existing Qwen runs via llama-server (not Ollama), so use `@ai-sdk/openai-compatible` pointed at `http://192.168.1.50:8080/v1`.
-
----
-
-## Persistent Memory System
-
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| better-sqlite3 | ^12.6.0 | SQLite driver | Synchronous, fastest Node.js SQLite driver. 2.7K+ dependents. Prebuilt binaries for Linux. No network overhead -- file-based DB in Docker volume. | HIGH |
-| Drizzle ORM | ^0.45.0 | Type-safe ORM | SQL-first, 7.4KB, zero dependencies. Sits on top of better-sqlite3. TypeScript schema definitions generate types automatically. Migrations via `drizzle-kit`. Faster than raw better-sqlite3 with prepared statements. | HIGH |
-| drizzle-kit | ^0.30.0 | Migration tool | CLI for generating and running SQL migrations from Drizzle schema changes. | HIGH |
-
-**Database schema (conceptual):**
 ```
-events        -- timestamped cluster events (node up/down, VM state changes, alerts)
-actions       -- Jarvis actions taken (commands executed, remediation steps)
-conversations -- chat history (user messages, assistant responses, tool calls)
-observations  -- Jarvis observations (patterns noticed, anomalies detected)
-preferences   -- user preferences (dashboard layout, notification settings)
-cluster_state -- latest snapshot of cluster topology and resource usage
+Existing:                          v1.1 Change:
+src/ai/claude.ts    (keep as-is)   No change
+src/ai/loop.ts      (keep as-is)   No change
+src/ai/local-llm.ts (rewrite)      Use `openai` package instead of raw fetch
+src/realtime/chat.ts (refactor)     Extract router to src/ai/router.ts
 ```
 
-**Why SQLite over PostgreSQL?**
-- Single-user dashboard, no concurrent write pressure
-- Zero operational overhead (no database server to manage)
-- File-based: trivial backup (copy file), trivial Docker volume mount
-- 10-50ms query performance is more than sufficient
-- Portable: can export/move the entire memory as a single file
-
-**Do NOT use:**
-- **PostgreSQL**: Overkill for single-user. Adds a Docker container, connection pooling, and operational burden for no benefit.
-- **MongoDB**: Document model is wrong for structured event/action data. SQL is better for time-range queries on events.
-- **Vector database (ChromaDB, Pinecone)**: Not needed for v1. Memory retrieval is by time range, event type, and keyword -- standard SQL queries. Vector similarity search can be added later via `sqlite-vec` extension if semantic search is needed.
-- **Redis**: Good for caching, but SQLite handles the persistence and caching is handled by TanStack Query on the frontend.
-
 ---
 
-## Infrastructure & Proxmox Integration
+## 2. Persistent Memory with TTLs
+
+### Recommendation: Extend Existing Drizzle Schema + setInterval Cleanup
 
 | Technology | Version | Purpose | Why | Confidence |
 |------------|---------|---------|-----|------------|
-| node-ssh | ^13.2.0 | SSH client | Promise-based wrapper around ssh2. Clean API for executing commands on cluster nodes. Built-in TypeScript support via `@types/ssh2`. Simpler than raw ssh2 for command execution use case. | MEDIUM |
-| proxmox-api | ^1.1.0 | Proxmox REST API client | TypeScript types with IntelliSense for Proxmox API. Proxy-based API that mirrors the Proxmox REST structure. Supports token auth. GPL-3.0 license (check compatibility). | MEDIUM |
+| `better-sqlite3` | ^12.6.2 | SQLite driver (existing) | **No change.** Already handles all DB operations synchronously. | HIGH |
+| `drizzle-orm` | ^0.45.1 | ORM (existing) | **No change.** Extend schema with new `memory` table + `expires_at` column. Drizzle's migration system handles schema evolution. | HIGH |
+| `drizzle-kit` | ^0.31.8 | Migration CLI (existing) | **No change.** Use `drizzle-kit generate` + `drizzle-kit push` for new table. | HIGH |
+| `node-cron` | ^4.2.1 | Scheduled cleanup jobs | Runs TTL expiry sweeps on a schedule. Lightweight (pure JS, no native deps). Also useful for periodic cluster snapshot saves and memory compaction. Supports cron syntax for fine-grained scheduling. | HIGH |
+| `@types/node-cron` | ^3.0.11 | TypeScript types for node-cron | DefinitelyTyped definitions. Required since node-cron does not ship its own types. | HIGH |
 
-**Alternative to proxmox-api:** Build a thin custom Proxmox client using `fetch` + TypeScript interfaces. The Proxmox REST API is well-documented and stable. A custom client avoids the GPL-3.0 license concern and gives full control over error handling. The existing `proxmox-api` npm package was last published ~1 year ago and has limited adoption (1.1K weekly downloads). **Recommendation: Start with custom client, evaluate `proxmox-api` if custom client becomes tedious.**
+### TTL Implementation Pattern
 
-**SSH authentication:** Key-based auth only (per cluster security policy). Use the host's `~/.ssh/id_ed25519` key mounted into the Docker container as a read-only volume.
+SQLite has no native TTL support. The established pattern (used by Dapr, cache-sqlite-lru-ttl, and others) is:
 
----
+1. **`expires_at` INTEGER column** on rows that need expiry (Unix timestamp in seconds)
+2. **Filter on reads:** All queries include `WHERE expires_at IS NULL OR expires_at > unixepoch()`
+3. **Periodic cleanup:** `node-cron` runs `DELETE FROM memory WHERE expires_at <= unixepoch()` at configurable intervals
+4. **Index:** `CREATE INDEX idx_memory_expires ON memory(expires_at)` for cleanup performance
 
-## DevOps & Deployment
+### New Schema Tables
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Docker | latest | Containerization | Management VM (192.168.1.65) already runs 16 Docker containers. Jarvis 3.1 deploys as 2 containers: backend API + frontend (Nginx). | HIGH |
-| Docker Compose | ^2.x | Orchestration | Single `docker-compose.yml` for the Jarvis stack. Defines backend, frontend, volumes (SQLite DB, SSH keys), networks. | HIGH |
-| Nginx (Alpine) | ^1.27 | Frontend serving + reverse proxy | Multi-stage build: Vite builds static assets, Nginx serves them. Also reverse-proxies API requests and WebSocket upgrades to the backend container. Tiny image (~5MB Alpine). | HIGH |
-| Node.js 22 LTS (Alpine) | ^22.x | Backend runtime | LTS release, stable. Alpine variant for small image size. ES2022+ support for all TypeScript features. | HIGH |
-
-**Multi-stage Dockerfile (frontend):**
-1. Stage 1: `node:22-alpine` -- install deps, `npm run build`
-2. Stage 2: `nginx:1.27-alpine` -- copy `dist/` to `/usr/share/nginx/html`, copy nginx config
-
-**Backend Dockerfile:**
-1. `node:22-alpine` -- install deps, compile TypeScript, run with `node dist/index.js`
-2. Mount volumes: SQLite DB directory, SSH keys (read-only)
-
-**Do NOT use:**
-- **Kubernetes/K3s**: Single-machine deployment on a management VM. Docker Compose is sufficient.
-- **PM2**: Running in Docker already handles process management. PM2 inside Docker is redundant.
-
----
-
-## Supporting Libraries
-
-| Library | Version | Purpose | When to Use | Confidence |
-|---------|---------|---------|-------------|------------|
-| date-fns | ^4.1.0 | Date formatting | Dashboard timestamps, event history, "2 minutes ago" formatting | HIGH |
-| lucide-react | ^0.460.0 | Icons | Consistent icon set for UI. Already in proxmox-ui codebase. | HIGH |
-| clsx | ^2.1.0 | Conditional classes | `clsx("base", condition && "active")` for Tailwind class merging | HIGH |
-| tailwind-merge | ^3.0.0 | Tailwind class dedup | Merges conflicting Tailwind classes properly. Use with clsx: `cn()` utility | HIGH |
-| react-hot-toast | ^2.5.0 | Toast notifications | Non-blocking notifications for Jarvis actions, alerts, errors | HIGH |
-| react-markdown | ^9.0.0 | Markdown rendering | Jarvis responses contain markdown (code blocks, lists, headers) | HIGH |
-| highlight.js | ^11.11.0 | Code syntax highlighting | Code blocks in Jarvis responses and terminal output | HIGH |
-
----
-
-## Development Tools
-
-| Tool | Version | Purpose | Confidence |
-|------|---------|---------|------------|
-| ESLint | ^9.17.0 | Linting | Already in scaffold. ESLint 9 flat config. | HIGH |
-| eslint-plugin-react-hooks | ^5.0.0 | React hooks linting | Already in scaffold. | HIGH |
-| @tanstack/react-query-devtools | ^5.90.0 | Query debugging | Visual devtools for TanStack Query cache inspection | HIGH |
-| socket.io-admin-ui | ^0.5.0 | Socket.IO debugging | Admin panel for monitoring WebSocket connections in development | MEDIUM |
-
----
-
-## Alternatives Considered
-
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Frontend framework | React + Vite | Next.js | No SSR needed; SPA dashboard behind Nginx is simpler and correct |
-| Sci-fi components | Custom + Tailwind + Motion | Arwes framework | Arwes is alpha, no React 19 support, unstable API |
-| State management | Zustand + TanStack Query | Redux Toolkit | 10x more boilerplate for same outcome |
-| WebSocket | Socket.IO | raw `ws` | Socket.IO's reconnection/rooms/heartbeats justify the overhead |
-| HTTP framework | Express 5 | Fastify / Hono | MCP SDK has official Express middleware; no Fastify/Hono adapter |
-| Database | SQLite (Drizzle + better-sqlite3) | PostgreSQL | Single-user, zero-ops requirement, file-based backup |
-| LLM SDK | Vercel AI SDK | LangChain | AI SDK is lighter, sufficient, TypeScript-first |
-| Charts | Recharts | ECharts | Simpler React API; can upgrade specific panels to ECharts later |
-| CSS framework | Tailwind CSS v4 | Styled Components / CSS Modules | Tailwind is faster, more consistent, utility-first fits dashboard |
-| Animation | Motion (Framer Motion) | GSAP / React Spring | Declarative React API, layout animations, most popular |
-| Terminal | xterm.js + react-xtermjs | Custom terminal | xterm.js is the standard (powers VS Code terminal) |
-| Proxmox client | Custom fetch + types | proxmox-api npm | GPL license concern, stale package, limited adoption |
-| SSH | node-ssh | ssh2 / ssh2-promise | Promise-based, clean API for command execution |
-
----
-
-## Full Installation Commands
-
-### Frontend (`jarvis-ui/`)
-
-```bash
-# Upgrade Tailwind to v4 (remove v3)
-npm uninstall tailwindcss autoprefixer postcss
-npm install -D tailwindcss@^4.0.0 @tailwindcss/vite@^4.0.0
-
-# Core dependencies
-npm install zustand @tanstack/react-query react-router-dom
-npm install motion recharts socket.io-client
-npm install @xterm/xterm @xterm/addon-fit @xterm/addon-webgl react-xtermjs
-npm install date-fns lucide-react clsx tailwind-merge
-npm install react-hot-toast react-markdown
-npm install highlight.js
-
-# Dev dependencies
-npm install -D @tanstack/react-query-devtools
 ```
+memory (NEW)
+  - id: INTEGER PRIMARY KEY
+  - category: TEXT ('cluster_state' | 'action_log' | 'preference' | 'conversation_summary' | 'observation')
+  - key: TEXT (unique within category)
+  - value: TEXT (JSON string)
+  - created_at: TEXT (ISO timestamp)
+  - updated_at: TEXT (ISO timestamp)
+  - expires_at: INTEGER (Unix seconds, NULL = never expires)
+  - ttl_seconds: INTEGER (original TTL for re-application on update)
+```
+
+### TTL Tiers
+
+| Category | TTL | Rationale |
+|----------|-----|-----------|
+| `cluster_state` | 5 minutes | Stale cluster snapshots are misleading; always refresh |
+| `action_log` | 30 days | Audit trail, useful for pattern detection over weeks |
+| `preference` | NULL (never) | User preferences persist forever |
+| `conversation_summary` | 7 days | Compressed conversation context for continuity |
+| `observation` | 14 days | Jarvis-detected patterns, anomalies, trends |
+
+### Cleanup Schedule
+
+```typescript
+import cron from 'node-cron';
+
+// Every 15 minutes: delete expired memory rows
+cron.schedule('*/15 * * * *', () => {
+  db.run(sql`DELETE FROM memory WHERE expires_at IS NOT NULL AND expires_at <= unixepoch()`);
+});
+
+// Daily at 3 AM: VACUUM to reclaim space after bulk deletes
+cron.schedule('0 3 * * *', () => {
+  sqlite.exec('VACUUM');
+});
+```
+
+### What NOT to Add
+
+- **Redis:** Overkill for single-user, single-process application. SQLite with TTL emulation is simpler and avoids another Docker container.
+- **`cache-sqlite-lru-ttl` npm package:** Too opinionated, wraps raw SQL. We already have Drizzle ORM -- adding another abstraction layer over the same DB is unnecessary.
+- **`cache-manager`:** Designed for multi-store caching (Redis + memory + disk). Wrong abstraction for persistent tiered memory.
+- **Separate memory database:** Use the existing `jarvis.db` file. One SQLite file = one Docker volume mount = simple backup. Adding a second DB file adds operational complexity for no benefit.
+
+### Integration Points
+
+```
+Existing:                          v1.1 Change:
+src/db/schema.ts    (extend)       Add `memory` table definition
+src/db/memory.ts    (extend)       Add memory CRUD with TTL-aware queries
+src/db/migrate.ts   (extend)       Add CREATE TABLE + indexes for memory
+NEW: src/db/cleanup.ts             node-cron scheduled TTL cleanup + VACUUM
+NEW: src/ai/context.ts             Build memory context for LLM system prompt
+```
+
+### Existing Tables -- TTL Retrofit
+
+The existing `conversations`, `events`, `cluster_snapshots`, and `autonomy_actions` tables should also get periodic cleanup, but via simple age-based deletion (not the TTL column pattern):
+
+- `conversations`: Delete messages older than 30 days (configurable)
+- `events`: Delete resolved events older than 60 days
+- `cluster_snapshots`: Keep latest 1000 snapshots, delete older
+- `autonomy_actions`: Already has `cleanupOldActions(30)` -- wire into node-cron
+
+---
+
+## 3. Docker Deployment
+
+### Recommendation: Enhance Existing Dockerfile, Add Compose + Nginx
+
+| Technology | Version | Purpose | Why | Confidence |
+|------------|---------|---------|-----|------------|
+| Docker | (host) | Container runtime | Already on management VM (192.168.1.65). 16 containers already running. | HIGH |
+| Docker Compose | v2.x | Multi-container orchestration | Standard for multi-container apps. Single `docker-compose.yml` defines backend + frontend + network + volumes. Already used on management VM. | HIGH |
+| `node:22-slim` | 22.x | Backend base image | **Use `slim` not `alpine`.** The existing Dockerfile already uses `node:22-slim`. Reason: `better-sqlite3` requires native compilation. Alpine uses musl libc which causes `fcntl64` relocation errors with better-sqlite3's prebuilt binaries. Slim (Debian) uses glibc and `prebuild-install` works reliably. | HIGH |
+| `nginx:1.27-alpine` | 1.27.x | Frontend static serving + reverse proxy | Serves Vite build output. Reverse proxies `/api/*` and `/socket.io/*` to backend container. Alpine is fine here -- no native Node.js modules to worry about. ~5MB image. | HIGH |
+
+### Backend Dockerfile (Enhanced from Existing)
+
+The existing `jarvis-backend/Dockerfile` is already a proper multi-stage build. Enhancements needed:
+
+1. **Add `NODE_ENV=production`** in the runtime stage (missing from current Dockerfile)
+2. **Add `HEALTHCHECK`** using wget (already installed)
+3. **Run as non-root user** (security best practice, not currently done)
+4. **Add `.dockerignore`** (reduce build context)
+
+### Frontend Dockerfile (NEW)
+
+```
+Stage 1: node:22-slim
+  - npm ci
+  - npm run build (Vite)
+
+Stage 2: nginx:1.27-alpine
+  - Copy dist/ from build stage
+  - Copy nginx.conf
+  - Expose 80
+```
+
+### Docker Compose Structure
+
+```yaml
+# docker-compose.yml
+services:
+  backend:
+    build: ./jarvis-backend
+    ports: ["4000:4000"]
+    volumes:
+      - jarvis-data:/data              # SQLite DB persistence
+      - /root/.ssh/id_ed25519:/app/.ssh/id_ed25519:ro  # SSH key
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/data/jarvis.db
+    healthcheck:
+      test: wget -qO- http://localhost:4000/health || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build: ./jarvis-ui
+    ports: ["3004:80"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  jarvis-data:
+```
+
+### Key Decisions
+
+**Use `node:22-slim` (NOT alpine) for backend:**
+- better-sqlite3 has prebuilt binaries for glibc (Debian). The existing Dockerfile already handles this with `prebuild-install`.
+- Alpine's musl libc causes `fcntl64` symbol errors documented in multiple GitHub issues.
+- The existing Dockerfile already uses `node:22-slim`. Do not change this.
+
+**Nginx reverse proxy for WebSocket:**
+- Nginx config needs `proxy_set_header Upgrade $http_upgrade` and `proxy_set_header Connection "upgrade"` for Socket.IO.
+- Backend accessible via `http://backend:4000` from the Compose network (Docker DNS).
+
+**SSH key mounting:**
+- Mount host's `~/.ssh/id_ed25519` as read-only into the container.
+- The container's `SSH_KEY_PATH` config already defaults to `/app/.ssh/id_ed25519`.
+- Do NOT copy SSH keys into the Docker image -- they must be volume-mounted at runtime.
+
+### What NOT to Add
+
+- **Kubernetes / K3s:** Single-machine deployment. Docker Compose is the right tool.
+- **PM2:** Docker handles process restart via `restart: unless-stopped`. PM2 inside Docker is redundant.
+- **Traefik:** Overkill for a LAN-only service. Nginx in a container is simpler and sufficient.
+- **Docker Swarm:** Single-host, no need for orchestration across machines.
+- **Watchtower:** Nice for auto-updates but premature for initial deployment. Add later if needed.
+
+### New Files
+
+```
+NEW: jarvis-ui/Dockerfile              # Multi-stage: Vite build -> Nginx
+NEW: jarvis-ui/nginx.conf              # Reverse proxy config for API/WS
+NEW: docker-compose.yml                # Root-level compose file
+NEW: jarvis-backend/.dockerignore      # Exclude node_modules, dist, .git
+NEW: jarvis-ui/.dockerignore           # Exclude node_modules, dist, .git
+UPDATE: jarvis-backend/Dockerfile      # Add healthcheck, non-root user, NODE_ENV
+```
+
+---
+
+## 4. End-to-End Testing
+
+### Recommendation: Vitest with Live Cluster Validation
+
+| Technology | Version | Purpose | Why | Confidence |
+|------------|---------|---------|-----|------------|
+| `vitest` | ^4.0.18 | Test runner + assertions | Native ESM + TypeScript support (no config needed -- matches Vite's resolve/transform). 30-70% faster than Jest in CI. Built-in mocking, snapshots, coverage. Already uses Vite config, so zero additional configuration in this project. v4.0.18 is current stable (verified Jan 2026). | HIGH |
+| `@vitest/coverage-v8` | ^4.0.18 | Code coverage | V8-based coverage (no Istanbul overhead). Reports lcov, text, and JSON. Pair with vitest for `--coverage` flag. | HIGH |
+
+### Why Vitest Over Jest
+
+1. **Zero config with Vite:** Vitest reuses `vite.config.ts` transforms and resolve. Jest needs `ts-jest` or `@swc/jest` for TypeScript, plus `moduleNameMapper` for path aliases.
+2. **Native ESM:** The backend uses `"type": "module"`. Jest's ESM support is still experimental and requires `--experimental-vm-modules`. Vitest handles ESM natively.
+3. **Performance:** Vitest's HMR-based watch mode is 10-20x faster for iterative development.
+4. **TypeScript-first:** No `@types/jest` needed. Vitest types are built-in.
+
+### Test Categories
+
+**Unit Tests (offline, no cluster needed):**
+- LLM router logic (`needsTools()` function, routing decisions)
+- Safety tier classification (`getToolTier()`, tier escalation)
+- Memory TTL calculations (expiry logic, cleanup queries)
+- System prompt building (context injection, override detection)
+- Input sanitization and validation
+
+**Integration Tests (offline, SQLite in-memory):**
+- Memory store CRUD with TTL expiry
+- Drizzle schema validation (all tables create/read/update correctly)
+- Event and conversation persistence
+- Cleanup job logic (expired row deletion)
+
+**E2E Tests (live cluster -- gated by env var):**
+- Proxmox API connectivity (`get_cluster_status` returns data)
+- SSH connectivity to all 4 nodes
+- Local LLM endpoint health (`/v1/models` returns 200)
+- Claude API authentication (if key configured)
+- MCP tool execution for GREEN-tier tools
+- Full chat flow: send message -> get streaming response
+- Docker health endpoint responds
+
+### Test Structure
+
+```
+jarvis-backend/
+  tests/
+    unit/
+      router.test.ts          # LLM routing logic
+      safety.test.ts           # Tier classification
+      memory-ttl.test.ts       # TTL calculation + expiry
+      sanitize.test.ts         # Input sanitization
+    integration/
+      memory-store.test.ts     # SQLite memory CRUD (in-memory DB)
+      schema.test.ts           # Drizzle schema validation
+      cleanup.test.ts          # TTL cleanup job
+    e2e/
+      cluster-api.test.ts      # Live Proxmox API calls
+      ssh-connectivity.test.ts # SSH to all nodes
+      llm-endpoints.test.ts    # Claude + local LLM health
+      chat-flow.test.ts        # Full chat round-trip
+    setup.ts                   # Global test setup (in-memory SQLite for unit/integration)
+    vitest.config.ts           # Test-specific Vitest config
+```
+
+### E2E Test Gating
+
+E2E tests must only run when explicitly enabled, since they hit live infrastructure:
+
+```typescript
+// tests/e2e/cluster-api.test.ts
+import { describe, it, expect } from 'vitest';
+
+const RUN_E2E = process.env.JARVIS_E2E === 'true';
+
+describe.skipIf(!RUN_E2E)('Proxmox Cluster E2E', () => {
+  it('should return cluster status', async () => {
+    // Hit live Proxmox API
+  });
+});
+```
+
+Run with: `JARVIS_E2E=true npm test` or `npm run test:e2e`
+
+### In-Memory SQLite for Unit/Integration Tests
+
+```typescript
+// tests/setup.ts
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import * as schema from '../src/db/schema.js';
+
+export function createTestDb() {
+  const sqlite = new Database(':memory:');
+  sqlite.pragma('journal_mode = WAL');
+  const db = drizzle(sqlite, { schema });
+  // Run migrations against in-memory DB
+  return { db, sqlite };
+}
+```
+
+### What NOT to Add
+
+- **Jest:** ESM support is experimental; requires `ts-jest` or `@swc/jest`; needs `moduleNameMapper` configuration. Vitest is the natural choice for a Vite project.
+- **Playwright / Cypress:** These are browser E2E testing tools. Our E2E tests validate backend API calls against live infrastructure, not UI interactions. If frontend E2E is needed later, Playwright can be added separately.
+- **Supertest:** Useful for Express HTTP testing, but our backend communicates via Socket.IO for chat and REST for monitoring. Vitest can call APIs directly with `fetch`. Supertest adds complexity without benefit.
+- **testcontainers:** Designed for spinning up Docker containers in tests. We test against a live Proxmox cluster, not containerized infrastructure. Wrong abstraction.
+- **msw (Mock Service Worker):** Good for mocking HTTP APIs in tests. We want the opposite -- our E2E tests verify real API connectivity. Unit tests can use Vitest's built-in `vi.mock()` for mocking.
+
+### Package.json Scripts
+
+```json
+{
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "JARVIS_E2E=true vitest run tests/e2e/",
+    "test:unit": "vitest run tests/unit/",
+    "test:integration": "vitest run tests/integration/"
+  }
+}
+```
+
+---
+
+## Complete v1.1 Installation Commands
 
 ### Backend (`jarvis-backend/`)
 
 ```bash
-# Core framework
-npm install express socket.io cors
-npm install -D @types/express @types/cors
+# Hybrid LLM: OpenAI-compatible client for local Qwen
+npm install openai@^6.16.0
 
-# MCP server
-npm install @modelcontextprotocol/sdk @modelcontextprotocol/express zod
+# Persistent Memory: scheduled cleanup jobs
+npm install node-cron@^4.2.1
+npm install -D @types/node-cron@^3.0.11
 
-# LLM integration
-npm install ai @ai-sdk/openai-compatible @ai-sdk/anthropic @anthropic-ai/sdk
+# E2E Testing
+npm install -D vitest@^4.0.18 @vitest/coverage-v8@^4.0.18
+```
 
-# Database
-npm install better-sqlite3 drizzle-orm
-npm install -D drizzle-kit @types/better-sqlite3
+**Total: 2 new production dependencies, 3 new dev dependencies.**
 
-# Infrastructure
-npm install node-ssh
-npm install -D @types/ssh2
+### Frontend (`jarvis-ui/`)
 
-# Utilities
-npm install dotenv
+No new dependencies needed for v1.1. The frontend changes (model selector UI, memory display) use existing React + Zustand + Socket.IO stack.
 
-# TypeScript & build
-npm install -D typescript tsx @types/node
+---
+
+## New Config Values (`.env`)
+
+```bash
+# Hybrid LLM routing
+LOCAL_LLM_ENDPOINT=http://192.168.1.50:8080   # Already exists
+LOCAL_LLM_MODEL=qwen2.5-7b-instruct-q4_k_m.gguf  # Already exists
+LLM_ROUTE_MODE=auto                            # NEW: 'auto' | 'claude' | 'local'
+
+# Memory TTL configuration
+MEMORY_CLEANUP_CRON=*/15 * * * *               # NEW: cleanup schedule
+MEMORY_VACUUM_CRON=0 3 * * *                   # NEW: daily vacuum schedule
+CONVERSATION_RETENTION_DAYS=30                  # NEW: max conversation age
+EVENT_RETENTION_DAYS=60                         # NEW: max resolved event age
+
+# E2E testing (only in test environment)
+JARVIS_E2E=false                               # NEW: enable live cluster tests
 ```
 
 ---
 
-## Version Pinning Strategy
+## Alternatives Considered (v1.1 Specific)
 
-- **Pin major.minor** (`^x.y.0`) for core framework libraries (React, Express, Vite)
-- **Pin exact** for database drivers (`better-sqlite3@12.6.2`) to avoid native module rebuild issues
-- **Use latest stable** for MCP SDK (actively developed, v2 incoming Q1 2026)
-- **Lock with `package-lock.json`** and commit lockfile to git
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Local LLM client | `openai` npm package | Raw `fetch` (current) | Loses type safety, retries, proper SSE parsing, error handling |
+| Local LLM client | `openai` npm package | Vercel AI SDK | 3 packages vs 1; requires rewriting agentic loop; overkill for text-only local chat |
+| Local LLM client | `openai` npm package | `node-llama-cpp` | In-process llama.cpp binding. Jarvis already has a separate `llama-server` process; no need to embed the model in Node.js |
+| TTL cleanup | `node-cron` | `setInterval` | node-cron provides cron syntax, named schedules, and proper timezone handling. setInterval drifts and is harder to configure |
+| TTL cleanup | `node-cron` | OS-level crontab | Application-level scheduling is portable (works in Docker) and testable. OS cron requires container-level cron daemon setup |
+| TTL cleanup | `node-cron` | `bree` (worker thread scheduler) | Bree uses worker threads -- overkill for simple `DELETE` queries. node-cron runs in the main thread which is fine for <1ms DB operations |
+| Test runner | Vitest | Jest | No native ESM; needs ts-jest; extra config for Vite project |
+| Test runner | Vitest | Node.js built-in test runner | Limited snapshot support; no coverage integration; no watch mode with HMR |
+| Docker base | `node:22-slim` | `node:22-alpine` | better-sqlite3 prebuilt binaries fail on Alpine (musl libc); Slim uses glibc and works reliably |
+| Docker compose | Single compose file | Separate Dockerfiles only | Compose provides networking, volume management, health checks, and dependency ordering in one file |
+| Frontend serving | Nginx container | Express static serving | Nginx is faster for static files, handles WebSocket upgrade natively, separates concerns |
 
 ---
 
-## Architecture Summary (One-Liner)
+## Version Pinning Strategy (v1.1 Additions)
 
-React 19 + Vite 6 frontend with Tailwind v4 sci-fi styling and Motion animations, talking via Socket.IO to an Express 5 backend that hosts an MCP tool server, routes between Claude API and local Qwen 2.5 via Vercel AI SDK, persists state in SQLite via Drizzle ORM, and manages the Proxmox cluster via REST API + SSH -- all containerized with Docker Compose on the management VM.
+| Package | Pin Strategy | Reason |
+|---------|-------------|--------|
+| `openai` | `^6.16.0` | Semver-compliant, auto-generated from OpenAPI spec. Minor/patch updates are safe. |
+| `node-cron` | `^4.2.1` | Stable, infrequently updated. Caret is safe. |
+| `vitest` | `^4.0.18` | Actively developed. Stay current with test framework. |
+| `@vitest/coverage-v8` | `^4.0.18` | Must match vitest major.minor. |
+| `@types/node-cron` | `^3.0.11` | DefinitelyTyped. Caret is fine. |
+
+---
+
+## Architecture Summary (v1.1 One-Liner)
+
+v1.1 adds the `openai` package for typed local LLM communication, `node-cron` for TTL-based memory cleanup scheduling, Docker Compose with Nginx reverse proxy for production deployment on the management VM, and Vitest for unit/integration/E2E testing against the live Proxmox cluster.
 
 ---
 
 ## Sources
 
-**Verified (HIGH confidence):**
-- [MCP TypeScript SDK - GitHub](https://github.com/modelcontextprotocol/typescript-sdk) - v1.25.2, Express middleware, Streamable HTTP transport
-- [@modelcontextprotocol/sdk - npm](https://www.npmjs.com/package/@modelcontextprotocol/sdk) - 21K+ dependents, last published Jan 2026
-- [@anthropic-ai/sdk - npm](https://www.npmjs.com/package/@anthropic-ai/sdk) - v0.71.2, 2.9K+ dependents
-- [Vercel AI SDK 5 - Blog](https://vercel.com/blog/ai-sdk-5) - Multi-framework, flexible transports, provider abstraction
-- [Tailwind CSS v4.0 - Release](https://tailwindcss.com/blog/tailwindcss-v4) - CSS-first config, Oxide engine, Vite plugin
-- [Motion (Framer Motion) - npm](https://www.npmjs.com/package/framer-motion) - v12.27.0, 8M+ weekly downloads
-- [TanStack Query](https://tanstack.com/query/latest) - v5, refetchInterval polling, RSC support
-- [better-sqlite3 - npm](https://www.npmjs.com/package/better-sqlite3) - v12.6.2, 2.7K+ dependents
-- [Drizzle ORM - npm](https://www.npmjs.com/package/drizzle-orm) - v0.45.1, 7.4KB, zero deps
-- [Arwes - GitHub](https://github.com/arwes/arwes) - Still alpha, not production ready
-- [Express 5 via MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/server.md) - Official Express adapter
+**Verified via npm registry (HIGH confidence):**
+- `openai` v6.16.0 -- [npm](https://www.npmjs.com/package/openai) -- 7,900+ dependents, published Jan 2026
+- `vitest` v4.0.18 -- [npm](https://www.npmjs.com/package/vitest) -- 1,400+ dependents, published Jan 2026
+- `node-cron` v4.2.1 -- [npm](https://www.npmjs.com/package/node-cron) -- 1,900+ dependents, published ~Jul 2025
+- `@types/node-cron` v3.0.11 -- [npm](https://www.npmjs.com/package/@types/node-cron) -- DefinitelyTyped
+- `@vitest/coverage-v8` v4.0.18 -- [npm](https://www.npmjs.com/package/@vitest/coverage-v8)
+- `better-sqlite3` v12.6.2 -- already in project, verified latest
+- `@anthropic-ai/sdk` v0.71.2 -- already in project, verified latest
+- `drizzle-orm` v0.45.1 -- already in project, verified latest
 
-**WebSearch verified (MEDIUM confidence):**
-- [Zustand vs Jotai comparison](https://dev.to/hijazi313/state-management-in-2025-when-to-use-context-redux-zustand-or-jotai-2d2k) - Zustand for centralized store
-- [Socket.IO vs ws](https://dev.to/alex_aslam/nodejs-websockets-when-to-use-ws-vs-socketio-and-why-we-switched-di9) - Socket.IO DX advantages
-- [Express vs Fastify vs Hono](https://medium.com/@arifdewi/fastify-vs-express-vs-hono-choosing-the-right-node-js-framework-for-your-project-da629adebd4e) - Express still viable for non-edge
-- [node-ssh - GitHub](https://github.com/steelbrain/node-ssh) - Promise-based SSH wrapper
-- [AI agent memory with SQLite](https://www.marktechpost.com/2025/09/08/gibsonai-releases-memori-an-open-source-sql-native-memory-engine-for-ai-agents/) - SQLite as memory engine trend
-- [Recharts vs ECharts](https://embeddable.com/blog/react-chart-libraries) - Recharts for moderate data, ECharts for high volume
-- [react-xtermjs by Qovery](https://www.qovery.com/blog/react-xtermjs-a-react-library-to-build-terminals) - Modern xterm.js React wrapper
+**Verified via web search (MEDIUM confidence):**
+- OpenAI SDK with custom `baseURL` for llama-server -- [Ollama blog](https://ollama.com/blog/openai-compatibility), [llama.cpp docs](https://llama-cpp-python.readthedocs.io/en/latest/server/)
+- better-sqlite3 Docker issues with Alpine -- [Answer Overflow](https://www.answeroverflow.com/m/1221244020685148211), [Backstage GitHub issue](https://github.com/backstage/backstage/issues/11651)
+- SQLite TTL pattern (Dapr implementation) -- [Dapr docs](https://docs.dapr.io/reference/components-reference/supported-state-stores/setup-sqlite/)
+- Docker multi-stage best practices -- [Docker docs](https://docs.docker.com/build/building/multi-stage/), [OneUptime blog (Jan 2026)](https://oneuptime.com/blog/post/2026-01-06-nodejs-multi-stage-dockerfile/view)
+- Vitest vs Jest in 2026 -- [Vitest docs](https://vitest.dev/guide/), [DEV Community](https://dev.to/dataformathub/vitest-vs-jest-30-why-2026-is-the-year-of-browser-native-testing-2fgb)
+- Nginx reverse proxy + WebSocket -- [Docker blog](https://www.docker.com/blog/how-to-use-the-official-nginx-docker-image/)
+- Anthropic OpenAI SDK compatibility limitations -- [Claude docs](https://docs.anthropic.com/en/api/openai-sdk)
 
-**Existing codebase (verified):**
-- `jarvis-ui/package.json` - React 19, Vite 6, Tailwind v3 (to be upgraded), TypeScript 5.6
-- `jarvis-ui/src/services/jarvisApi.ts` - Existing streaming chat to llama-server
-- `jarvis-ui/src/hooks/useJarvisChat.ts` - Existing chat hook (to be replaced by AI SDK)
-- `.planning/PROJECT.md` - Jarvis 3.1 project definition with constraints and decisions
+**Verified via codebase inspection (HIGH confidence):**
+- `jarvis-backend/package.json` -- actual dependency versions
+- `jarvis-backend/src/ai/local-llm.ts` -- raw fetch to OpenAI-compatible endpoint
+- `jarvis-backend/src/ai/loop.ts` -- Anthropic SDK streaming + tool use types
+- `jarvis-backend/src/ai/claude.ts` -- native Anthropic client singleton
+- `jarvis-backend/src/realtime/chat.ts` -- keyword-based routing, memoryStore usage
+- `jarvis-backend/src/db/schema.ts` -- 5 existing Drizzle tables
+- `jarvis-backend/src/db/memory.ts` -- existing CRUD operations
+- `jarvis-backend/src/config.ts` -- existing env vars including local LLM config
+- `jarvis-backend/Dockerfile` -- existing multi-stage node:22-slim build
+- `jarvis-backend/tsconfig.json` -- ES2022 target, NodeNext module

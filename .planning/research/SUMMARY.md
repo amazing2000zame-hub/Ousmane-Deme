@@ -1,254 +1,480 @@
 # Project Research Summary
 
-**Project:** Jarvis 3.1 -- Proxmox Cluster AI Control & Dashboard
-**Domain:** AI-powered infrastructure management dashboard (self-hosted homelab)
+**Project:** Jarvis 3.1 v1.1 Milestone — Hybrid LLM, Persistent Memory, Docker Deployment, E2E Testing
+**Domain:** Infrastructure management enhancements for AI-powered homelab assistant
 **Researched:** 2026-01-26
 **Confidence:** HIGH
 
----
-
 ## Executive Summary
 
-Jarvis 3.1 is a single-user, LAN-deployed AI command center for a 4-node Proxmox homelab cluster, combining real-time infrastructure monitoring, an eDEX-UI/Iron Man visual aesthetic, a hybrid LLM system (Claude API + local Qwen 2.5 7B), and autonomous remediation capabilities exposed through the Model Context Protocol (MCP). Research across stack, features, architecture, and pitfalls converges on a clear conclusion: this is best built as a **modular monolith** -- a single Node.js backend process with clean module boundaries, served alongside a React SPA, deployed as two Docker containers on the existing management VM (192.168.1.65). The technology choices are well-validated: React 19 + Vite 6 + Tailwind CSS v4 for the frontend, Express 5 with the official MCP SDK middleware for the backend, SQLite via Drizzle ORM for persistence, and Socket.IO for real-time push. Every major library recommendation has HIGH confidence backed by official documentation, npm registry data, and existing codebase validation.
+Jarvis 3.1 is an established infrastructure management dashboard for a Proxmox homelab cluster with an agentic AI assistant. The v1.0 foundation is working: Claude API with tool calling, local Qwen 2.5 7B fallback, safety tiers, Socket.IO real-time updates, and SQLite persistence. The v1.1 milestone adds four capabilities that transform Jarvis from a prototype into a production-ready system: intelligent hybrid LLM routing (to reduce API costs 60-85%), persistent memory with TTL tiers (for cross-session context), full-stack Docker deployment (for the management VM), and comprehensive testing infrastructure.
 
-The recommended approach is a **dependency-driven 5-phase build**: backend foundation and safety layer first (because every component depends on tools and memory), then the visual dashboard (to validate the data pipeline and eDEX-UI aesthetic before adding AI complexity), then AI chat integration with Claude as the single LLM (to prove tool-calling end-to-end), then autonomous monitoring and remediation (requiring all prior components), and finally hybrid LLM routing and persistent intelligence (which refine an already-working system). This ordering is dictated by hard technical dependencies -- the MCP tool server must exist before the LLM can call tools, and the dashboard must exist before the monitor can push alerts to it.
+The recommended approach is **refinement, not rewrite**. The existing architecture already has the seams where these features plug in. The hybrid router wraps the existing Claude and Qwen implementations behind a common interface without changing their internal behavior. Persistent memory extends the existing SQLite schema with a new `memory_tiers` table and scheduled cleanup. Docker deployment is 80% complete — the Dockerfiles work, just need hardening and nginx reverse proxy configuration. Testing infrastructure targets the existing code's critical paths: safety tiers, routing logic, tool execution, and memory operations.
 
-The dominant risks are **self-management circular dependency** (Jarvis runs on the infrastructure it manages -- an action on agent1 kills Jarvis itself) and **LLM-initiated destructive commands** (stochastic models will eventually propose dangerous operations). Both are CRITICAL severity and must be addressed in Phase 1 with hard-coded dependency DAGs, command allowlists, tiered action classification, and an external watchdog. Secondary risks include WebSocket memory leaks degrading the 24/7 dashboard, sci-fi CSS animations killing usability, and Claude API cost spirals from autonomous monitoring loops. All have well-documented prevention strategies detailed below.
-
----
+The key risk is **feature interaction complexity**. Each new capability is straightforward in isolation, but their integration points create 12 critical pitfalls (documented in PITFALLS.md) ranging from SQLite WAL corruption in Docker to context window overflow on the local LLM to accidental SSH key exposure in Docker images. The mitigation strategy is **phase ordering by dependency**: routing first (no new dependencies), memory second (needs routing's provider abstraction), Docker third (packages complete code), testing last (validates deployed system). Build tests alongside feature code, not after.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is anchored by two ecosystem-level decisions: **React 19 + Vite 6** for the frontend (already scaffolded in `jarvis-ui/`, no reason to change) and **Express 5 for the backend** (specifically because the MCP TypeScript SDK publishes an official Express middleware -- `@modelcontextprotocol/express` -- eliminating integration glue code). Every other choice flows from these anchors.
+The v1.1 stack is **minimal and targeted** — only 5 new packages across 4 features, all verified as current stable versions (npm registry checked Jan 2026). The existing v1.0 stack (Express 5, React 19, Vite 6, Socket.IO 4, Anthropic SDK, better-sqlite3, Drizzle ORM) remains unchanged.
 
-**Core technologies:**
+**New production dependencies:**
+- `openai` (^6.16.0) — OpenAI-compatible client for local Qwen, replaces raw fetch() with typed streaming, error handling, retries, and abort support. The de facto standard for OpenAI-compatible endpoints (7,900+ dependents). Uses custom baseURL to point at llama-server.
+- `node-cron` (^4.2.1) — Scheduled cleanup jobs for TTL-based memory expiry. Lightweight, cron syntax, no native deps. Also useful for periodic VACUUM and snapshot cleanup.
 
-| Layer | Technology | Version | Rationale |
-|-------|-----------|---------|-----------|
-| Frontend framework | React + Vite + TypeScript | 19 / 6 / 5.6 | Already scaffolded; React 19 concurrent features; Vite fast HMR |
-| Styling | Tailwind CSS v4 | ^4.0.0 | CSS-first config, 5x faster Oxide engine, `@theme` for JARVIS palette |
-| Animation | Motion (Framer Motion) | ^12.27.0 | Declarative React animation API; 8M+ weekly downloads |
-| State (client) | Zustand | ^5.0.0 | Minimal boilerplate (~3KB); ideal for dashboard UI state |
-| State (server) | TanStack Query | ^5.90.0 | Built-in caching, polling, deduplication; proven in proxmox-ui |
-| Charts | Recharts | ^2.15.0 | React-native SVG charts; sufficient for dashboard scale |
-| Real-time | Socket.IO | ^4.8.0 | Auto-reconnection, rooms, heartbeats; required for terminal + chat |
-| Terminal | @xterm/xterm + react-xtermjs | 5.5 / 1.1 | VS Code terminal engine; WebGL renderer |
-| Backend framework | Express 5 | ^5.2.0 | Official MCP SDK middleware; async error handling |
-| MCP SDK | @modelcontextprotocol/sdk | ^1.25.0 | Official TypeScript SDK; Zod validation; Streamable HTTP transport |
-| LLM (cloud) | @anthropic-ai/sdk | ^0.71.0 | Claude API; native tool use; streaming |
-| LLM (local) | Vercel AI SDK + @ai-sdk/openai-compatible | ^5.0.0 | Unified provider abstraction; connects to llama-server at :8080 |
-| Database | better-sqlite3 + Drizzle ORM | 12.6 / 0.45 | Synchronous, fastest Node.js SQLite; zero-ops; file-based backup |
-| SSH | node-ssh | ^13.2.0 | Promise-based SSH wrapper; TypeScript support |
-| Deployment | Docker Compose + Nginx Alpine | 2.x / 1.27 | 2-container deployment on management VM |
-| Runtime | Node.js 22 LTS Alpine | ^22.x | LTS; ES2022+ support |
+**New dev dependencies:**
+- `vitest` (^4.0.18) — Test runner with native ESM + TypeScript support, 30-70% faster than Jest, zero config with Vite, built-in mocking/coverage
+- `@vitest/coverage-v8` (^4.0.18) — V8-based code coverage (pairs with vitest)
+- `@types/node-cron` (^3.0.11) — TypeScript types for node-cron (DefinitelyTyped)
 
-**Critical "do NOT use" decisions:**
-- **Arwes** (sci-fi framework): Alpha, no React 19 support, unstable API. Build custom sci-fi components instead.
-- **Next.js**: This is a SPA dashboard, not SSR. Vite is correct.
-- **LangChain**: Heavy, frequent breaking changes. Vercel AI SDK is lighter and sufficient.
-- **PostgreSQL**: Overkill for single-user. SQLite is zero-ops.
-- **Custom Proxmox client** preferred over `proxmox-api` npm (GPL-3.0 concern, stale package).
+**Critical decision: NO LLM gateway.** Research shows LiteLLM, OpenRouter, and other gateways are overkill for a two-provider system. The abstraction layer stays in application code (TypeScript interface over direct SDK calls). Claude's tool_use protocol is fundamentally different from OpenAI function calling — a gateway cannot unify them without losing fidelity.
 
-See [STACK.md](./STACK.md) for full version matrix, installation commands, and alternative analysis.
+**Critical decision: SQLite, not Redis.** For a single-user homelab generating ~50 messages/day, SQLite handles memory storage, TTL cleanup, and retrieval in <1ms. No external service to monitor or restart. If semantic search becomes necessary, sqlite-vss extension adds vector similarity without a new container.
+
+**Version pinning strategy:** Use caret ranges for all new packages (^) since they are stable, semver-compliant, and actively maintained. Lock Node.js to a specific minor (22.12-slim not 22-slim) for reproducible Docker builds.
 
 ### Expected Features
 
-Research identified a clear 3-tier feature hierarchy driven by dependency analysis.
+Research identified 4 feature domains with clear table-stakes/differentiator/anti-feature boundaries. The key insight: **hybrid routing and persistent memory create multiplicative value** — routing reduces API costs, memory enables the local LLM to be smarter (it can access historical context), and together they make self-hosting a 7B model genuinely useful instead of just a fallback.
 
-**Must have (table stakes) -- delivers value without AI:**
-- Node health overview (CPU, RAM, disk, temperature, uptime) for all 4 nodes
-- VM/Container list with status indicators and start/stop/restart controls
-- Storage overview with usage bars and threshold coloring
-- Real-time WebSocket updates (no page refresh; 10-15s polling cadence)
-- System terminal (eDEX-UI styled xterm.js with SSH PTY to any node)
-- Cluster quorum status (prominently visible)
-- eDEX-UI visual identity from day one (Iron Man HUD aesthetic)
+**Table stakes (must work reliably or the feature has no value):**
+- Intent-based LLM routing (keyword + heuristic, not ML-trained classifier)
+- Automatic fallback when Claude unavailable (API key missing, rate limited, or offline)
+- Provider indicator in UI (user must know which LLM is responding)
+- Token usage tracking per request (foundation for cost management)
+- Cross-session conversation recall (queries like "what did we discuss yesterday?")
+- Cluster state memory (Jarvis remembers "we expanded pve disk to 112GB last week")
+- User preference persistence ("I prefer email alerts for critical issues")
+- Full-stack Docker Compose (backend + frontend + nginx reverse proxy)
+- Persistent SQLite volume (data survives container restarts)
+- SSH key mounting (read-only, not baked into image)
+- Backend unit tests with Vitest (safety tiers, routing, memory operations)
+- API integration tests (Socket.IO chat flow, tool execution pipeline)
 
-**Should have (differentiators) -- the reason to build this:**
-- Natural language chat with JARVIS personality (formal, British, witty)
-- AI-powered cluster queries via MCP tool calling ("How's the cluster?", "Start VM 100")
-- Hybrid LLM routing (Claude for complex, Qwen for routine)
-- Autonomous monitoring with Act+Report remediation model (5 autonomy levels: Observe, Alert, Recommend, Act+Report, Act Silently)
-- Persistent memory (events, actions, conversations, cluster snapshots in SQLite)
-- Jarvis activity feed (live AI action log)
-- Action confirmation UX (tiered safety: read=auto, lifecycle=confirm, dangerous=double-confirm)
-- AI-narrated email reports (leveraging existing email agent on agent1)
+**Differentiators (create value beyond basic functionality):**
+- Cost tracking dashboard panel (running counter: "You've spent $2.14 this week")
+- Session-level cost attribution ("This diagnostic cost $0.38")
+- Configurable routing rules ("Always use Claude for SSH commands")
+- Tiered memory with TTL (short-term: 7 days, long-term: permanent)
+- Context consolidation/summarization (10K tokens of history -> 500-token summary)
+- Progressive context injection (budget: 500-800 tokens for memory, not dump everything)
+- One-command deployment script (`ssh management 'cd /opt/jarvis && docker compose up -d'`)
+- Container log aggregation with structured JSON logging
+- E2E tests against live Proxmox API (validates real cluster integration)
 
-**Defer (v2+):**
-- Voice input/output (TTS/STT) -- explicitly deferred in project definition
-- Widget-based configurable layouts -- fixed 3-column layout IS the identity
-- Multi-user RBAC -- single operator system
-- Smart home integration -- Proxmox cluster only
-- Predictive maintenance / anomaly detection -- needs data collection first
-- Log aggregation (Loki/ELK) -- show recent errors, link to external tools
-- Full Proxmox UI replacement -- complement, don't replace
-
-**MCP Tool Inventory:** 9 read-only tools (safe), 6 lifecycle tools (require confirmation), 3 system tools (require double-confirmation). Task-oriented design, not API-surface-oriented. Total: ~18 tools, well under the recommended 40-tool ceiling.
-
-See [FEATURES.md](./FEATURES.md) for full feature landscape, dependency graph, autonomy model, and MCP tool inventory.
+**Anti-features (explicitly avoid — would add complexity without value):**
+- ML-trained router model (RouteLLM-style RL approach is overkill for 50 queries/day)
+- Multiple cloud LLM providers (OpenAI, Gemini, etc. — Claude + local Qwen cover all needs)
+- LLM-as-judge for routing (doubles API calls in worst case)
+- Vector database (Pinecone, Chroma — external service overhead for <10K memories)
+- Unlimited context window usage (degrades quality, wastes tokens)
+- Kubernetes/Docker Swarm (single-machine deployment, Compose is sufficient)
+- Browser compatibility matrix (single operator, test Chromium only)
+- Performance/load testing (one user, no scaling needs)
 
 ### Architecture Approach
 
-A **6-component modular monolith** in a single Node.js process, deployed as 2 Docker containers (frontend Nginx + backend Node.js) on the management VM. Components communicate via direct function calls and EventEmitter within the process -- no IPC, no service mesh, no microservices overhead. This is correct for a single-developer, single-user, 4-node homelab with limited VM resources (4 CPUs, ~5.5 GB available RAM on management VM).
+The v1.1 integration architecture is **layered and additive** — each feature targets a specific layer of the existing codebase. The foundation (Express + Socket.IO + MCP tools + safety framework + SQLite) remains untouched. New features wrap or extend, they don't replace.
 
-**Major components:**
+**Four integration layers:**
 
-1. **React Frontend** -- eDEX-UI SPA; 3-column layout (cluster, Jarvis, terminal); communicates only with API Gateway via REST + WebSocket
-2. **API Gateway (Express 5)** -- HTTP + WebSocket server; JWT auth; multiplexed WebSocket protocol across channels (cluster, chat, events, terminal)
-3. **MCP Server (in-process)** -- Tool registry with 3-tier safety model (READ/WRITE/DANGEROUS); Proxmox REST API + SSH; NOT a separate process
-4. **LLM Router** -- Confidence-based cascading between Claude (cloud) and Qwen (local); unified abstraction layer; tool call execution pipeline
-5. **Memory Store (SQLite)** -- Events, conversations, cluster snapshots, preferences; context injection engine with budget-aware token management
-6. **Monitor Service** -- Autonomous event loop; tiered polling (10s critical, 30s important, 5min routine, 30min background); remediation playbooks
+1. **LLM Provider Layer** (ai/providers.ts, ai/router.ts, ai/cost-tracker.ts)
+   - Wraps existing ai/claude.ts and ai/local-llm.ts behind a common interface
+   - Router replaces keyword logic in realtime/chat.ts with pluggable routing rules
+   - Cost tracker logs token usage to conversations table (column already exists)
+   - No changes to ai/loop.ts agentic loop or ai/system-prompt.ts
 
-**Critical architectural decisions:**
-- Proxmox REST API over HTTPS (port 8006), NOT `pvesh` CLI -- management VM is Ubuntu, not PVE node
-- Single multiplexed WebSocket connection, NOT separate connections per feature
-- In-process MCP server via direct function calls, NOT stdio/HTTP transport (but can add external transport later)
-- API token auth for Proxmox, NOT PAM password auth
-- Socket.IO for WebSocket (reconnection, rooms, heartbeats justify overhead for <100 clients)
+2. **Memory Layer** (db/context-builder.ts, db/consolidator.ts, new memory_tiers table)
+   - Extends existing db/schema.ts with tiered memory storage
+   - buildClusterSummary() becomes buildContext() with tiered retrieval
+   - Scheduled cleanup hooks into existing monitor/poller.ts background tasks
+   - Existing conversations/events/preferences tables gain TTL cleanup
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for full component specifications, data flow diagrams, Docker deployment config, and inter-component communication matrix.
+3. **Deployment Layer** (docker-compose.yml, nginx.conf, .dockerignore)
+   - Enables frontend in existing docker-compose.yml (currently commented out)
+   - Nginx reverse proxy in jarvis-ui for /api and /socket.io WebSocket upgrade
+   - Backend Dockerfile gains healthcheck, non-root user, NODE_ENV=production
+   - Named volumes for SQLite data, bind mounts for SSH keys (read-only)
+
+4. **Testing Layer** (tests/, vitest.config.ts, playwright.config.ts)
+   - Unit tests (Vitest): routing, safety tiers, memory TTL, cost tracking
+   - Integration tests (Vitest): memory CRUD, tool pipeline, Socket.IO chat flow
+   - E2E tests (Playwright): dashboard loads, chat works, tools execute
+   - Mock layers for SSH, Proxmox API, Claude responses
+
+**Data flow (before/after):**
+
+```
+BEFORE v1.1:
+  chat:send -> needsTools() keyword check -> Claude loop.ts OR Qwen local-llm.ts
+  System prompt: buildClusterSummary() (live state only, no history)
+
+AFTER v1.1:
+  chat:send -> router.routeMessage() -> provider.chat() -> callbacks
+                   |                          |
+                   v                          v
+             cost-tracker.record()      Same StreamCallbacks
+  System prompt: buildContext() (live + tiered memory + TTL-filtered history)
+```
+
+**Component boundaries (existing -> v1.1 changes):**
+- realtime/chat.ts: Delegates routing, becomes thinner
+- ai/system-prompt.ts: Gains memory context injection, parameterized by provider
+- db/memory.ts: Adds memory_tiers CRUD, TTL-aware queries
+- monitor/poller.ts: Runs consolidateMemory() on background interval
+- docker-compose.yml: Adds frontend service, nginx reverse proxy
+- New: ai/router.ts (routing engine), db/context-builder.ts (memory assembly)
 
 ### Critical Pitfalls
 
-Research identified 13 pitfalls across 3 severity tiers. The top 5 that directly shape roadmap decisions:
+Research identified 15 pitfalls across 3 severity tiers. The 6 critical pitfalls (rewrites, data loss, or production incidents) must be addressed in the corresponding phase or deployment will fail.
 
-1. **Self-Management Circular Dependency (CRITICAL)** -- Jarvis runs in Docker on management VM on agent1 on the cluster it manages. Actions on agent1 kill Jarvis with no self-recovery. **Prevention:** Hard-coded dependency DAG (agent1, VMID 103, Docker daemon are protected), external watchdog on Home node, quorum protection (never act on >1 node simultaneously).
+**Top 6 Critical Pitfalls:**
 
-2. **LLM-Initiated Destructive Commands (CRITICAL)** -- LLMs are stochastic; they will eventually propose `rm -rf /` or stop VMID 103. **Prevention:** Command allowlist (not blocklist), structured tool calls only (never raw shell from LLM), 4-tier action classification (Green/Yellow/Red/Black), VMID/node identity verification before every action.
+1. **Keyword-based routing misclassifies messages (Phase 1)** — Current 42-keyword list has false positives (routes "tell me about cluster computing" to Claude) and false negatives (misses "are any machines down?"). Wastes API budget, degrades responses. **Fix:** Replace with intent classifier (fast regex + local LLM fallback classification), add force_provider UI option, log routing decisions for refinement.
 
-3. **Prompt Injection via Infrastructure Data (HIGH)** -- Cluster logs, VM names, and error messages can contain text the LLM treats as instructions. **Prevention:** Strict `<cluster_data>` framing in prompts, sanitize all infrastructure inputs, output validation via deterministic code (not another LLM call), memory input sanitization.
+2. **Context window overflow on local LLM silently degrades responses (Phase 1)** — Qwen has 4096 tokens but system prompt alone is 1500-2000 tokens + 20-message history. After 3-5 turns, silently truncates and hallucinates. **Fix:** Separate shorter system prompt for local LLM (~300 tokens, omit tool instructions), cap history at 4-6 messages, reserve 1024 tokens for output, emit context_overflow warning.
 
-4. **WebSocket Memory Leaks (HIGH)** -- 24/7 dashboard accumulates stale connections, unbounded arrays, orphaned state. **Prevention:** Bounded ring buffers (max 300 data points per metric), mandatory cleanup on unmount, exponential backoff with jitter for reconnection, ping/pong heartbeat, batch UI updates at 100ms intervals.
+3. **SQLite WAL files lost in Docker volume mounts (Phase 3)** — WAL mode creates .db-wal and .db-shm peers. No SIGTERM handler means SIGKILL on docker stop loses uncommitted transactions. **Fix:** Mount entire /data directory (not individual files), add graceful shutdown handler calling sqlite.close(), periodic wal_checkpoint(TRUNCATE), absolute path for DB_PATH.
 
-5. **Sci-Fi UI Destroying Usability (HIGH)** -- eDEX-UI looks amazing in mockups, kills productivity after 10 minutes. Original eDEX-UI was archived for performance issues. **Prevention:** Function-first design (build readable dashboard, then add sci-fi layers), GPU-composited animation techniques only, respect `prefers-reduced-motion`, three visual modes (JARVIS/Ops/Minimal), WCAG AA contrast ratios.
+4. **SSH keys baked into Docker image or leaked via layer history (Phase 3)** — No .dockerignore, COPY . . would embed /root/.ssh/id_ed25519 into image layers. Grants root access to all 4 cluster nodes. **Fix:** Create .dockerignore immediately (exclude .ssh, .env, *.key, data/), mount keys as read-only bind volumes, document prohibition, add CI check for secrets in layers.
 
-See [PITFALLS.md](./PITFALLS.md) for all 13 pitfalls with detailed prevention strategies, phase-specific warnings, and domain risk matrix.
+5. **TLS certificate verification globally disabled (Phase 3)** — NODE_TLS_REJECT_UNAUTHORIZED=0 disables verification for ALL HTTPS, including Anthropic API. Container-to-container MITM on shared Docker network could intercept API key. **Fix:** Remove global disable, use custom https.Agent for Proxmox only (rejectUnauthorized: false), or add Proxmox CA to NODE_EXTRA_CA_CERTS.
 
----
+6. **E2E tests against live cluster cause unintended side effects (Phase 4)** — Tests execute real commands on production nodes, consume real Claude tokens, create real events. A test verifying "can stop a VM" actually stops the VM. **Fix:** MockToolExecutor when NODE_ENV=test, restrict automated tests to GREEN-tier read-only tools, test confirmation flows without executing, use test- session prefix for cleanup.
+
+**3 Moderate Pitfalls (delays, costs, technical debt):**
+
+7. **Claude API cost explosion from unbounded agentic loops (Phase 1)** — 10-iteration loop re-sends full history + all tool results each time. Tool definitions alone = 2-3K tokens. Easy to hit 50K-100K tokens per query ($0.45 each). **Fix:** Per-query cost estimation, progressive context pruning after iteration 3, reduce max iterations from 10 to 5, track daily spend with cutoff.
+
+8. **Memory bloat from unbounded tables (Phase 2)** — No cleanup for conversations, events, cluster_snapshots. Events grow 1,440-2,880 rows/day. SQLite bloats, queries slow. **Fix:** TTL cleanup every hour (conversations: 7d, events: 30d, snapshots: 7d), monthly VACUUM, monitor DB size as health metric.
+
+12. **Claude and local LLM have incompatible message formats (Phase 1)** — Anthropic uses content block arrays with tool_use/tool_result types, OpenAI uses flat {role, content} strings. Switching providers mid-conversation loses tool context. **Fix:** Canonical internal format in DB (conversations table already has toolCalls JSON), MessageAdapter layer, summarize prior tool interactions as text when switching.
+
+**6 Minor Pitfalls (annoyance, fixable):** Container cannot reach cluster due to network isolation (use host networking), better-sqlite3 build fails silently (add build tools fallback), no graceful shutdown (add SIGTERM handler), E2E test flakiness from timing (event-based assertions), timezone mismatch (TZ=UTC in environment), missing .dockerignore (create before first build).
 
 ## Implications for Roadmap
 
-Based on combined research, the build order is dictated by hard technical dependencies (documented in ARCHITECTURE.md) and pitfall timing requirements (documented in PITFALLS.md). Five phases recommended.
+Based on combined research, the v1.1 milestone naturally decomposes into **4 sequential phases** with clear dependency relationships. The ordering is dictated by technical dependencies (routing abstraction needed before memory's provider-aware context budgets) and operational risk (deploy only when code is stable, test only when deployed).
 
-### Phase 1: Backend Foundation & Safety Layer
-**Rationale:** Every other component depends on the tool layer and memory store. Safety constraints must be architectural (Phase 1), not retrofitted. The MCP server is the "hands" of the system -- nothing works without it.
-**Delivers:** Express 5 backend, MCP tool server with ~18 tools, SQLite memory store schema, Proxmox REST API client, SSH client with connection pooling, JWT auth, safety framework (dependency DAG, action tiers, command allowlist), Docker Compose skeleton.
-**Features addressed:** Backend API, Proxmox API integration, authentication, MCP tool registry, memory store schema.
-**Pitfalls addressed:** #1 (self-management paradox -- protected resource list), #2 (destructive commands -- tiered actions, allowlist), #3 (prompt injection -- data sanitization), #7 (tool proliferation -- task-oriented design), #9 (Docker socket -- use SSH instead), #12 (MCP crash -- try/catch wrapping, timeouts).
-**Research flag:** RECOMMENDED -- Proxmox API token setup, SSH key Docker mounting, Docker socket proxy vs SSH.
+### Phase 1: Hybrid LLM Router + Cost Tracking
 
-### Phase 2: Real-Time Dashboard & eDEX-UI Visual Identity
-**Rationale:** A working dashboard delivers immediate value and validates the data pipeline + visual identity before AI complexity. All table-stakes monitoring features require only the backend from Phase 1, not LLM integration. The sci-fi aesthetic must be proven early -- it is the product identity.
-**Delivers:** React 19 SPA with 3-column layout, node health grid, VM/container list with controls, storage overview, xterm.js terminal, Socket.IO real-time push, eDEX-UI styling (Tailwind v4 + Motion), connection status indicators, staleness warnings.
-**Features addressed:** All 8 table-stakes dashboard features, system terminal, real-time updates, eDEX-UI aesthetic, visual alert indicators.
-**Pitfalls addressed:** #4 (WebSocket memory leaks -- bounded buffers, cleanup hooks), #8 (sci-fi performance -- function-first, GPU-composited only, 3 visual modes), #10 (stale data -- staleness indicators, heartbeat, reconnect with full refresh).
-**Research flag:** RECOMMENDED -- Tailwind CSS v4 `@theme` directive, xterm.js WebGL + react-xtermjs integration.
+**Rationale:** Foundational refactor with no new external dependencies. Creates the provider abstraction that all other features depend on. Addresses the immediate pain point (unpredictable Claude API costs). Low risk because it wraps existing working code without changing behavior. Can be validated independently before building on top of it.
 
-### Phase 3: AI Chat & Claude Integration
-**Rationale:** Start with Claude API only (simpler, smarter, native MCP tool use) to prove the full AI loop end-to-end before adding hybrid routing complexity. MCP is Claude's native protocol -- this is the path of least resistance.
-**Delivers:** Chat interface panel with streaming responses, Claude API integration via Anthropic SDK, MCP tool calling from LLM, JARVIS personality via system prompt, action confirmation UX (tiered safety cards in chat), cluster context injection into system prompt.
-**Features addressed:** Natural language chat, cluster status queries via AI, VM/CT management via chat, error explanation, JARVIS personality, streaming responses, action confirmation UX, context-aware responses.
-**Pitfalls addressed:** #2 (destructive commands -- confirmation UX enforced before execution), #3 (prompt injection -- data/instruction separation in prompts), #7 (tool selection -- LLM-optimized tool descriptions, empirical testing).
-**Research flag:** SKIP -- Claude tool use is extensively documented.
+**Delivers:**
+- LLMProvider interface wrapping Claude + Qwen implementations
+- Smart routing engine (intent-based, replaces keyword matching)
+- Token cost tracker with dashboard integration
+- Provider indicator in chat UI
+- Separate system prompts for Claude (full) vs Qwen (minimal)
+- Context window management for local LLM (4096-token budget enforcement)
 
-### Phase 4: Autonomous Monitoring & Remediation
-**Rationale:** Autonomy requires working AI + tools + dashboard. This phase transforms Jarvis from a reactive assistant into a proactive operator. The 5-level autonomy model (Observe/Alert/Recommend/Act+Report/Act Silently) and runbook-based remediation are the core differentiators.
-**Delivers:** Monitor service event loop (tiered polling), threshold-based alerting, Jarvis activity feed panel, auto-remediation runbooks (node unreachable -> WOL, VM crashed -> restart, service down -> restart), action audit log (SQLite-backed), email reports via existing agent1 infrastructure, kill switch toggle on dashboard.
-**Features addressed:** Background monitoring, threshold alerts, activity feed, auto-remediation, audit log, email reports, severity-tiered notifications.
-**Pitfalls addressed:** #1 (self-management -- quorum protection, protected resources enforced in monitor), #12 (MCP crash -- resilient tool execution in monitoring loop), #13 (Qwen quality under load -- monitoring uses structured tool calls, not LLM reasoning).
-**Research flag:** RECOMMENDED -- Autonomous remediation safety testing against real cluster.
+**Addresses features:**
+- Intent-based routing (table stakes)
+- Automatic Claude fallback (table stakes)
+- Cost tracking dashboard (differentiator)
+- Session-level cost attribution (differentiator)
+- Configurable routing rules (differentiator)
 
-### Phase 5: Hybrid LLM Intelligence & Persistent Memory
-**Rationale:** Hybrid routing and persistent memory refine an already-working system. Adding Qwen as a second LLM path requires the unified abstraction layer, cost tracking, and context management. Memory consolidation requires operational data from Phase 4's audit log.
-**Delivers:** Hybrid LLM router (Claude for complex, Qwen for routine), unified provider abstraction via Vercel AI SDK, Qwen-first routing with Claude escalation, cost tracking dashboard, persistent memory system with TTLs and tiered storage (core facts / operational state / event log / conversation history), context window management (budget-aware injection), memory consolidation pass, preference learning (basic).
-**Features addressed:** Hybrid LLM routing, persistent memory, cluster state snapshots, cost management, preference learning (basic).
-**Pitfalls addressed:** #5 (context inconsistency -- unified abstraction, per-task routing not per-conversation), #6 (memory bloat -- tiered TTLs, selective injection, consolidation), #11 (cost spiral -- Qwen-first, budget caps, request caching), #13 (Qwen quality -- quality canary, priority queuing, slot reservation).
-**Research flag:** RECOMMENDED -- Qwen 2.5 7B tool-calling reliability, Vercel AI SDK 5 openai-compatible provider configuration.
+**Avoids pitfalls:**
+- #1: Routing misclassification (critical)
+- #2: Context window overflow (critical)
+- #7: Unbounded agentic loop costs (moderate)
+- #12: Incompatible message formats (moderate)
+
+**Research needs:** None — routing patterns well-documented, existing code provides all integration points. Unit tests can validate routing logic immediately.
+
+---
+
+### Phase 2: Persistent Memory with TTL Tiers
+
+**Rationale:** Extends the database layer (additive, low risk). Requires Phase 1's provider abstraction because context budgets differ by provider (Claude: 5K tokens, Qwen: 1.5K tokens). Memory injection hooks into the system prompt builder which is stabilized in Phase 1. Independent of deployment — can be developed and tested locally before containerizing.
+
+**Delivers:**
+- New memory_tiers table (short-term 7d TTL, long-term permanent)
+- Context builder assembling live state + recent events + long-term knowledge
+- Scheduled consolidation (TTL cleanup, event summarization, relevance decay)
+- Memory management API + UI panel
+- TTL-based cleanup for conversations, events, cluster_snapshots
+
+**Addresses features:**
+- Cross-session conversation recall (table stakes)
+- Cluster state memory (table stakes)
+- User preference persistence (table stakes, already partial)
+- Tiered memory with TTL (differentiator)
+- Context consolidation/summarization (differentiator)
+- Progressive context injection (differentiator)
+
+**Avoids pitfalls:**
+- #8: Memory bloat from unbounded tables (moderate)
+- Lays groundwork for preventing #2 (context overflow) by providing tiered retrieval
+
+**Uses stack:**
+- `node-cron` for scheduled cleanup
+- Existing better-sqlite3 + Drizzle ORM + schema migration
+
+**Implements architecture:**
+- db/context-builder.ts (memory assembly)
+- db/consolidator.ts (periodic cleanup + event summarization)
+- Extension of ai/system-prompt.ts
+
+**Research needs:** None — SQLite TTL patterns well-documented (Dapr implementation), existing schema provides foundation. May need phase-specific research on summarization heuristics (event consolidation patterns), but this can be deferred to implementation.
+
+---
+
+### Phase 3: Docker Deployment (Full Stack)
+
+**Rationale:** Should package the complete, working application. Deploying before features are complete means redeploying after every change. Deploy once when code is stable. Addresses 5 of the 6 critical pitfalls (SQLite persistence, SSH keys, TLS config, networking, native modules). Cannot be validated without real deployment to management VM.
+
+**Delivers:**
+- Updated backend Dockerfile (healthcheck, non-root user, NODE_ENV, graceful shutdown)
+- Updated frontend Dockerfile (nginx reverse proxy for /api + /socket.io WebSocket)
+- Complete docker-compose.yml (both services, named volumes, resource limits)
+- .dockerignore (prevents secret leakage)
+- .env.production template
+- Deployment script/docs for management VM
+- SIGTERM graceful shutdown handler
+
+**Addresses features:**
+- Full-stack Docker Compose (table stakes)
+- Persistent SQLite volume (table stakes)
+- SSH key mounting (table stakes)
+- One-command deployment (differentiator)
+- Container log aggregation (differentiator)
+
+**Avoids pitfalls:**
+- #3: SQLite WAL corruption (critical)
+- #4: SSH keys in image (critical)
+- #5: TLS globally disabled (critical)
+- #9: Container network isolation (moderate)
+- #10: better-sqlite3 build failure (moderate)
+- #11: No graceful shutdown (moderate)
+- #14: Timezone mismatch (minor)
+- #15: Missing .dockerignore (minor)
+
+**Uses stack:**
+- Docker Compose v2.x
+- node:22-slim base image (glibc for better-sqlite3)
+- nginx:1.27-alpine for frontend
+- Existing Dockerfiles (80% done, need hardening)
+
+**Implements architecture:**
+- Deployment layer (docker-compose.yml, nginx.conf)
+- Environment configuration (.env.production)
+- Resource limits, health checks
+
+**Research needs:** None — Docker patterns well-established, existing Dockerfiles provide foundation. Deploy to management VM for validation, iterate on networking/SSH connectivity if needed.
+
+---
+
+### Phase 4: E2E Testing Infrastructure
+
+**Rationale:** Tests the deployed system end-to-end. Cannot write meaningful E2E tests until features exist and deployment works. Unit tests for individual features (router, cost tracker, context builder) should be written alongside the feature code in Phases 1-2. This phase creates the E2E test harness + integration test infrastructure + mocking layers.
+
+**Delivers:**
+- Vitest configuration for unit + integration tests
+- Playwright configuration for E2E browser tests
+- Unit tests: routing logic, safety tiers, cost tracking, memory TTL, context assembly
+- Integration tests: memory CRUD with in-memory SQLite, tool execution pipeline with mocked Proxmox, Socket.IO chat flow
+- E2E tests: dashboard loads, chat works, tools execute against live cluster (GREEN-tier only)
+- Mock layers: SSH client, Proxmox API, Claude responses
+- Test fixtures: recorded Proxmox responses, standard cluster state
+
+**Addresses features:**
+- Backend unit tests (table stakes)
+- API integration tests (table stakes)
+- E2E tests against live cluster (differentiator)
+
+**Avoids pitfalls:**
+- #6: E2E tests cause cluster side effects (critical)
+- #13: Test flakiness from timing (minor)
+
+**Uses stack:**
+- `vitest` + `@vitest/coverage-v8` for unit/integration
+- In-memory SQLite for integration tests
+- Playwright for E2E (future enhancement, start with Vitest for API/WebSocket tests)
+
+**Implements architecture:**
+- Testing layer (tests/, vitest.config.ts)
+- MockToolExecutor for non-read-only tests
+- Test database helpers
+
+**Research needs:** Phase-specific research likely needed for **Socket.IO testing patterns** — WebSocket test client setup with Vitest is less documented than HTTP testing. Also **mock Proxmox API responses** — may need to record real responses once and replay in tests. Both are implementation details, not architectural decisions.
+
+---
 
 ### Phase Ordering Rationale
 
-1. **Dependency-driven:** Memory Store and MCP Server have zero dependencies on other components but everything depends on them. They must come first.
-2. **Risk front-loading:** The two CRITICAL pitfalls (self-management paradox, destructive commands) must be addressed in Phase 1. Retrofitting safety is architecturally impossible.
-3. **Value delivery:** Phase 2 delivers a usable dashboard independently of AI. If the project stalls after Phase 2, there is still a functional monitoring tool.
-4. **Complexity escalation:** Single LLM (Phase 3) before hybrid LLM (Phase 5). Prove the loop works with Claude before adding routing complexity.
-5. **Data dependency:** Persistent memory (Phase 5) requires operational history from the audit log (Phase 4). You cannot build memory consolidation without data to consolidate.
-6. **Aesthetic validation:** Phase 2 proves the eDEX-UI identity early. If the sci-fi look doesn't work, pivoting at Phase 2 is cheap; pivoting at Phase 5 is expensive.
+**Why this sequence:**
 
-### Research Flags Summary
+1. **Router first** because it refactors the AI module (the highest-risk, highest-value code) while the system is still simple. It creates abstractions that all future features depend on. Testing the router in isolation (before memory, deployment, and E2E infra) reduces debugging surface area. Cost tracking provides immediate operational value.
 
-| Phase | Research Needed? | Reason |
-|-------|-----------------|--------|
-| Phase 1 | RECOMMENDED | Proxmox API token creation, SSH key Docker mounting, Docker socket proxy vs SSH |
-| Phase 2 | RECOMMENDED | Tailwind v4 `@theme` API, xterm.js WebGL + react-xtermjs integration |
-| Phase 3 | SKIP | Claude tool use is extensively documented |
-| Phase 4 | RECOMMENDED | Autonomous remediation safety testing against real cluster |
-| Phase 5 | RECOMMENDED | Qwen tool-calling reliability, Vercel AI SDK 5 provider config |
+2. **Memory second** because it depends on router's provider abstraction (context budgets per provider) but is independent of deployment. Developing memory locally with `npm run dev` is faster than iterating in Docker. Memory provides cross-session continuity that makes the local LLM genuinely useful.
 
----
+3. **Docker third** because it should package the complete, stable application. All code changes (routing, memory) are done. Deployment is a one-time packaging step, not an iterative development environment. Fixes all critical deployment pitfalls (#3-5) before going to production.
+
+4. **Testing last** because you cannot write E2E tests for features that don't exist or against a deployment that doesn't work. Unit tests for routing and memory are written during Phases 1-2 (alongside feature code). Phase 4 creates the test harness, integration test infrastructure, and E2E validation.
+
+**Dependencies:**
+- Phase 2 (Memory) DEPENDS ON Phase 1 (Router) — context builder needs provider budgets
+- Phase 3 (Docker) DEPENDS ON Phases 1+2 — should package complete code
+- Phase 4 (Testing) DEPENDS ON Phase 3 — E2E tests run against deployed containers
+
+**No circular dependencies.** Each phase completes before the next begins. Each phase delivers value independently (router reduces costs, memory enables recall, Docker enables management VM deployment, tests enable confidence).
+
+### Research Flags
+
+**Phases with standard patterns (skip research-phase):**
+
+- **Phase 1 (Hybrid Router):** LLM routing patterns well-documented (RouteLLM, LiteLLM, xRouter papers). Existing code provides integration points. Provider abstraction is a standard OOP pattern. No research needed during planning — implement based on research findings.
+
+- **Phase 3 (Docker Deployment):** Docker best practices well-established. Existing Dockerfiles work (80% done). Nginx reverse proxy for WebSocket is documented. SSH key mounting is standard. Deploy and iterate if connectivity issues arise, but architecture is proven.
+
+**Phases likely needing deeper research during implementation:**
+
+- **Phase 2 (Persistent Memory):** Event consolidation patterns need validation. "How to deterministically summarize 50 repeated thermal warnings into a single memory entry without LLM calls?" The TTL tiers and cleanup are straightforward (SQL-based), but consolidation heuristics may need experimentation. Not architectural research — implementation-level pattern mining.
+
+- **Phase 4 (E2E Testing):** Socket.IO testing with Vitest is less documented than HTTP testing. "How to mock WebSocket events in integration tests?" and "How to record/replay Proxmox API responses for stable tests?" Both are solvable (socket.io-client + custom mock server), but may need phase-specific research during implementation. Not architectural — tooling research.
+
+**When to use /gsd:research-phase:**
+
+- If Phase 2 consolidation patterns prove complex (e.g., "which events should be consolidated vs. retained individually?"), run targeted research: `/gsd:research-phase --phase 2 --focus "event consolidation heuristics for infrastructure monitoring"`
+
+- If Phase 4 WebSocket testing becomes blocked, run targeted research: `/gsd:research-phase --phase 4 --focus "Socket.IO testing patterns with Vitest"`
+
+**Do NOT research:**
+- Generic "how to test WebSockets" — too broad
+- "How to use Docker" — already know, just executing
+- "LLM routing theory" — already researched, just implementing
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | **HIGH** | All major libraries verified via npm registry, official docs, and existing codebase. Version numbers confirmed current. MCP SDK Express middleware verified. |
-| Features | **HIGH** (table stakes), **MEDIUM** (autonomy) | Dashboard metrics and MCP tool inventory backed by 4+ existing Proxmox MCP implementations. AI autonomy levels based on industry frameworks but untested at homelab scale. |
-| Architecture | **HIGH** | Modular monolith pattern well-documented. Proxmox REST API, Socket.IO, SQLite all proven. MCP in-process pattern verified against SDK source. |
-| Pitfalls | **HIGH** | 11 of 13 pitfalls rated HIGH confidence with multiple authoritative sources. 2 rated MEDIUM (cost projections, Qwen quality) due to usage-dependent variability. |
+| Stack | HIGH | All versions verified via npm registry (Jan 2026). Existing v1.0 stack unchanged. Only 5 new packages, all standard and stable. Codebase inspection confirms integration points exist. |
+| Features | HIGH | Four feature domains clearly scoped. Table stakes identified from expert system patterns (RouteLLM, Mem0, established Docker patterns). Differentiators validated against similar systems. Anti-features explicitly documented with rationale. |
+| Architecture | HIGH | Full codebase analysis provides exact integration points. Existing seams identified for each new component. Data flow changes mapped precisely. No speculative abstractions — wrapping proven working code. |
+| Pitfalls | HIGH | 15 pitfalls documented across 3 severity tiers. 12 verified from official docs or multi-source community agreement (SQLite WAL behavior, Docker security, Node.js graceful shutdown). 3 inferred from codebase analysis (routing keyword brittleness, context overflow math). Prevention strategies include detection methods. |
 
 **Overall confidence: HIGH**
 
-The research foundation is strong. The stack is well-validated, the architecture is proven at this scale, the features have clear precedent in existing tools (Pulse, Grafana, existing Proxmox MCP servers), and the pitfalls are well-documented with concrete prevention strategies. The primary unknowns are empirical: Qwen 2.5 7B tool-calling reliability and autonomous remediation behavior against a live cluster.
+All four research files show HIGH confidence in their respective domains. Stack recommendations are verified (npm registry + official docs). Features are grounded in existing patterns (research papers, production systems). Architecture is mapped to actual code (every file referenced). Pitfalls are documented with official sources and detection methods.
 
 ### Gaps to Address
 
-1. **Proxmox API token creation:** No token currently exists. Must create `root@pam!jarvis` on each PVE node before Phase 1 backend can connect. This is a manual prerequisite, not a code task.
+**Minor gaps (won't block progress):**
 
-2. **Qwen 2.5 7B tool-calling quality:** Theoretical capability confirmed (Qwen 2.5 supports function calling) but reliability with specific MCP tool schemas is untested. Phase 5 must include empirical benchmarking before committing to Qwen for production tool calls.
+1. **Event consolidation heuristics:** The memory consolidation engine (Phase 2) needs deterministic rules for summarizing repeated events. Example: "15 thermal warnings on agent1 over 3 hours" -> "agent1 experienced thermal instability". Research identified the pattern (SQL aggregation + pattern matching) but specific heuristics need experimentation during implementation. Not a blocker — start with simple count-based consolidation, refine based on actual event corpus.
 
-3. **Management VM resource headroom:** Current usage is 2.3 GB / 8 GB RAM with 16 containers. Jarvis adds ~250-450 MB. This is comfortable but should be monitored, especially during LLM streaming + multiple WebSocket connections + terminal sessions.
+2. **Socket.IO testing patterns with Vitest:** Integration tests for chat flow (Phase 4) need to mock WebSocket events. Vitest docs cover HTTP mocking well, WebSocket less so. Socket.io-client provides a test client, but integration with Vitest's mock system needs experimentation. Fallback: Use socket.io-client directly without mocking framework. Not a blocker — worst case, test via E2E only.
 
-4. **Tailwind CSS v4 migration:** Existing scaffold uses v3. Migration to v4 changes config format entirely (CSS-first, no `tailwind.config.js`). Well-documented but must be done carefully early in Phase 2.
+3. **Qwen 2.5 7B function calling reliability at Q4_K_M quantization:** Future enhancement (not v1.1) is adding tool support to local LLM. The ARCHITECTURE.md flags this as MEDIUM confidence — Qwen 2.5 supports function calling via ChatML format, but structured output quality at 4-bit quantization needs empirical testing. Does not affect v1.1 (local LLM remains text-only). Defer to later phase.
 
-5. **react-xtermjs maturity:** Rated MEDIUM confidence. Package is by Qovery, actively maintained, but less battle-tested than raw xterm.js. Fallback: use xterm.js directly with a custom React wrapper.
+**How to handle during planning/execution:**
 
-6. **Self-signed TLS for Proxmox API:** PVE nodes use self-signed certificates. The Proxmox client must disable SSL verification (`verifySsl: false`). This is acceptable on a trusted LAN but should be explicitly configured.
+- Phase 2 implementation: Start with count-based event consolidation ("5 occurrences of event X"), refine with pattern matching as patterns emerge. Budget 20% extra time for heuristic tuning.
 
-7. **Qwen model size consideration:** 7B Q4_K_M may be insufficient for reliable tool calling. agent1 has 31 GB RAM -- a 14B or 32B model could run there. Evaluate during Phase 5 before finalizing the production model.
+- Phase 4 implementation: If WebSocket mocking proves complex, test Socket.IO flows via E2E only (Playwright). Unit test the chat handler logic separately. Integration tests focus on tool execution pipeline (HTTP-based MCP calls).
 
----
+- Post-v1.1: Run focused research on Qwen function calling reliability before implementing local tool support. This is a v1.2+ feature.
 
 ## Sources
 
-### Primary (HIGH confidence)
-- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) -- v1.25.2, Express middleware, transport options
-- [MCP Specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) -- Protocol architecture, security model
-- [Proxmox VE API Documentation](https://pve.proxmox.com/pve-docs/api-viewer/) -- REST API, authentication
-- [@anthropic-ai/sdk npm](https://www.npmjs.com/package/@anthropic-ai/sdk) -- v0.71.2, tool use, streaming
-- [Tailwind CSS v4.0 Release](https://tailwindcss.com/blog/tailwindcss-v4) -- CSS-first config, Oxide engine
-- [Motion npm](https://www.npmjs.com/package/framer-motion) -- v12.27.0, React animation
-- [TanStack Query](https://tanstack.com/query/latest) -- v5, polling, caching
-- [better-sqlite3 npm](https://www.npmjs.com/package/better-sqlite3) -- v12.6.2, synchronous driver
-- [Drizzle ORM npm](https://www.npmjs.com/package/drizzle-orm) -- v0.45.1, SQL-first, zero deps
+All sources aggregated from the four research files with confidence levels preserved.
 
-### Secondary (MEDIUM confidence)
-- [Vercel AI SDK 5 Blog](https://vercel.com/blog/ai-sdk-5) -- Multi-provider, streaming, TypeScript-first
-- [4 existing Proxmox MCP servers on GitHub](https://github.com/gilby125/mcp-proxmox) -- Tool inventory consensus
-- [eDEX-UI GitHub (Archived)](https://github.com/GitSquared/edex-ui) -- Performance lessons, UI patterns
-- [OWASP Top 10 for LLM Applications 2025](https://owasp.org/) -- Prompt injection prevalence (73%)
-- [Unit 42: Persistent Memory Poisoning](https://unit42.paloaltonetworks.com/indirect-prompt-injection-poisons-ai-longterm-memory/) -- Indirect prompt injection research
-- [MCP "Too Many Tools" Problem](https://demiliani.com/2025/09/04/model-context-protocol-and-the-too-many-tools-problem/) -- Tool count limits
-- [OpenAI Cookbook: Context Engineering](https://cookbook.openai.com/examples/agents_sdk/context_personalization) -- Memory patterns
-- [ACM Queue: Tracking Dependencies](https://queue.acm.org/detail.cfm?id=3277541) -- Circular dependency patterns
-- [MDN: CSS Animation Performance](https://developer.mozilla.org/en-US/docs/Web/Performance/Guides/Animation_performance_and_frame_rate) -- GPU-composited techniques
+### PRIMARY (HIGH confidence — official docs, verified npm registry, codebase inspection)
 
-### Tertiary (LOW confidence, needs validation)
-- Qwen 2.5 7B function-calling reliability -- needs empirical testing with project-specific tools
-- LiteLLM routing specifics -- needs validation with actual Qwen model
-- better-sqlite3 performance at scale -- likely sufficient but not benchmarked for this workload
-- react-xtermjs long-term stability -- actively maintained but newer package
+**Technology Stack:**
+- npm registry verification (Jan 2026): openai ^6.16.0, vitest ^4.0.18, node-cron ^4.2.1, @vitest/coverage-v8 ^4.0.18, @types/node-cron ^3.0.11
+- Anthropic TypeScript SDK v0.71.2 — github.com/anthropics/anthropic-sdk-typescript
+- better-sqlite3 v12.6.2 — github.com/WiseLibs/better-sqlite3
+- Drizzle ORM v0.45.1 — verified in jarvis-backend/package.json
+- OpenAI SDK custom baseURL — ollama.com/blog/openai-compatibility, llama-cpp-python.readthedocs.io
+- Docker multi-stage best practices — docs.docker.com/build/building/multi-stage/
+- Nginx WebSocket proxying — nginx.org/en/docs/http/websocket.html
+- Socket.IO v4 documentation — socket.io/docs/v4/
+
+**Pitfalls:**
+- SQLite File Locking and Concurrency — sqlite.org/lockingv3.html
+- SQLite Write-Ahead Logging — sqlite.org/wal.html
+- Docker: Persist the DB — docs.docker.com/get-started/workshop/05_persisting_data/
+- better-sqlite3 database locked in Docker (Issue #1155) — github.com/WiseLibs/better-sqlite3/issues/1155
+- better-sqlite3 Alpine Docker (Discussion #1270) — github.com/WiseLibs/better-sqlite3/discussions/1270
+- Node.js Best Practices: Graceful Shutdown — github.com/goldbergyoni/nodebestpractices
+- Express: Health Checks and Graceful Shutdown — expressjs.com/en/advanced/healthcheck-graceful-shutdown.html
+- Claude API tool use implementation — platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use
+- OpenAI API vs Anthropic API — docs.anthropic.com/en/api/openai-sdk (compatibility layer limitations)
+
+**Codebase verification:**
+- Full jarvis-backend/src/ inspection — all component references verified against actual files
+- Existing Dockerfiles analyzed — jarvis-backend/Dockerfile, jarvis-ui/Dockerfile
+- docker-compose.yml structure confirmed — backend defined, frontend commented out
+- Current routing logic verified — realtime/chat.ts lines 25-48 (keyword matching)
+- Memory schema verified — db/schema.ts (5 tables), db/memory.ts (existing CRUD)
+
+### SECONDARY (MEDIUM confidence — multiple sources agree, community consensus, research papers)
+
+**Hybrid LLM Routing:**
+- Hybrid Cloud Architecture for LLM Deployment — journal-isi.org (confidence-based routing, 60% cost reduction)
+- RouteLLM — github.com/lm-sys/RouteLLM (85% cost reduction, 95% quality)
+- vLLM Semantic Router v0.1 Iris — blog.vllm.ai (production semantic routing, Jan 2026)
+- LiteLLM Cost Tracking — docs.litellm.ai/docs/proxy/cost_tracking
+- NVIDIA LLM Router Blueprint — github.com/NVIDIA-AI-Blueprints/llm-router
+- Learning to Route LLMs with Confidence Tokens — arxiv.org/html/2410.13284v2
+- Helicone LLM Cost Monitoring — helicone.ai/blog/monitor-and-optimize-llm-costs
+- Langfuse Token and Cost Tracking — langfuse.com/docs/observability/features/token-and-cost-tracking
+
+**Persistent Memory:**
+- Memory in the Age of AI Agents Survey — github.com/Shichun-Liu/Agent-Memory-Paper-List (HF Daily Paper #1, Dec 2025)
+- Mem0: Production-Ready AI Agents — arxiv.org/abs/2504.19413 (90% token cost reduction)
+- Building Persistent Memory via MCP — medium.com/@linvald
+- Context Window Management Strategies — getmaxim.ai/articles/context-window-management-strategies
+- LLM Chat History Summarization Guide — mem0.ai/blog/llm-chat-history-summarization-guide-2025
+- MemGPT Adaptive Retention — informationmatters.org (89-95% compression)
+- Microsoft Foundry Agent Memory — infoq.com/news/2025/12/foundry-agent-memory-preview/
+- OpenAI Agents SDK Session Memory — cookbook.openai.com/examples/agents_sdk/session_memory
+- Multi-tier persistent memory for LLMs — healthark.ai/persistent-memory-for-llms-designing-a-multi-tier-context-system/
+
+**Docker Deployment:**
+- Docker Official: Containerize Node.js — docs.docker.com/guides/nodejs/containerize/
+- Docker Official: Containerize React.js — docs.docker.com/guides/reactjs/containerize/
+- 9 Tips for Containerizing Node.js — docker.com/blog/9-tips-for-containerizing-your-node-js-application/
+- 10 Best Practices for Node.js Docker — snyk.io/blog/10-best-practices-to-containerize-nodejs-web-applications-with-docker/
+- SSH Keys in Docker Volume Mount — nickjanetakis.com/blog/docker-tip-56
+- Docker Compose SSH Key Security — betterstack.com/community/questions/how-to-use-ssh-key-inside-docker-container/
+- Docker Security Best Practices — blog.gitguardian.com/how-to-improve-your-docker-containers-security-cheat-sheet/
+- OneUptime Node.js multi-stage Dockerfile — oneuptime.com/blog/post/2026-01-06-nodejs-multi-stage-dockerfile/
+
+**E2E Testing:**
+- Playwright WebSocket Testing — dzone.com/articles/playwright-for-real-time-applications-testing-webs
+- Playwright WebSocket Class — playwright.dev/docs/api/class-websocket
+- WebSocket Testing with MSW — egghead.io/lessons/test-web-sockets-in-playwright-with-msw~rdsus
+- Vitest Mocking Guide — vitest.dev/guide/mocking
+- Node.js Testing Best Practices — github.com/goldbergyoni/nodejs-testing-best-practices (April 2025)
+- API Testing with Vitest — adequatica.medium.com/api-testing-with-vitest-391697942527
+- Vitest vs Jest in 2026 — dev.to/dataformathub/vitest-vs-jest-30-why-2026-is-the-year-of-browser-native-testing-2fgb
+- Playwright E2E testing guide 2025 — deviqa.com/blog/guide-to-playwright-end-to-end-testing-in-2025/
+- Vitest + Playwright complementary testing — browserstack.com/guide/vitest-vs-playwright
+
+**Pitfalls:**
+- Context Rot: How Input Tokens Impact LLM Performance — research.trychroma.com/context-rot (peer-reviewed)
+- Context Window Management Strategies — getmaxim.ai/articles/context-window-management-strategies
+- Top Techniques to Manage Context Length — agenta.ai/blog/top-6-techniques-to-manage-context-length-in-llms
+- Multi-provider LLM orchestration: 2026 Guide — dev.to/ash_dubai/multi-provider-llm-orchestration-in-production-a-2026-guide-1g10
+- LLM cost optimization patterns — byteiota.com/llm-cost-optimization-stop-overpaying-5-10x-in-2026/
+- xRouter cost-aware routing — arxiv.org/html/2510.08439v1
+- Running E2E Tests in Multiple Environments — qawolf.com/blog/running-the-same-end-to-end-test-on-multiple-environments
+- Avoid Testing With Production Data — blazemeter.com/blog/production-data
+
+### TERTIARY (LOW confidence — single source or needs validation)
+
+**Needs validation during implementation:**
+- Qwen 2.5 7B function calling reliability at Q4_K_M quantization — no specific research found, needs empirical testing
+- Exact memory overhead of jarvis-backend container — estimated ~150-300MB based on similar Node.js apps, measure in practice
+- Playwright WebSocket test stability against live Proxmox — needs testing in practice, may have flakiness from node availability
+- Semantic memory search with sqlite-vss — extension maturity unclear for production use, keyword search may suffice
+- Event consolidation heuristics — specific patterns need experimentation with real event corpus
 
 ---
 

@@ -1,1064 +1,1004 @@
-# Architecture Patterns
+# Architecture Patterns: Milestone Integration
 
-**Domain:** AI-powered infrastructure management dashboard (Proxmox homelab cluster)
+**Domain:** Hybrid LLM routing, persistent memory, Docker deployment, and E2E testing for Jarvis 3.1
 **Researched:** 2026-01-26
-**Overall Confidence:** HIGH (verified against existing infrastructure, MCP spec, and current ecosystem patterns)
+**Overall Confidence:** HIGH (verified against existing codebase, current ecosystem patterns, and official documentation)
 
 ---
 
-## Recommended Architecture
+## Existing Architecture (As-Built)
 
-### High-Level Overview
+Before detailing how new features integrate, here is the precise current state based on full codebase analysis.
 
-Jarvis 3.1 is a **6-component system** deployed as Docker containers on the management VM (192.168.1.65), with external connections to the Proxmox cluster nodes and the local LLM server on Home (192.168.1.50).
+### Current Module Map
 
 ```
-+------------------------------------------------------------------+
-|  Management VM (192.168.1.65) - Docker Compose                    |
-|                                                                    |
-|  +------------------+     +------------------+                     |
-|  |  Nginx Reverse   |---->|  React Frontend  |                     |
-|  |  Proxy (:80/443) |     |  (static, :3004) |                     |
-|  +--------+---------+     +------------------+                     |
-|           |                                                        |
-|           |  /api/* /ws/*                                          |
-|           v                                                        |
-|  +------------------+     +------------------+                     |
-|  |  API Gateway     |<--->|  MCP Server      |                     |
-|  |  (Express :4000) |     |  (in-process)    |                     |
-|  +--------+---------+     +--------+---------+                     |
-|           |                        |                               |
-|           v                        v                               |
-|  +------------------+     +------------------+                     |
-|  |  Monitor Service |     |  Memory Store    |                     |
-|  |  (event loop)    |     |  (SQLite)        |                     |
-|  +------------------+     +------------------+                     |
-+------------------------------------------------------------------+
-           |                        |
-           v                        v
-  +------------------+     +------------------+
-  | Proxmox Nodes    |     | LLM Endpoints    |
-  | (SSH + API:8006) |     | Claude API (ext) |
-  | 192.168.1.50/74/ |     | Qwen (local)     |
-  | 61/62            |     | 192.168.1.50:8080|
-  +------------------+     +------------------+
+jarvis-backend/src/
+  index.ts              -- Express 5 + HTTP server + Socket.IO bootstrap
+  config.ts             -- Centralized config from env vars
+
+  ai/
+    claude.ts           -- Anthropic SDK client singleton (claudeClient, claudeAvailable flag)
+    local-llm.ts        -- OpenAI-compatible SSE streaming against llama-server
+    loop.ts             -- Agentic tool-calling loop (Claude-only, streams + tool_use blocks)
+    system-prompt.ts    -- JARVIS personality + live cluster context injection
+    tools.ts            -- 18 Anthropic tool definitions (hardcoded, not auto-generated)
+
+  mcp/
+    server.ts           -- McpServer instance + executeTool() pipeline (sanitize -> safety -> execute -> log)
+    tools/
+      cluster.ts        -- 9 GREEN-tier read-only tools
+      lifecycle.ts       -- 6 RED-tier VM/CT start/stop/restart tools
+      system.ts          -- 3 YELLOW-tier operational tools (SSH, service restart, WOL)
+
+  safety/
+    tiers.ts            -- 4-tier ActionTier enum (GREEN/YELLOW/RED/BLACK) + checkSafety()
+    protected.ts        -- Protected resource guard (VMID 103, Docker daemon)
+    sanitize.ts         -- Input sanitization for tool arguments
+    context.ts          -- Override context thread-local state
+
+  db/
+    index.ts            -- better-sqlite3 + Drizzle ORM init (WAL mode)
+    schema.ts           -- 5 tables: events, conversations, cluster_snapshots, preferences, autonomy_actions
+    memory.ts           -- memoryStore API: events, messages, snapshots, preferences, autonomy actions
+    migrate.ts          -- Dual-path migration (Drizzle folder OR direct SQL)
+
+  monitor/
+    index.ts            -- Tiered polling lifecycle (start/stop, 4 intervals)
+    poller.ts           -- pollCritical(12s), pollImportant(32s), pollRoutine(5m), pollBackground(30m)
+    state-tracker.ts    -- State change detection for nodes/VMs
+    thresholds.ts       -- Threshold violation detection
+    runbooks.ts         -- Autonomous remediation execution
+    guardrails.ts       -- Kill switch, autonomy levels, rate limiting
+    reporter.ts         -- Email notification support
+    types.ts            -- StateChange, ThresholdViolation, Incident types
+
+  realtime/
+    socket.ts           -- Socket.IO server setup, 4 namespaces, JWT auth middleware
+    chat.ts             -- /chat namespace: smart routing (needsTools() keyword check), session management
+    emitter.ts          -- /cluster namespace: 5 polling loops pushing data to clients
+    terminal.ts         -- /terminal namespace: SSH PTY via xterm.js
+
+  clients/
+    proxmox.ts          -- ProxmoxClient class (REST over HTTPS:8006, API token auth)
+    ssh.ts              -- SSH connection pool (node-ssh, key-based, lazy connect)
+
+  api/
+    routes.ts           -- Express Router: /api/health, /api/auth, /api/memory/*, /api/tools/*, /api/monitor/*
+    health.ts           -- Health check endpoint
+
+  auth/
+    jwt.ts              -- JWT sign/verify + login handler
 ```
 
-### Architecture Style: Modular Monolith
+### Current Communication Flow
 
-**NOT microservices.** For a homelab with one developer and one management VM, a modular monolith in a single Node.js process is the right call. The components share an event bus and can import each other directly. Docker containers separate the frontend (static files served by Nginx) from the backend (single Node.js process), but the backend itself is one process with clean module boundaries.
+```
+Frontend (React 19 + Zustand + Socket.IO client)
+     |
+     | HTTP REST + Socket.IO (4 namespaces)
+     v
+Express 5 + Socket.IO Server (:4000)
+     |
+     +-- /cluster NS --> emitter.ts --> proxmox.ts (REST) + ssh.ts (temperatures)
+     +-- /events  NS --> poller.ts --> proxmox.ts + state-tracker + runbooks
+     +-- /chat    NS --> chat.ts --> ai/loop.ts (Claude) OR ai/local-llm.ts (Qwen)
+     +-- /terminal NS --> terminal.ts --> ssh.ts (PTY)
+     |
+     +-- mcp/server.ts --> executeTool() --> tools/*.ts --> proxmox.ts / ssh.ts
+     +-- db/memory.ts --> SQLite (better-sqlite3 + Drizzle)
+```
 
-**Rationale:**
-- Only 4 CPU cores and 8GB RAM on management VM (already running 16 containers)
-- Single developer -- no team coordination overhead to justify microservices
-- All components need shared state (cluster status, memory, event bus)
-- Inter-process communication overhead is unnecessary at this scale
-- Easier debugging, deployment, and monitoring as one process
+### Current Smart Routing (chat.ts)
+
+The existing routing is keyword-based, already functional:
+
+```typescript
+// If message contains tool-related keywords AND Claude is available:
+//   -> Claude (full agentic loop with tool_use)
+// Else:
+//   -> Qwen local (text-only, no tools)
+```
+
+This is the **exact integration point** for the hybrid LLM upgrade.
+
+### Existing Docker Setup
+
+Both Dockerfiles exist and are functional:
+- `jarvis-backend/Dockerfile` -- Multi-stage Node 22-slim, prebuild-install for better-sqlite3
+- `jarvis-ui/Dockerfile` -- Multi-stage Node 20-alpine build, Nginx serve
+- `docker-compose.yml` at root -- Backend service defined; frontend commented out
+- Backend Dockerfile already handles SSH key mount, data volume, and native module build
 
 ---
 
-## Component Boundaries
+## Integration Architecture: Four New Features
 
-### Component 1: React Frontend (Static SPA)
+### Overview
 
-| Aspect | Detail |
-|--------|--------|
-| **Responsibility** | eDEX-UI / Iron Man visual dashboard, chat interface, terminal emulator, real-time cluster visualization |
-| **Technology** | React 19 + TypeScript + Vite + Tailwind CSS |
-| **Deployment** | Multi-stage Docker build -> Nginx serves static files |
-| **Port** | :3004 (or behind Nginx Proxy Manager at :80) |
-| **Communicates with** | API Gateway via REST + WebSocket |
-| **State** | React state + Zustand for global state (cluster data, chat history, UI state) |
-| **Does NOT** | Talk to Proxmox, LLMs, or SQLite directly |
-
-**Key frontend subsystems:**
-- **Dashboard panels**: 3-column layout (cluster status, Jarvis activity, system terminal)
-- **Real-time data layer**: WebSocket connection for push updates + REST for initial load
-- **Chat interface**: Streaming LLM responses via SSE or WebSocket
-- **Terminal emulator**: xterm.js with WebSocket PTY backend
-- **Visualization**: Canvas/SVG for node topology, resource gauges, network graph
-
-### Component 2: API Gateway (Express + WebSocket Server)
-
-| Aspect | Detail |
-|--------|--------|
-| **Responsibility** | HTTP API, WebSocket server, request routing, authentication, rate limiting |
-| **Technology** | Express 5 + ws (WebSocket) + JWT auth |
-| **Port** | :4000 (internal to Docker network) |
-| **Communicates with** | Frontend (HTTP/WS), MCP Server (in-process), Monitor Service (events), Memory Store (queries) |
-| **Does NOT** | Talk to Proxmox or LLMs directly (delegates to MCP Server) |
-
-**API surface:**
+Each new feature targets a specific layer of the existing architecture. The key insight is that the existing code already has the **seams** where these features plug in.
 
 ```
-REST Endpoints:
-  GET  /api/cluster/status      -- Full cluster state snapshot
-  GET  /api/cluster/resources   -- VMs, containers, storage
-  GET  /api/nodes/:id           -- Single node detail
-  POST /api/nodes/:id/wake      -- Wake-on-LAN
-  GET  /api/memory/events       -- Recent events from memory
-  GET  /api/memory/context      -- Current LLM context
-  POST /api/chat                -- Send message to Jarvis (returns stream)
-  GET  /api/health              -- System health check
-
-WebSocket Channels:
-  ws://host/ws/cluster          -- Real-time cluster data push (SSE-like)
-  ws://host/ws/chat             -- Bidirectional chat with streaming responses
-  ws://host/ws/terminal/:node   -- PTY terminal to cluster node
-  ws://host/ws/events           -- Jarvis activity feed (actions, alerts, status)
++-------------------------------------------------------------------+
+|  FEATURE 1: Hybrid LLM Router                                     |
+|  Replaces: ai/claude.ts + ai/local-llm.ts + chat.ts routing       |
+|  New files: ai/router.ts, ai/providers.ts, ai/cost-tracker.ts     |
++-------------------------------------------------------------------+
+|  FEATURE 2: Persistent Memory TTL Tiers                            |
+|  Extends: db/schema.ts + db/memory.ts + ai/system-prompt.ts       |
+|  New files: db/context-builder.ts, db/consolidator.ts              |
++-------------------------------------------------------------------+
+|  FEATURE 3: Docker Deployment                                      |
+|  Modifies: docker-compose.yml, Dockerfiles, nginx.conf             |
+|  New: .env.production, deploy.sh                                   |
++-------------------------------------------------------------------+
+|  FEATURE 4: E2E Testing                                            |
+|  New: tests/ directory, playwright.config.ts, vitest.config.ts     |
+|  Tests against live Proxmox API + Socket.IO connections             |
++-------------------------------------------------------------------+
 ```
 
-**Why WebSocket over SSE for the primary data channel:**
+---
 
-The dashboard needs WebSocket for two reasons:
-1. **Terminal emulation** requires bidirectional communication (user types, server sends output). This is non-negotiable -- xterm.js requires WebSocket.
-2. **Chat interface** benefits from bidirectional flow (send message + receive streaming response on same connection).
+## Feature 1: Hybrid LLM Router
 
-However, for **cluster status updates** (server-to-client only), SSE would be simpler. The recommendation is to use a **single WebSocket connection multiplexed across channels** rather than mixing protocols. This avoids the complexity of managing both SSE and WebSocket connections, and WebSocket is already required for terminal and chat.
+### Problem
 
-**Multiplexed WebSocket Protocol:**
+The current system has two separate code paths:
+1. `ai/loop.ts` -- Claude-only agentic loop (streaming + tool_use, tightly coupled to Anthropic SDK types)
+2. `ai/local-llm.ts` -- Qwen text-only streaming (no tool support)
+3. `realtime/chat.ts` -- Hardcoded keyword-based routing between the two
+
+The routing logic is embedded in chat.ts, making it impossible to use from monitor/poller.ts or API routes. Claude and Qwen have completely different interfaces with no abstraction.
+
+### Integration Points
+
+| Existing Component | How It Changes | Impact |
+|---------------------|----------------|--------|
+| `ai/claude.ts` | Wrapped by new provider abstraction | No direct changes, becomes internal |
+| `ai/local-llm.ts` | Wrapped by new provider abstraction, gains tool support | Extended, not replaced |
+| `ai/loop.ts` | Generalized to accept any provider, not just Claude | Signature changes |
+| `ai/tools.ts` | Converted to provider-neutral format | Tool definitions become provider-agnostic |
+| `ai/system-prompt.ts` | Context budget varies by provider | Parameterized by model context window |
+| `realtime/chat.ts` | Delegates routing to ai/router.ts | Simplified, no longer owns routing logic |
+| `config.ts` | New config: cost thresholds, routing preferences | Extended |
+
+### New Components
+
+```
+ai/
+  providers.ts          -- LLMProvider interface + Claude/Qwen implementations
+  router.ts             -- Route decision engine (replaces chat.ts keyword logic)
+  cost-tracker.ts       -- Token counting, cost accumulation, budget enforcement
+```
+
+### Component: LLMProvider Interface
 
 ```typescript
-// All messages on a single WebSocket connection use a channel envelope
-interface WSMessage {
-  channel: 'cluster' | 'chat' | 'events' | 'terminal';
-  type: string;           // channel-specific message type
-  payload: unknown;       // channel-specific data
-  requestId?: string;     // for request-response correlation
+// ai/providers.ts
+
+interface LLMProvider {
+  name: string;                              // 'claude' | 'qwen-local'
+  available: boolean;                        // Runtime availability check
+  supportsTools: boolean;                    // Can handle tool_use blocks?
+  maxContextTokens: number;                  // 200K for Claude, 4096 for Qwen
+  costPerInputToken: number;                 // 0 for local, $X for Claude
+  costPerOutputToken: number;                // 0 for local, $X for Claude
+
+  chat(params: ChatParams): Promise<ChatResult>;  // Unified interface
 }
 
-// Examples:
-{ channel: 'cluster', type: 'status_update', payload: { nodes: [...] } }
-{ channel: 'chat', type: 'token', payload: { content: 'Hello' } }
-{ channel: 'events', type: 'action', payload: { action: 'restart_vm', vmid: 100 } }
-{ channel: 'terminal', type: 'output', payload: { data: '...' } }
+interface ChatParams {
+  messages: Message[];                       // Provider-neutral message format
+  systemPrompt: string;
+  tools?: ToolDefinition[];                  // Only sent if provider supports tools
+  callbacks: StreamCallbacks;                // Reuse existing StreamCallbacks from loop.ts
+  abortSignal?: AbortSignal;
+  maxTokens?: number;
+}
+
+interface ChatResult {
+  pendingConfirmation: PendingConfirmation | null;  // From existing loop.ts type
+  usage: { inputTokens: number; outputTokens: number };
+  provider: string;
+}
 ```
 
-**Alternative considered:** Separate WebSocket connections per feature. Rejected because the management VM has limited resources and connection overhead matters. Multiplexing is standard practice (Socket.IO rooms, GraphQL subscriptions).
+**Key design decision: Unified interface, NOT unified SDK.**
 
-**Update cadence for cluster data:**
+Do NOT use LiteLLM, OpenRouter, or any external gateway. Reasons:
+- Only two providers (Claude API + local llama-server) -- gateway is overkill
+- Claude's tool_use protocol is unique; OpenAI-compatible endpoints cannot replicate it
+- The existing Anthropic SDK and fetch-based Qwen client work perfectly
+- Adding a gateway adds latency, complexity, and a new dependency
+- Keep the abstraction thin: just an interface over the two existing implementations
 
-| Data Type | Method | Frequency | Rationale |
-|-----------|--------|-----------|-----------|
-| Node status (up/down) | WebSocket push | Every 10s | Critical, must be near-real-time |
-| Resource usage (CPU/RAM/disk) | WebSocket push | Every 15s | Balance between freshness and Proxmox API load |
-| VM/container status | WebSocket push | Every 15s + on-change | Most changes are manual, but detect crash fast |
-| Temperature | WebSocket push | Every 30s | Slow-changing metric |
-| Storage details | REST on-demand | On page load + manual refresh | Rarely changes |
-| Jarvis activity feed | WebSocket push | On event | Event-driven, no polling |
+**Confidence: HIGH** -- The existing code already has both providers working. This is a refactor to create a common interface, not a rewrite.
 
-### Component 3: MCP Server (In-Process Module)
-
-| Aspect | Detail |
-|--------|--------|
-| **Responsibility** | Tool registry, tool execution, Proxmox API interaction, SSH command execution, Docker management |
-| **Technology** | @modelcontextprotocol/sdk (TypeScript), in-process with API Gateway |
-| **Protocol** | MCP over in-process function calls (NOT stdio, NOT HTTP) |
-| **Communicates with** | API Gateway (called by), Proxmox nodes (SSH/API), Docker daemon, Memory Store (logs actions) |
-| **Does NOT** | Handle HTTP requests, manage WebSocket connections, or talk to LLMs directly |
-
-**Why in-process instead of stdio/HTTP transport:**
-
-The MCP spec defines stdio and Streamable HTTP transports for when the server is a separate process. But in Jarvis 3.1, the MCP server is part of the same Node.js process as the API Gateway. This is deliberate:
-- No serialization overhead for tool calls
-- Shared memory for cluster state cache
-- Simpler deployment (one process, one container)
-- The API Gateway IS the MCP client -- it calls tools programmatically when the LLM requests them
-
-The MCP SDK's `McpServer` class is used for tool registration and schema validation, but the transport is replaced with direct function calls. If a future need arises (e.g., external MCP client access), a stdio or HTTP transport can be added as a thin adapter.
-
-**Tool Registry (organized by domain):**
+### Component: Router Decision Engine
 
 ```typescript
-// Tool categories and their tools
-const TOOL_CATEGORIES = {
-  // CLUSTER MONITORING (read-only, always safe)
-  'cluster.status':          'Get full cluster status (nodes, quorum, health)',
-  'cluster.resources':       'List all VMs/containers across cluster',
-  'cluster.node_detail':     'Get detailed info for a specific node',
-  'cluster.storage':         'List storage pools and usage',
+// ai/router.ts
 
-  // VM/CONTAINER MANAGEMENT (write, requires confirmation for destructive)
-  'vm.list':                 'List VMs on a node or cluster-wide',
-  'vm.status':               'Get VM status and resource usage',
-  'vm.start':                'Start a stopped VM',
-  'vm.stop':                 'Stop a running VM (graceful)',
-  'vm.shutdown':             'Shutdown a VM via ACPI',
-  'vm.restart':              'Restart a VM',
-  'container.list':          'List LXC containers',
-  'container.start':         'Start a container',
-  'container.stop':          'Stop a container',
+interface RouteDecision {
+  provider: 'claude' | 'qwen-local';
+  reason: string;
+  toolsRequired: boolean;
+}
 
-  // SYSTEM COMMANDS (write, SSH-based)
-  'system.exec':             'Execute a shell command on a node via SSH',
-  'system.service_status':   'Check systemd service status',
-  'system.service_restart':  'Restart a systemd service',
-  'system.updates':          'Check available package updates',
-  'system.reboot':           'Reboot a node (DANGEROUS)',
-
-  // DOCKER MANAGEMENT (write, management VM only)
-  'docker.list':             'List Docker containers',
-  'docker.status':           'Get container status and logs',
-  'docker.restart':          'Restart a Docker container',
-  'docker.logs':             'Get recent logs from a container',
-
-  // NETWORK
-  'network.ping':            'Ping a host',
-  'network.wake':            'Send Wake-on-LAN packet',
-
-  // MEMORY (read, queries memory store)
-  'memory.recent_events':    'Get recent cluster events',
-  'memory.search':           'Search event history',
-  'memory.context':          'Get current context summary for LLM',
-};
+function routeMessage(
+  message: string,
+  context: RoutingContext,
+  config: RoutingConfig,
+): RouteDecision;
 ```
 
-**Safety boundaries (3-tier model):**
+**Routing rules (ordered by priority):**
+
+| Priority | Condition | Route To | Reason |
+|----------|-----------|----------|--------|
+| 1 | Claude API key missing | Qwen local | Only option |
+| 2 | Override passkey detected | Claude | Safety-critical, needs full tool access |
+| 3 | Message contains tool keywords | Claude | Tool_use support required |
+| 4 | Conversation has pending confirmation | Claude | Must continue agentic loop |
+| 5 | Cost budget exceeded for period | Qwen local | Cost control |
+| 6 | Context window > 3000 tokens | Claude | Qwen's 4096 limit too small |
+| 7 | Simple conversation/greeting | Qwen local | Save Claude tokens |
+| 8 | Default | Qwen local | Prefer local for speed + cost |
+
+**Why keyword-based routing instead of a learned router:**
+
+Research shows (xRouter, RouteLLM) that even RL-trained routers converge to simple heuristics. For a two-provider system with clearly different capabilities (tool_use vs text-only), keyword matching is the right approach. The existing `needsTools()` function in chat.ts already works well. Upgrade it with:
+- Configurable keyword lists
+- Context-aware overrides (budget, availability)
+- Telemetry to refine rules over time
+
+### Component: Cost Tracker
 
 ```typescript
-enum ToolRisk {
-  READ = 'read',           // Always safe: status queries, list operations
-  WRITE = 'write',         // Modifies state: start/stop VM, restart service
-  DANGEROUS = 'dangerous', // Could cause outage: reboot node, delete VM
-}
+// ai/cost-tracker.ts
 
-// Safety enforcement:
-// READ     -> Execute immediately, no confirmation
-// WRITE    -> Execute, log to memory, report to user
-// DANGEROUS -> Require explicit user confirmation via chat before executing
-//              OR require autonomous mode to be enabled for auto-remediation
-```
-
-**Proxmox API integration pattern:**
-
-```typescript
-// Use Proxmox REST API directly (not pvesh CLI)
-// Reason: Management VM is NOT a Proxmox node, so pvesh is not available
-// The API Gateway runs on the management VM (192.168.1.65), which is a
-// regular Ubuntu VM, not a PVE host.
-
-class ProxmoxClient {
-  // Authenticate via API token (not password)
-  // Token configured per-node or cluster-wide
-  constructor(config: {
-    host: string;           // e.g., '192.168.1.50'
-    tokenId: string;        // e.g., 'root@pam!jarvis'
-    tokenSecret: string;    // the API token value
-    verifySsl: boolean;     // false for self-signed certs
-  }) {}
-
-  async get(path: string): Promise<any>;   // GET /api2/json/{path}
-  async post(path: string, data?: any): Promise<any>;
-}
-
-// SSH client for node-level commands
-class SSHClient {
-  // Uses ssh2 library (pure JS, no child_process)
-  // Connection pooling: maintain persistent connections to each node
-  // Timeout: 10s connect, 30s command, 300s for long operations
-  constructor(config: {
-    host: string;
-    username: string;       // 'root'
-    privateKey: Buffer;     // from /root/.ssh/id_ed25519
-  }) {}
-
-  async exec(command: string, timeout?: number): Promise<string>;
+interface CostTracker {
+  recordUsage(provider: string, input: number, output: number): void;
+  getCurrentPeriodCost(): number;           // Cost in current billing period
+  isOverBudget(): boolean;                  // Check against configured limit
+  getUsageStats(): UsageStats;              // For dashboard display
 }
 ```
 
-**Critical design decision: Proxmox REST API vs pvesh CLI**
+Storage: Use the existing `preferences` table for budget config and `events` table for usage logs. No new tables needed.
 
-The existing proxmox-ui codebase uses `pvesh` CLI commands via `child_process.exec()`. This only works when running ON a Proxmox node. The management VM (192.168.1.65) is a regular Ubuntu VM, so `pvesh` is not available. Jarvis 3.1 MUST use the Proxmox REST API over HTTPS (port 8006) instead. This is actually better:
-- Proper API with JSON responses (no shell parsing)
-- API tokens instead of PAM passwords
-- Connection pooling possible
-- No command injection risk
-- Works from any network location
+### Data Flow Change: Chat Message
 
-### Component 4: LLM Router (Hybrid Intelligence Layer)
+```
+BEFORE:
+  chat:send -> chat.ts -> needsTools() -> Claude loop.ts OR Qwen local-llm.ts
 
-| Aspect | Detail |
-|--------|--------|
-| **Responsibility** | Route requests to appropriate LLM, manage context window, stream responses, handle tool calls |
-| **Technology** | Custom router module, Anthropic SDK (Claude), OpenAI-compatible client (Qwen) |
-| **Communicates with** | API Gateway (called by), Claude API (external), Qwen/llama-server (192.168.1.50:8080), MCP Server (tool execution), Memory Store (context retrieval) |
-| **Does NOT** | Handle HTTP, manage UI state, or access Proxmox directly |
-
-**Routing Strategy: Confidence-Based Cascading**
-
-```typescript
-interface LLMRouter {
-  // Route a user message to the appropriate LLM
-  route(message: string, context: ConversationContext): Promise<LLMResponse>;
-}
-
-// Decision tree:
-//
-// 1. Is this a TOOL CALL request? (e.g., "restart VM 100", "check cluster status")
-//    YES -> Use Qwen locally for intent extraction + tool parameter parsing
-//           Then execute tool via MCP Server
-//           Then format response with Qwen
-//    NO  -> Continue to step 2
-//
-// 2. Is this a COMPLEX reasoning task?
-//    Indicators: multi-step analysis, "explain why", "what should I do about",
-//                debugging a problem, architectural questions, long responses
-//    YES -> Use Claude API
-//    NO  -> Continue to step 3
-//
-// 3. Is this a ROUTINE task?
-//    Indicators: status queries, simple questions, acknowledgments,
-//                "what time is it", personality/chat
-//    YES -> Use Qwen locally
-//    NO  -> Default to Claude API (when in doubt, use the smarter model)
+AFTER:
+  chat:send -> chat.ts -> router.routeMessage() -> provider.chat() -> callbacks
+                             |                          |
+                             v                          v
+                       cost-tracker.record()     same StreamCallbacks
 ```
 
-**Why this routing strategy:**
+The chat.ts handler becomes thinner. It no longer owns routing logic. It calls `router.routeMessage()`, gets a provider, and calls `provider.chat()`. The StreamCallbacks interface stays identical.
 
-| Criterion | Qwen 2.5 7B (Local) | Claude API (Cloud) |
-|-----------|---------------------|-------------------|
-| Latency | ~150ms first token | ~500-1500ms first token |
-| Speed | ~6.5 tok/s generation | ~50+ tok/s generation |
-| Cost | Free (electricity only) | ~$3-15/MTok |
-| Context | 4096 tokens | 200K tokens |
-| Tool use | Basic (needs structured prompts) | Native tool use |
-| Reasoning | Good for simple tasks | Excellent for complex analysis |
-| Availability | Always (LAN only) | Requires internet |
+### Tool Support for Qwen (Future Enhancement)
 
-**Practical routing rules:**
+The local Qwen model currently has NO tool support. Adding tool_use to Qwen requires:
+1. Structured prompt engineering (Qwen 2.5 supports function calling via ChatML format)
+2. JSON extraction from Qwen's response to identify tool calls
+3. Same safety pipeline (checkSafety, executeTool)
 
-```typescript
-enum LLMTarget {
-  LOCAL = 'local',    // Qwen 2.5 7B on 192.168.1.50:8080
-  CLOUD = 'cloud',    // Claude API
-}
+This is a **separate phase** from the basic routing refactor. Build the abstraction first, then add Qwen tool support later. The provider interface makes this a clean extension.
 
-function classifyRequest(message: string, context: ConversationContext): LLMTarget {
-  // Rule 1: If internet is down, always use local
-  if (!internetAvailable) return LLMTarget.LOCAL;
+**Confidence: MEDIUM** -- Qwen 2.5 7B's function calling reliability at Q4_K_M quantization needs empirical testing. The abstraction should be designed to handle unreliable tool extraction gracefully (fall back to text-only).
 
-  // Rule 2: Simple tool calls -> local
-  // Pattern: imperative commands like "start X", "check Y", "show Z"
-  if (isSimpleToolCall(message)) return LLMTarget.LOCAL;
+---
 
-  // Rule 3: Status queries with known format -> local
-  if (isStatusQuery(message)) return LLMTarget.LOCAL;
+## Feature 2: Persistent Memory with TTL Tiers
 
-  // Rule 4: Conversational/personality -> local
-  if (isSmallTalk(message)) return LLMTarget.LOCAL;
+### Problem
 
-  // Rule 5: Complex analysis, debugging, multi-step -> cloud
-  if (isComplexReasoning(message)) return LLMTarget.CLOUD;
+The current memory system stores everything but has no strategy for:
+- What to include in the LLM context window
+- When to expire old data
+- How to consolidate repeated events into summaries
+- Different retention for different data types
 
-  // Rule 6: Long context needed (>3000 tokens in context) -> cloud
-  if (context.totalTokens > 3000) return LLMTarget.CLOUD;
+The system prompt's `buildClusterSummary()` fetches live state on every message, which is good. But conversation history and event history grow unbounded, and there is no "long-term memory" -- JARVIS forgets everything between sessions.
 
-  // Rule 7: User explicitly requests Claude -> cloud
-  if (message.includes('@claude') || message.includes('think harder'))
-    return LLMTarget.CLOUD;
+### Existing Memory Infrastructure
 
-  // Default: local for speed, unless conversation is going deep
-  return context.messageCount > 5 ? LLMTarget.CLOUD : LLMTarget.LOCAL;
-}
+The current `db/memory.ts` already provides:
+- `saveEvent()` / `getRecentEvents()` / `getEventsSince()` / `resolveEvent()`
+- `saveMessage()` / `getSessionMessages()` / `getRecentSessions()`
+- `saveSnapshot()` / `getLatestSnapshot()`
+- `setPreference()` / `getPreference()`
+- `saveAutonomyAction()` / `cleanupOldActions(30)`
+
+The `conversations` table stores all messages with sessionId, role, content, model, and tokensUsed.
+
+### Integration Points
+
+| Existing Component | How It Changes | Impact |
+|---------------------|----------------|--------|
+| `db/schema.ts` | New table: `memory_tiers` for long-term knowledge | Schema migration |
+| `db/memory.ts` | New methods for tiered retrieval and TTL cleanup | Extended API |
+| `ai/system-prompt.ts` | `buildClusterSummary()` becomes `buildContext()` with tiered memory | Core change |
+| `monitor/poller.ts` | `pollBackground()` triggers consolidation | New cleanup task |
+| `config.ts` | TTL durations, context budget per provider | Extended |
+
+### New Components
+
+```
+db/
+  context-builder.ts    -- Assemble LLM context from tiered memory sources
+  consolidator.ts       -- Periodic event consolidation (many events -> summary)
 ```
 
-**Tool calling implementation:**
+### Three-Tier Memory Architecture
 
-For Claude: Use native tool use (function calling). Claude receives tool definitions and returns structured tool_use blocks. The API Gateway executes the tool via MCP Server and returns results.
-
-For Qwen: Use structured prompt engineering. Qwen 2.5 7B supports function calling via a specific prompt format, but reliability is lower than Claude. Use a two-step pattern:
-1. Send message with tool descriptions in system prompt
-2. Parse Qwen's response for tool call intent (JSON extraction)
-3. If parsing fails, fall back to keyword matching for common commands
-4. Execute tool and format response
-
-**Fallback chain:**
 ```
-Claude API (primary for complex)
-  -> timeout/error -> retry once
-  -> still fails -> fall back to Qwen local
-  -> Qwen local fails -> return error message with personality
++----------------------------------------------------------+
+|  Tier 1: Working Memory (in-process, ephemeral)           |
+|  Source: Live Proxmox API polls, current session messages  |
+|  TTL: Session lifetime (cleared on disconnect)            |
+|  Size: ~500-2000 tokens                                   |
+|  Contains: Current node status, quorum, VM states         |
+|  Already exists: buildClusterSummary() in system-prompt.ts|
++----------------------------------------------------------+
+|  Tier 2: Short-Term Memory (SQLite, days)                 |
+|  Source: events table, conversations table                |
+|  TTL: 7 days (configurable)                               |
+|  Size: ~500-1000 tokens (summarized for context)          |
+|  Contains: Recent events, recent conversations, actions   |
+|  Partially exists: memoryStore.getRecentEvents()          |
++----------------------------------------------------------+
+|  Tier 3: Long-Term Memory (SQLite, permanent)             |
+|  Source: Consolidated from Tier 2 by consolidator         |
+|  TTL: Permanent (manual cleanup only)                     |
+|  Size: ~200-500 tokens (high-signal summaries only)       |
+|  Contains: Learned patterns, user preferences, recurring  |
+|  issues, node personality notes                           |
+|  NEW: Requires new table and consolidation logic          |
++----------------------------------------------------------+
 ```
 
-### Component 5: Memory Store (SQLite + Context Engine)
-
-| Aspect | Detail |
-|--------|--------|
-| **Responsibility** | Persist events, actions, cluster snapshots, conversation history. Build LLM context. |
-| **Technology** | better-sqlite3 (synchronous, fast), sqlite-vec for optional vector search |
-| **Location** | Docker volume mounted at /data/jarvis.db |
-| **Communicates with** | API Gateway (queries), MCP Server (writes events), LLM Router (provides context) |
-| **Does NOT** | Make decisions, call APIs, or manage connections |
-
-**Schema:**
+### New Schema: memory_tiers Table
 
 ```sql
--- Core tables
-CREATE TABLE events (
+CREATE TABLE memory_tiers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-  type TEXT NOT NULL,          -- 'alert', 'action', 'status', 'chat', 'metric'
-  severity TEXT DEFAULT 'info', -- 'info', 'warning', 'error', 'critical'
-  source TEXT NOT NULL,         -- 'monitor', 'user', 'jarvis', 'system'
-  node TEXT,                    -- which node, if applicable
-  summary TEXT NOT NULL,        -- human-readable one-liner
-  details TEXT,                 -- JSON blob with full details
-  resolved BOOLEAN DEFAULT 0,
-  resolved_at TEXT,
-  resolved_by TEXT              -- 'jarvis' or 'user'
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  tier TEXT NOT NULL,               -- 'short' | 'long'
+  category TEXT NOT NULL,           -- 'event_summary' | 'user_preference' | 'pattern' | 'node_note'
+  key TEXT NOT NULL UNIQUE,         -- Dedup key (e.g., 'pattern:agent1_nic_hang')
+  content TEXT NOT NULL,            -- Human-readable summary
+  relevance_score REAL DEFAULT 1.0, -- Decays over time, boosted by access
+  access_count INTEGER DEFAULT 0,   -- How many times included in context
+  last_accessed TEXT,               -- When last included in LLM context
+  expires_at TEXT                   -- NULL for permanent, datetime for TTL
 );
 
-CREATE TABLE conversations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id TEXT NOT NULL,     -- groups messages in a conversation
-  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-  role TEXT NOT NULL,           -- 'user', 'assistant', 'system', 'tool'
-  content TEXT NOT NULL,
-  model TEXT,                   -- 'claude', 'qwen', null
-  tokens_used INTEGER,
-  tool_calls TEXT               -- JSON array of tool calls made
-);
-
-CREATE TABLE cluster_snapshots (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-  snapshot TEXT NOT NULL        -- JSON: full cluster state at point in time
-);
-
-CREATE TABLE preferences (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Indexes for fast context retrieval
-CREATE INDEX idx_events_timestamp ON events(timestamp DESC);
-CREATE INDEX idx_events_type ON events(type);
-CREATE INDEX idx_events_node ON events(node);
-CREATE INDEX idx_events_unresolved ON events(resolved) WHERE resolved = 0;
-CREATE INDEX idx_conversations_session ON conversations(session_id);
+CREATE INDEX idx_memory_tier ON memory_tiers(tier);
+CREATE INDEX idx_memory_category ON memory_tiers(category);
+CREATE INDEX idx_memory_expires ON memory_tiers(expires_at);
+CREATE INDEX idx_memory_relevance ON memory_tiers(relevance_score DESC);
 ```
 
-**Context injection pattern (how memory feeds the LLM):**
+### Context Builder
 
 ```typescript
-interface ContextBuilder {
-  // Build a context string for the LLM system prompt
-  // This is injected BEFORE the user's message
-  buildContext(): Promise<string>;
+// db/context-builder.ts
+
+interface ContextBudget {
+  totalTokens: number;          // Max tokens for context section
+  tier1Tokens: number;          // Budget for live state
+  tier2Tokens: number;          // Budget for recent events/actions
+  tier3Tokens: number;          // Budget for long-term knowledge
 }
 
-// The context is a structured markdown document:
-function buildLLMContext(): string {
-  return `
-## Current Cluster State
-${formatClusterStatus(latestSnapshot)}
+function buildLLMContext(budget: ContextBudget): string {
+  // 1. Tier 1: Live cluster state (from existing buildClusterSummary)
+  //    Always included, ~500-800 tokens
 
-## Recent Events (last 1 hour)
-${formatRecentEvents(recentEvents)}
+  // 2. Tier 2: Recent events + unresolved issues
+  //    Sorted by severity DESC, timestamp DESC
+  //    Truncated to budget
 
-## Unresolved Issues
-${formatUnresolvedIssues(unresolvedEvents)}
+  // 3. Tier 3: Long-term knowledge relevant to current context
+  //    Sorted by relevance_score DESC
+  //    Only include if budget allows
 
-## Recent Actions Taken
-${formatRecentActions(recentActions)}
+  // 4. Assemble into structured text block
+  return `<cluster_context>
+${tier1Content}
+</cluster_context>
 
-## User Preferences
-${formatPreferences(preferences)}
-  `.trim();
+<recent_activity>
+${tier2Content}
+</recent_activity>
+
+<knowledge>
+${tier3Content}
+</knowledge>`;
 }
 ```
 
-**Context window management:**
+**Context budgets by provider:**
 
-```
-For Qwen (4096 token context):
-  - System prompt (personality):     ~300 tokens
-  - Context injection (cluster):     ~500-800 tokens (aggressive trimming)
-  - Conversation history:            ~1500-2000 tokens (last 4-6 messages)
-  - User message + response space:   ~1000-1500 tokens
+| Provider | Total Budget | Tier 1 (Live) | Tier 2 (Recent) | Tier 3 (Knowledge) |
+|----------|-------------|---------------|-----------------|---------------------|
+| Claude | 5000 tokens | 1000 | 2500 | 1500 |
+| Qwen local | 1500 tokens | 800 | 500 | 200 |
 
-  Strategy: Keep context SMALL. Only include:
-  - Current node status (1 line per node)
-  - Last 3 unresolved events
-  - Last 2 actions taken
-  - Last 4 conversation messages
-
-For Claude (200K token context):
-  - System prompt (personality):     ~500 tokens
-  - Context injection (cluster):     ~2000-5000 tokens (full detail)
-  - Conversation history:            ~5000-20000 tokens (full session)
-  - User message + response space:   ~190K+ tokens
-
-  Strategy: Be GENEROUS. Include:
-  - Full cluster state with all nodes, VMs, storage
-  - All unresolved events
-  - All actions in last 24 hours
-  - Full conversation history for session
-  - Relevant past conversation snippets (searched by topic)
-```
-
-**Why better-sqlite3 instead of async SQLite:**
-
-better-sqlite3 is synchronous, which sounds wrong for Node.js but is actually correct here:
-- SQLite queries on a local file complete in microseconds (not milliseconds)
-- No I/O wait -- the file is memory-mapped by the OS
-- Synchronous API eliminates callback complexity
-- better-sqlite3 is 5-10x faster than async alternatives for SQLite
-- Used by Drizzle ORM, Turso, and many production Node.js apps
-
-### Component 6: Monitor Service (Autonomous Event Loop)
-
-| Aspect | Detail |
-|--------|--------|
-| **Responsibility** | Periodic health checks, anomaly detection, autonomous remediation, alert generation |
-| **Technology** | Node.js setInterval + EventEmitter pattern |
-| **Communicates with** | MCP Server (executes checks via tools), Memory Store (reads/writes events), LLM Router (for complex diagnosis), API Gateway (pushes events to frontend) |
-| **Does NOT** | Handle HTTP, manage UI, or talk to Proxmox directly (uses MCP tools) |
-
-**Event loop architecture:**
+### Consolidation Engine
 
 ```typescript
-class MonitorService extends EventEmitter {
-  private intervals: Map<string, NodeJS.Timeout> = new Map();
+// db/consolidator.ts
 
-  start() {
-    // Tier 1: Critical (every 10 seconds)
-    this.schedule('node_heartbeat', 10_000, this.checkNodeHeartbeats);
+// Runs on pollBackground() interval (every 30 minutes)
+async function consolidateMemory(): Promise<void> {
+  // 1. TTL cleanup: Delete expired short-term memories
+  deleteExpiredMemories();
 
-    // Tier 2: Important (every 30 seconds)
-    this.schedule('vm_status', 30_000, this.checkVMStatus);
-    this.schedule('resource_usage', 30_000, this.checkResourceUsage);
+  // 2. Event consolidation: Group similar recent events into summaries
+  //    Example: 15 "Node agent temp warning" events -> "agent node experienced
+  //    repeated thermal warnings over 3 hours"
+  consolidateRepeatedEvents();
 
-    // Tier 3: Routine (every 5 minutes)
-    this.schedule('storage_health', 300_000, this.checkStorageHealth);
-    this.schedule('service_status', 300_000, this.checkCriticalServices);
-    this.schedule('temperature', 300_000, this.checkTemperatures);
+  // 3. Relevance decay: Reduce relevance_score of unaccessed memories
+  //    score *= 0.95 per consolidation cycle
+  decayUnusedMemories();
 
-    // Tier 4: Background (every 30 minutes)
-    this.schedule('update_check', 1_800_000, this.checkUpdates);
-    this.schedule('cluster_snapshot', 1_800_000, this.takeClusterSnapshot);
-  }
+  // 4. Conversation mining: Extract learned facts from recent conversations
+  //    Example: User said "I prefer short responses" -> store as user preference
+  //    NOTE: This is a FUTURE enhancement, not MVP
 }
 ```
 
-**Remediation pipeline:**
+**Critical design constraint:** The consolidator must be simple and deterministic. Do NOT use LLM calls for consolidation (expensive, slow, unreliable). Use pattern matching and SQL aggregation instead. LLM-powered summarization can be added later as an enhancement.
+
+### Integration with Existing Cleanup
+
+The existing `pollBackground()` in `monitor/poller.ts` already calls `memoryStore.cleanupOldActions(30)`. The new consolidation hooks into the same cycle:
 
 ```
-Detection -> Classification -> Decision -> Action -> Verification -> Report
-
-1. DETECTION
-   Monitor check detects anomaly
-   Example: Node 'agent' not responding to ping
-
-2. CLASSIFICATION
-   Compare against known patterns
-   Example: Node down -> severity: CRITICAL
-
-3. DECISION (autonomous vs. notify)
-   if (severity == CRITICAL && autoRemediate) {
-     // Known fix available?
-     if (knownRemediations[issue]) -> proceed to ACTION
-     else -> ESCALATE to LLM for diagnosis
-   }
-   if (severity == WARNING) -> LOG and NOTIFY user
-   if (severity == INFO) -> LOG only
-
-4. ACTION
-   Execute remediation via MCP tools
-   Example: Send Wake-on-LAN to 'agent' node
-
-5. VERIFICATION
-   Wait and re-check
-   Example: Wait 60s, ping agent again
-
-6. REPORT
-   Log event to memory, push to frontend, optionally email
-   Example: "Node 'agent' was down. Sent WOL. Node recovered in 45s."
+pollBackground() [every 30 min]
+  -> Storage capacity check (existing)
+  -> cleanupOldActions(30) (existing)
+  -> consolidateMemory() (NEW)
 ```
 
-**Known remediation playbooks:**
-
-```typescript
-const REMEDIATIONS: Record<string, RemediationPlaybook> = {
-  'node_unreachable': {
-    steps: [
-      { action: 'network.ping', retries: 3, delay: 5000 },
-      { action: 'network.wake', wait: 60000 },
-      { action: 'network.ping', retries: 5, delay: 10000 },
-    ],
-    escalate_if_failed: true,
-    max_auto_attempts: 2,
-  },
-  'vm_crashed': {
-    steps: [
-      { action: 'vm.status', /* verify it's actually down */ },
-      { action: 'vm.start', wait: 30000 },
-      { action: 'vm.status', /* verify it came up */ },
-    ],
-    escalate_if_failed: true,
-    max_auto_attempts: 1,
-  },
-  'service_down': {
-    steps: [
-      { action: 'system.service_status', /* confirm down */ },
-      { action: 'system.service_restart', wait: 10000 },
-      { action: 'system.service_status', /* verify up */ },
-    ],
-    escalate_if_failed: true,
-    max_auto_attempts: 2,
-  },
-  'high_cpu': {
-    // No auto-remediation -- just alert and log
-    steps: [],
-    notify: true,
-    escalate_to_llm: true, // Ask Claude to analyze what's causing it
-  },
-  'disk_full': {
-    // No auto-remediation -- too dangerous
-    steps: [],
-    notify: true,
-    severity: 'critical',
-    escalate_to_llm: true,
-  },
-};
-```
+**Confidence: HIGH** -- The existing memory infrastructure provides a solid foundation. The three-tier model adds structure without requiring major schema changes. The new `memory_tiers` table is additive.
 
 ---
 
-## Data Flow
+## Feature 3: Docker Deployment
 
-### Flow 1: User Opens Dashboard (Initial Load)
+### Problem
 
-```
-Browser                API Gateway              MCP Server          Proxmox Nodes
-  |                       |                        |                     |
-  |-- GET /api/cluster -->|                        |                     |
-  |                       |-- cluster.status() --->|                     |
-  |                       |                        |-- GET /api2/json -->|
-  |                       |                        |<-- JSON response ---|
-  |                       |<-- ClusterState -------|                     |
-  |<-- JSON response -----|                        |                     |
-  |                       |                        |                     |
-  |-- WS /ws/cluster ---->|                        |                     |
-  |   (upgrade)           |                        |                     |
-  |<== connected =========|                        |                     |
-  |                       |                        |                     |
-  |   [every 15s]         |                        |                     |
-  |<== status_update =====|<-- poll via tools ---->|<-- API calls ------>|
-```
+The current Docker setup is partially functional:
+- Backend Dockerfile works (multi-stage, handles better-sqlite3 native module)
+- Frontend Dockerfile works (multi-stage, Nginx serve)
+- docker-compose.yml has backend defined, frontend commented out
+- The frontend currently runs via `npm run dev` (Vite dev server), not containerized
+- No production .env template
+- No deployment script for the management VM
 
-### Flow 2: User Sends Chat Message
+### Current Docker State (Verified from Files)
 
-```
-Browser            API Gateway       LLM Router        Memory         MCP Server    LLM
-  |                    |                |                |                |           |
-  |-- WS chat msg ---->|                |                |                |           |
-  |                    |-- route() ---->|                |                |           |
-  |                    |                |-- getContext()->|                |           |
-  |                    |                |<-- context -----|                |           |
-  |                    |                |                                 |           |
-  |                    |                |-- classify request              |           |
-  |                    |                |-- (local or cloud?)             |           |
-  |                    |                |                                 |           |
-  |                    |                |-- stream request -------------------------------->|
-  |                    |                |<-- token stream -----------------------------------|
-  |                    |<-- tokens -----|                                 |           |
-  |<== WS tokens ======|                |                                |           |
-  |                    |                |                                 |           |
-  |                    |                |   [if tool_use in response]     |           |
-  |                    |                |-- execute tool ---------------->|           |
-  |                    |                |<-- tool result -----------------|           |
-  |                    |                |-- continue with result ---------------------->|
-  |                    |                |<-- more tokens --------------------------------|
-  |<== WS tokens ======|<-- tokens -----|                                |           |
-  |                    |                |                                 |           |
-  |                    |                |-- saveConversation() --------->|            |
-```
+**Backend Dockerfile** (`jarvis-backend/Dockerfile`):
+- Stage 1: `node:22-slim`, `npm ci --ignore-scripts`, `prebuild-install` for better-sqlite3
+- Stage 2: `node:22-slim`, copies dist + node_modules, creates `/app/.ssh` and `/data`
+- Missing: `USER node` (runs as root), no build-essential in builder (relies on prebuild)
 
-### Flow 3: Autonomous Monitoring Detects Issue
+**Frontend Dockerfile** (`jarvis-ui/Dockerfile`):
+- Stage 1: `node:20-alpine`, `npm install` (should be `npm ci`), builds with Vite
+- Stage 2: `nginx:alpine`, copies dist to `/usr/share/nginx/html`
+- Has `nginx.conf` with SPA fallback, gzip, security headers
+- Missing: No API proxy configuration (frontend connects directly to backend)
+
+**docker-compose.yml**:
+- Backend service: port 4000, data volume, SSH key mount, env vars
+- Frontend: commented out
+- Network: `jarvis-net` bridge
+
+### Integration Points
+
+| Existing Component | How It Changes | Impact |
+|---------------------|----------------|--------|
+| `jarvis-backend/Dockerfile` | Harden: add build-essential, USER node, healthcheck | Security + reliability |
+| `jarvis-ui/Dockerfile` | Fix: npm ci, add API/WS proxy in nginx.conf | Production-ready |
+| `docker-compose.yml` | Enable frontend, add env vars for all features | Full stack deployment |
+| `jarvis-ui/nginx.conf` | Add reverse proxy for /api and /socket.io | Single entry point |
+| `.env` files | Create .env.production template | Deployment standardization |
+
+### Target Docker Architecture
 
 ```
-Monitor Service     MCP Server      Proxmox       Memory       LLM Router     API Gateway
-  |                    |               |              |              |              |
-  |-- checkNodes() --->|               |              |              |              |
-  |                    |-- ping ------>|              |              |              |
-  |                    |<-- timeout ---|              |              |              |
-  |<-- node_down ------|               |              |              |              |
-  |                    |               |              |              |              |
-  |-- logEvent() ------------------------------------>|              |              |
-  |                    |               |              |              |              |
-  |-- pushEvent() ----------------------------------------------------------->|
-  |                    |               |              |              |   (WS push to frontend)
-  |                    |               |              |              |              |
-  |-- remediate:WOL -->|               |              |              |              |
-  |                    |-- WOL pkt --->|              |              |              |
-  |                    |<-- sent ------|              |              |              |
-  |                    |               |              |              |              |
-  |   [wait 60s]       |               |              |              |              |
-  |-- verify: ping --->|               |              |              |              |
-  |                    |-- ping ------>|              |              |              |
-  |                    |<-- success ---|              |              |              |
-  |<-- node_up --------|               |              |              |              |
-  |                    |               |              |              |              |
-  |-- logResolution() ------------------------------->|              |              |
-  |-- pushEvent() ----------------------------------------------------------->|
+Management VM (192.168.1.65)
+  |
+  +-- Docker Compose
+       |
+       +-- jarvis-frontend (nginx:alpine)
+       |     Port 3004:80
+       |     Serves: React SPA static files
+       |     Proxies: /api/* -> jarvis-backend:4000
+       |     Proxies: /socket.io/* -> jarvis-backend:4000 (WebSocket upgrade)
+       |
+       +-- jarvis-backend (node:22-slim)
+             Port 4000 (internal only, not exposed to host)
+             Volumes:
+               - jarvis-data:/data (SQLite)
+               - SSH key mount (read-only)
+             Env: ANTHROPIC_API_KEY, PVE_TOKEN_SECRET, JWT_SECRET, etc.
+             Connects to:
+               - Proxmox nodes (HTTPS:8006, SSH:22)
+               - llama-server (HTTP:8080 on 192.168.1.50)
+               - Claude API (HTTPS, external)
 ```
 
-### Flow 4: Terminal Session
+### Critical: Nginx Reverse Proxy for Socket.IO
 
-```
-Browser (xterm.js)     API Gateway          SSH Client         Cluster Node
-  |                       |                     |                   |
-  |-- WS /ws/terminal --->|                     |                   |
-  |   {node: 'pve'}       |                     |                   |
-  |                       |-- ssh connect() --->|                   |
-  |                       |                     |-- SSH handshake ->|
-  |                       |                     |<-- shell ready ---|
-  |<== connected =========|                     |                   |
-  |                       |                     |                   |
-  |== keystroke =========>|                     |                   |
-  |                       |-- write to PTY ---->|-- stdin --------->|
-  |                       |<-- PTY output ------|<-- stdout --------|
-  |<== output ============|                     |                   |
-  |                       |                     |                   |
-  |== resize event ======>|                     |                   |
-  |                       |-- resize PTY ------>|                   |
-```
-
----
-
-## Inter-Component Communication
-
-### Internal (within Node.js process)
-
-| From | To | Method | Why |
-|------|----|--------|-----|
-| API Gateway | MCP Server | Direct function call | Same process, no serialization needed |
-| API Gateway | LLM Router | Direct function call | Same process |
-| API Gateway | Memory Store | Direct function call (sync) | better-sqlite3 is synchronous |
-| API Gateway | Monitor Service | EventEmitter | Loose coupling, monitor emits events |
-| Monitor Service | MCP Server | Direct function call | Execute tools |
-| Monitor Service | Memory Store | Direct function call | Log events |
-| Monitor Service | LLM Router | Direct function call | Escalate complex issues |
-| LLM Router | MCP Server | Direct function call | Execute tool calls from LLM |
-| LLM Router | Memory Store | Direct function call | Get context, save conversations |
-
-### External (network calls)
-
-| From | To | Protocol | Port | Auth |
-|------|----|----------|------|------|
-| Frontend | API Gateway | HTTP + WebSocket | :4000 (via Nginx) | JWT token |
-| API Gateway (via MCP) | Proxmox Nodes | HTTPS | :8006 | API token |
-| API Gateway (via MCP) | Proxmox Nodes | SSH | :22 | SSH key |
-| LLM Router | Claude API | HTTPS | :443 | API key |
-| LLM Router | Qwen/llama-server | HTTP | :8080 | None (LAN) |
-| Monitor Service (via MCP) | WOL API | HTTP | :3005 | None (LAN) |
-
----
-
-## Docker Deployment Architecture
-
-### Container Layout
-
-```yaml
-# docker-compose.yml for Jarvis 3.1
-services:
-  # Frontend: React SPA served by Nginx
-  jarvis-frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile  # multi-stage: node build -> nginx serve
-    ports:
-      - "3004:80"             # or behind nginx-proxy-manager
-    networks:
-      - jarvis-net
-    restart: unless-stopped
-
-  # Backend: Node.js API + MCP + Monitor + Memory
-  jarvis-backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "4000:4000"           # internal, not exposed publicly
-    volumes:
-      - jarvis-data:/data     # SQLite database
-      - /root/.ssh/id_ed25519:/app/.ssh/id_ed25519:ro  # SSH key for node access
-    environment:
-      - NODE_ENV=production
-      - PORT=4000
-      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
-      - QWEN_API_URL=http://192.168.1.50:8080
-      - PROXMOX_NODES=192.168.1.50,192.168.1.74,192.168.1.61,192.168.1.62
-      - PROXMOX_TOKEN_ID=root@pam!jarvis
-      - PROXMOX_TOKEN_SECRET=${PROXMOX_TOKEN_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
-      - DB_PATH=/data/jarvis.db
-      - WOL_API_URL=http://192.168.1.65:3005
-    networks:
-      - jarvis-net
-    restart: unless-stopped
-    depends_on:
-      - jarvis-frontend
-
-volumes:
-  jarvis-data:
-    driver: local
-
-networks:
-  jarvis-net:
-    driver: bridge
-```
-
-### Nginx Configuration (frontend container)
+The current `nginx.conf` only serves static files. For production, Nginx must proxy both REST and WebSocket traffic to the backend. Socket.IO requires specific proxy configuration:
 
 ```nginx
 server {
     listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
 
-    # Serve React SPA
-    location / {
-        root /usr/share/nginx/html;
-        index index.html;
-        try_files $uri $uri/ /index.html;  # SPA fallback
+    # Gzip
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript
+               application/javascript application/json application/xml;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
     }
 
-    # Proxy API requests to backend
-    location /api/ {
-        proxy_pass http://jarvis-backend:4000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    # Proxy WebSocket connections to backend
-    location /ws/ {
+    # Socket.IO WebSocket + polling (MUST be before /api)
+    location /socket.io/ {
         proxy_pass http://jarvis-backend:4000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
-        proxy_read_timeout 86400;  # Keep WS alive for 24h
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+
+    # REST API proxy
+    location /api/ {
+        proxy_pass http://jarvis-backend:4000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # SPA fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Health check
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
     }
 }
 ```
 
-### Resource Budget on Management VM
+### Backend Dockerfile Improvements
+
+The existing Dockerfile has a subtle issue: `--ignore-scripts` prevents better-sqlite3 from compiling, then `prebuild-install` tries to download a prebuilt binary. This works on x86_64 but is fragile. A more robust approach:
+
+```dockerfile
+# Stage 1: Build
+FROM node:22-slim AS builder
+WORKDIR /app
+
+# Install build tools for native modules
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN npm run build
+
+# Stage 2: Production
+FROM node:22-slim
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+
+RUN mkdir -p /app/.ssh && chmod 700 /app/.ssh
+RUN mkdir -p /data && chown node:node /data
+
+USER node
+EXPOSE 4000
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+  CMD wget --spider -q http://localhost:4000/api/health || exit 1
+
+CMD ["node", "dist/index.js"]
+```
+
+### SSH Key Access in Container
+
+The backend needs SSH access to cluster nodes. The current approach (volume-mounting the host SSH key) is correct:
+
+```yaml
+volumes:
+  - /root/.ssh/id_ed25519:/app/.ssh/id_ed25519:ro
+```
+
+The config already sets `SSH_KEY_PATH=/app/.ssh/id_ed25519`. No changes needed here.
+
+### Environment Variable Strategy
 
 ```
-Current usage:  2.3 GB RAM, 16 containers running
-Available:      5.5 GB RAM, 4 CPUs, 31 GB disk free
-
-Jarvis 3.1 budget:
-  jarvis-frontend:  ~50 MB RAM (Nginx + static files)
-  jarvis-backend:   ~200-400 MB RAM (Node.js + SQLite + SSH connections)
-  ---
-  Total:            ~250-450 MB RAM
-
-  This is well within budget. Even with spikes during LLM streaming
-  and multiple WebSocket connections, staying under 1 GB is realistic.
+.env.production (template, NOT committed):
+  NODE_ENV=production
+  PORT=4000
+  JWT_SECRET=<generate-unique>
+  JARVIS_PASSWORD=<set-password>
+  JARVIS_OVERRIDE_KEY=<set-passkey>
+  ANTHROPIC_API_KEY=<claude-api-key>
+  PVE_TOKEN_ID=root@pam!jarvis
+  PVE_TOKEN_SECRET=<proxmox-token>
+  DB_PATH=/data/jarvis.db
+  SSH_KEY_PATH=/app/.ssh/id_ed25519
+  LOCAL_LLM_ENDPOINT=http://192.168.1.50:8080
+  LOCAL_LLM_MODEL=qwen2.5-7b-instruct-q4_k_m.gguf
+  NODE_TLS_REJECT_UNAUTHORIZED=0
 ```
+
+### Resource Budget Validation
+
+The management VM (192.168.1.65) has 4 vCPUs, 8GB RAM, and already runs 16 Docker containers. Based on the existing docker-compose and typical Node.js memory footprint:
+
+| Container | Expected RAM | Expected CPU |
+|-----------|-------------|-------------|
+| jarvis-backend | 150-300 MB | 0.2-0.5 cores (idle), spikes during LLM streaming |
+| jarvis-frontend | 20-50 MB | Near zero (Nginx serving static files) |
+| **Total** | **170-350 MB** | **0.2-0.5 cores** |
+
+This is well within the available budget. Set memory limits in docker-compose as guardrails:
+
+```yaml
+deploy:
+  resources:
+    limits:
+      memory: 512M
+```
+
+**Confidence: HIGH** -- Both Dockerfiles already exist and work. This is hardening and completing what is 80% done.
 
 ---
 
-## Patterns to Follow
+## Feature 4: E2E Testing
 
-### Pattern 1: Event-Driven Internal Communication
+### Problem
 
-**What:** Use Node.js EventEmitter for loose coupling between Monitor, API Gateway, and Memory.
+The project has zero tests. No unit tests, no integration tests, no E2E tests. For a system that manages live infrastructure with autonomous remediation capabilities, this is a significant gap.
 
-**When:** Any component produces information another needs asynchronously.
+### Testing Strategy
 
-**Example:**
+Given the nature of Jarvis (infrastructure management against live Proxmox API), the testing approach must be:
+
+1. **Unit tests (Vitest)**: Test pure logic in isolation -- routing decisions, safety tier checks, context building, cost tracking
+2. **Integration tests (Vitest)**: Test module interactions with real SQLite (in-memory), mocked Proxmox API
+3. **E2E tests (Playwright)**: Test the full stack through the browser -- dashboard loads, chat works, tools execute against live cluster
+
+### Integration Points
+
+| Existing Component | How It's Tested | New Infrastructure |
+|---------------------|-----------------|-------------------|
+| `ai/router.ts` | Unit test routing decisions | Vitest |
+| `safety/tiers.ts` | Unit test tier classification | Vitest |
+| `db/memory.ts` | Integration test with in-memory SQLite | Vitest |
+| `db/context-builder.ts` | Unit test context assembly | Vitest |
+| `mcp/server.ts` | Integration test executeTool pipeline | Vitest + mocked proxmox |
+| `realtime/chat.ts` | E2E test through browser | Playwright |
+| Full dashboard | E2E: login, view cluster, send chat, view terminal | Playwright |
+
+### New Components
+
+```
+tests/
+  vitest.config.ts       -- Vitest configuration
+  playwright.config.ts   -- Playwright configuration
+
+  unit/
+    router.test.ts       -- LLM routing logic
+    tiers.test.ts        -- Safety tier classification
+    cost-tracker.test.ts -- Cost tracking and budget checks
+    context-builder.test.ts -- Context assembly
+
+  integration/
+    memory.test.ts       -- Memory store with real SQLite
+    tools.test.ts        -- Tool execution pipeline (mocked Proxmox)
+    safety.test.ts       -- Full safety pipeline
+
+  e2e/
+    dashboard.spec.ts    -- Login, view cluster status
+    chat.spec.ts         -- Send message, receive streaming response
+    tools.spec.ts        -- Execute tool via chat, verify result
+    terminal.spec.ts     -- Open terminal session
+
+  fixtures/
+    proxmox-responses.ts -- Recorded Proxmox API responses for mocking
+    cluster-state.ts     -- Standard cluster state for tests
+
+  helpers/
+    test-db.ts           -- In-memory SQLite for integration tests
+    mock-proxmox.ts      -- HTTP mock server for Proxmox API
+    test-auth.ts         -- JWT token generation for tests
+```
+
+### E2E Test Architecture Against Live Infrastructure
+
+The E2E tests have a unique requirement: they test against the **real** Proxmox cluster API, not mocks. This is because:
+- The system's value is in real cluster management
+- Mocking the Proxmox API defeats the purpose of E2E testing
+- The homelab environment is always available
+
+**Safety constraints for E2E tests:**
+- Only use GREEN-tier (read-only) tools in automated tests
+- Never start/stop VMs or containers in automated tests
+- Test RED/BLACK tier tools only via the confirmation UI flow (verify the confirmation dialog appears, do not confirm)
+- Use a dedicated test session ID prefix (`test-`) for cleanup
+
 ```typescript
-// Monitor emits events
-monitor.on('alert', (event: ClusterEvent) => {
-  memory.saveEvent(event);              // Persist
-  gateway.broadcast('events', event);   // Push to all connected clients
-});
-
-// API Gateway listens for push events
-monitor.on('cluster_update', (status: ClusterStatus) => {
-  gateway.broadcast('cluster', { type: 'status_update', payload: status });
+// playwright.config.ts
+export default defineConfig({
+  testDir: './tests/e2e',
+  use: {
+    baseURL: 'http://192.168.1.65:3004',   // Management VM
+    // OR for local dev:
+    // baseURL: 'http://localhost:5173',
+  },
+  webServer: {
+    // For CI/local dev, start the backend
+    command: 'npm run dev',
+    port: 4000,
+    reuseExistingServer: true,
+  },
 });
 ```
 
-### Pattern 2: Tool Execution Pipeline
+### Test Against Live vs. Mock
 
-**What:** Every tool call goes through a consistent pipeline: validate -> execute -> log -> respond.
+| Test Type | Proxmox API | LLM | SQLite | Frontend |
+|-----------|-------------|-----|--------|----------|
+| Unit | Not used | Not used | Not used | Not used |
+| Integration | Mocked (HTTP mock) | Mocked | Real (in-memory) | Not used |
+| E2E (local dev) | Live cluster | Mocked (fast, deterministic) | Real (file) | Real (browser) |
+| E2E (deployed) | Live cluster | Real (both providers) | Real (file) | Real (browser) |
 
-**When:** Any MCP tool is invoked (by LLM or by Monitor).
+### Vitest Configuration
 
-**Example:**
 ```typescript
-async function executeTool(name: string, args: unknown, source: 'llm' | 'monitor' | 'user') {
-  // 1. Validate
-  const tool = registry.get(name);
-  const validated = tool.schema.parse(args);
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
 
-  // 2. Safety check
-  if (tool.risk === 'dangerous' && source === 'llm') {
-    return { requiresConfirmation: true, tool: name, args: validated };
-  }
+export default defineConfig({
+  test: {
+    include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
+    environment: 'node',
+    globals: true,
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/index.ts'],
+    },
+  },
+});
+```
 
-  // 3. Execute
-  const result = await tool.handler(validated);
+### Mock Strategy for Integration Tests
 
-  // 4. Log
-  memory.saveEvent({
-    type: 'action',
-    source,
-    summary: `${name}(${JSON.stringify(validated)})`,
-    details: JSON.stringify(result),
+For integration tests that need Proxmox API responses without hitting the live cluster:
+
+```typescript
+// tests/helpers/mock-proxmox.ts
+// Record real responses once, replay in tests
+
+import { createServer } from 'node:http';
+
+// Recorded from live cluster
+const MOCK_RESPONSES = {
+  '/api2/json/cluster/status': { data: [/* recorded data */] },
+  '/api2/json/cluster/resources?type=node': { data: [/* recorded data */] },
+  '/api2/json/cluster/resources?type=vm': { data: [/* recorded data */] },
+};
+
+export function startMockProxmox(port: number): Promise<() => void> {
+  const server = createServer((req, res) => {
+    const response = MOCK_RESPONSES[req.url ?? ''];
+    if (response) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    } else {
+      res.writeHead(404);
+      res.end('Not found');
+    }
   });
 
-  // 5. Return
-  return result;
+  return new Promise(resolve => {
+    server.listen(port, () => {
+      resolve(() => server.close());
+    });
+  });
 }
 ```
 
-### Pattern 3: Graceful Degradation
+**Confidence: MEDIUM** -- The testing architecture is well-established (Vitest + Playwright is the standard 2025/2026 stack for Vite projects). However, testing against live Proxmox infrastructure introduces test stability risks (node offline = test failure). Need clear test categories: stable (mocked) vs. live (may flake).
 
-**What:** Every external dependency has a fallback path.
+---
 
-**When:** Network failures, service outages, API rate limits.
+## Suggested Build Order
 
-**Example:**
-```typescript
-// LLM fallback chain
-async function chat(message: string): Promise<string> {
-  try {
-    if (target === 'cloud') {
-      return await claudeChat(message);    // Try Claude first
-    }
-  } catch (e) {
-    logger.warn('Claude unavailable, falling back to local');
-  }
+The four features have clear dependency relationships:
 
-  try {
-    return await qwenChat(message);        // Fall back to local Qwen
-  } catch (e) {
-    logger.error('Local LLM also unavailable');
-  }
-
-  return "I'm having trouble with my language systems. The cluster tools still work -- try a direct command.";
-}
 ```
+Phase 1: Hybrid LLM Router
+  Depends on: Nothing new (refactors existing code)
+  Blocks: Persistent Memory (context builder needs to know provider budgets)
+  Deliverables: ai/providers.ts, ai/router.ts, ai/cost-tracker.ts
+  Risk: Low (refactoring known code)
+
+Phase 2: Persistent Memory + TTL Tiers
+  Depends on: Hybrid LLM Router (context budgets per provider)
+  Blocks: Nothing (independent)
+  Deliverables: db/context-builder.ts, db/consolidator.ts, schema migration
+  Risk: Low (extending existing SQLite infrastructure)
+
+Phase 3: Docker Deployment
+  Depends on: All code changes complete (Phases 1-2)
+  Blocks: E2E Testing (tests run against deployed containers)
+  Deliverables: Updated Dockerfiles, docker-compose.yml, nginx.conf, deploy script
+  Risk: Low (Docker setup already 80% done)
+
+Phase 4: E2E Testing
+  Depends on: Docker Deployment (tests against running stack)
+  Blocks: Nothing
+  Deliverables: tests/ directory, vitest.config.ts, playwright.config.ts
+  Risk: Medium (live infrastructure testing requires stability patterns)
+```
+
+**Why this order:**
+
+1. **LLM Router first** because it refactors the AI module without changing external behavior. It creates the provider abstraction that all other features depend on. The context builder needs to know provider budgets. Cost tracking provides data for the dashboard.
+
+2. **Persistent Memory second** because it extends the database layer (additive changes) and integrates with the newly abstracted LLM providers. The context builder needs to produce different-sized context blocks for Claude vs. Qwen.
+
+3. **Docker Deployment third** because it should package the complete, working application. Deploying before features are complete means redeploying after every change. Deploy once when the code is stable.
+
+4. **E2E Testing last** because it tests the deployed system end-to-end. You cannot write meaningful E2E tests until the features exist and the deployment pipeline works. Unit tests for individual features (router, memory) should be written alongside the feature code in Phases 1-2.
+
+**Exception: Write unit tests alongside feature code.** While the E2E test infrastructure goes in Phase 4, individual unit tests for the router, cost tracker, and context builder should be created during Phases 1-2. Phase 4 is for the E2E test harness + integration test infrastructure.
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Shell Command Execution via child_process
+### Anti-Pattern 1: External LLM Gateway for Two Providers
 
-**What:** Using `exec('pvesh get /nodes')` or `exec('ssh root@host command')` to interact with cluster.
+**What:** Using LiteLLM, OpenRouter, or a separate gateway service to abstract Claude + Qwen.
 
-**Why bad:** Command injection risk. No connection pooling. Shell parsing fragility. Only works on PVE nodes.
+**Why bad for this project:**
+- Adds a new service to manage on resource-constrained management VM
+- Claude's tool_use protocol is fundamentally different from OpenAI's function calling
+- Two providers do not justify gateway overhead
+- Adds latency hop on every request
+- New dependency to monitor, update, and debug
 
-**Instead:** Use Proxmox REST API via HTTPS (port 8006) with API tokens. Use `ssh2` library for SSH (pure JS, connection pooling, no shell).
+**Instead:** Thin TypeScript interface (LLMProvider) with two implementations. Direct SDK calls. The abstraction lives in application code, not in a proxy.
 
-### Anti-Pattern 2: Polling from Frontend
+### Anti-Pattern 2: LLM-Powered Memory Consolidation
 
-**What:** Frontend `setInterval` calling REST endpoints every N seconds for real-time data.
+**What:** Using Claude or Qwen to summarize/consolidate events into long-term memories.
 
-**Why bad:** Unnecessary HTTP overhead. Delayed updates. Increased server load with multiple clients.
+**Why bad:**
+- Expensive (Claude API calls for background maintenance)
+- Slow (blocks consolidation on LLM response time)
+- Unreliable (LLM may hallucinate or produce poor summaries)
+- Circular dependency (memory system depends on LLM, LLM depends on memory)
 
-**Instead:** WebSocket push from backend. Backend polls Proxmox on schedule, pushes changes to all connected clients. Frontend is purely reactive.
+**Instead:** SQL aggregation + pattern matching for consolidation. Group similar events by key, count occurrences, produce deterministic summaries. Simple, fast, free.
 
-### Anti-Pattern 3: Separate Processes for Each Component
+### Anti-Pattern 3: Exposing Backend Port to Host Network
 
-**What:** Running MCP server, monitor, memory store, and API as separate containers/processes.
+**What:** Mapping port 4000 to the management VM's network so the frontend connects directly.
 
-**Why bad:** IPC overhead. Shared state requires message passing. Complex deployment. Unnecessary for single-user homelab.
+**Why bad:**
+- Two exposed ports (3004 for frontend, 4000 for backend)
+- No single entry point
+- WebSocket connections bypass any future TLS termination
+- CORS configuration complexity
 
-**Instead:** Single Node.js process with clean module boundaries. Components communicate via function calls and EventEmitter.
+**Instead:** Frontend Nginx proxies all traffic. Only port 3004 is exposed. Backend port 4000 is internal to the Docker network. Single entry point, single CORS origin.
 
-### Anti-Pattern 4: Storing Raw LLM Responses in Context
+### Anti-Pattern 4: Testing Against Live LLM in CI
 
-**What:** Feeding entire previous LLM responses back into the context window.
+**What:** Running E2E tests that require Claude API responses.
 
-**Why bad:** Context window fills quickly (especially 4096-token Qwen). Redundant information. Previous responses may contain outdated cluster state.
+**Why bad:**
+- Tests become flaky (API latency, rate limits, model behavior changes)
+- Tests cost money per run
+- Tests are slow (seconds per LLM response)
+- Non-deterministic (same prompt, different response)
 
-**Instead:** Store structured summaries. Context injection builds fresh state from current data, not from stale LLM responses.
+**Instead:** Mock LLM responses in integration tests. For E2E, test the UI flow (message sent, streaming tokens appear) with a lightweight mock server that returns canned responses. Only test against real LLM in manual/smoke tests.
 
-### Anti-Pattern 5: Direct Database Access from Frontend
+### Anti-Pattern 5: Unbounded Event Storage
 
-**What:** Exposing SQLite queries via REST API without an abstraction layer.
+**What:** Storing every event forever without TTL, letting the SQLite database grow unbounded.
 
-**Why bad:** Couples frontend to database schema. SQL injection risk. No business logic enforcement.
+**Why bad:**
+- SQLite performance degrades with millions of rows (especially without VACUUM)
+- Context retrieval queries slow down
+- Disk space consumption on resource-constrained VM
+- Old events lose relevance but still consume query time
 
-**Instead:** API returns domain objects (ClusterStatus, Event, Conversation). Memory store is accessed only by backend components through a typed repository pattern.
-
----
-
-## Suggested Build Order (Dependencies)
-
-The components have clear dependency relationships that dictate build order:
-
-```
-Phase 1: Foundation
-  [Memory Store]  -- no dependencies, foundation for everything
-  [MCP Server]    -- needs Proxmox API client, SSH client
-
-Phase 2: Intelligence
-  [LLM Router]    -- needs MCP Server (tool execution) + Memory Store (context)
-
-Phase 3: Interface
-  [API Gateway]   -- needs MCP Server + LLM Router + Memory Store
-  [Frontend]      -- needs API Gateway (API contract)
-
-Phase 4: Autonomy
-  [Monitor Service] -- needs MCP Server + Memory Store + LLM Router + API Gateway (push)
-```
-
-**Why this order:**
-
-1. **Memory Store first** because every other component writes to or reads from it. Building it first means everything else can log and retrieve data from day one.
-
-2. **MCP Server second** because it is the "hands" of the system -- the only component that actually talks to the cluster. Without tools, neither the LLM nor the monitor can do anything.
-
-3. **LLM Router third** because it needs both tools (MCP) and context (Memory) to function. Building it requires the foundation to already exist.
-
-4. **API Gateway and Frontend together** because the API Gateway is just a thin HTTP/WS layer over the existing components, and the Frontend is the visual consumer. These can be developed in parallel with stub data initially.
-
-5. **Monitor Service last** because it requires all other components to exist. It uses MCP tools to check things, Memory to log events, LLM Router to analyze complex issues, and API Gateway to push updates to the frontend.
-
----
-
-## Scalability Considerations
-
-| Concern | Current (4 nodes) | At 10 nodes | At 20+ nodes |
-|---------|-------------------|-------------|--------------|
-| Proxmox API polling | 4 nodes * 15s = manageable | Increase interval to 30s | Batch queries, use Proxmox cluster API |
-| WebSocket connections | 1-3 clients | 5-10 clients | Consider Socket.IO rooms for selective updates |
-| SQLite performance | Trivial | Still fine (<100K rows) | Consider WAL mode, periodic cleanup |
-| SSH connections | 4 persistent | 10 persistent | Connection pool with limits |
-| LLM context size | Small cluster = small context | Summarize per-node, don't list all | Hierarchical summaries |
-
-For a 4-node homelab, scalability is a non-concern. The architecture supports growth to ~20 nodes without changes. Beyond that, the modular monolith could be decomposed, but that's far future.
+**Instead:** TTL-based cleanup in pollBackground() (already partially implemented with `cleanupOldActions(30)`). Extend to all event types with configurable retention: 7 days for raw events, 30 days for actions, permanent for long-term memories.
 
 ---
 
 ## Sources
 
-### HIGH Confidence (Official Documentation + Verified)
-- [MCP Specification (2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25) - Protocol architecture, message format, security model
-- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) - Server implementation, tool registration, transport options
-- [Proxmox VE API Documentation](https://pve.proxmox.com/pve-docs/api-viewer/) - REST API endpoints, authentication
+### HIGH Confidence (Verified Against Codebase)
+- All component details verified by reading every TypeScript source file in jarvis-backend/src/
+- Docker configuration verified from existing Dockerfiles and docker-compose.yml
+- Current routing logic verified from realtime/chat.ts source code
+- Memory schema verified from db/schema.ts and db/memory.ts source code
+
+### HIGH Confidence (Official Documentation)
+- [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript) -- Tool use, streaming, message format
+- [Socket.IO v4 documentation](https://socket.io/docs/v4/) -- Namespace configuration, proxy setup
+- [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html) -- proxy_pass + upgrade headers
+- [Docker multi-stage builds](https://docs.docker.com/build/building/multi-stage/) -- Best practices for Node.js
+- [better-sqlite3 Docker](https://github.com/WiseLibs/better-sqlite3/discussions/1270) -- Native module compilation in containers
 
 ### MEDIUM Confidence (Multiple Sources Agree)
-- [SSE vs WebSockets comparison (SoftwareMill)](https://softwaremill.com/sse-vs-websockets-comparing-real-time-communication-protocols/) - Real-time protocol comparison
-- [Proxmox MCP Enhanced (GitHub)](https://github.com/chajus1/proxmox-mcp-enhanced) - Tool organization patterns, safety boundaries
-- [MCP Proxmox Node.js (GitHub)](https://github.com/gilby125/mcp-proxmox) - Permission levels, TypeScript implementation
-- [SQLite RAG patterns](https://www.inferable.ai/blog/posts/sqlite-rag) - SQLite + vector search for LLM context
-- [Hybrid LLM routing research](https://journal-isi.org/index.php/isi/article/download/1170/595) - Confidence-based cascading, cost analysis
-- [Self-healing infrastructure (WJAETS 2025)](https://journalwjaets.com/sites/default/files/fulltext_pdf/WJAETS-2025-0810.pdf) - Event-driven remediation pipelines
+- [Multi-tier persistent memory for LLMs](https://healthark.ai/persistent-memory-for-llms-designing-a-multi-tier-context-system/) -- TTL tiers, relevance scoring, context budgets
+- [Playwright E2E testing guide](https://www.deviqa.com/blog/guide-to-playwright-end-to-end-testing-in-2025/) -- WebSocket handling, auto-waiting
+- [Vitest + Playwright complementary testing](https://www.browserstack.com/guide/vitest-vs-playwright) -- Unit vs E2E responsibilities
+- [LLM cost optimization patterns](https://byteiota.com/llm-cost-optimization-stop-overpaying-5-10x-in-2026/) -- Tiered routing, local-first strategy
+- [xRouter cost-aware routing research](https://arxiv.org/html/2510.08439v1) -- RL-trained routers converge to simple heuristics
 
-### LOW Confidence (Single Source, Unverified)
-- LiteLLM routing specifics for Qwen 2.5 7B - needs validation with actual model
-- Qwen 2.5 7B function calling reliability - needs empirical testing
-- better-sqlite3 performance claims - likely true but not benchmarked for this specific workload
+### LOW Confidence (Needs Validation)
+- Qwen 2.5 7B function calling reliability at Q4_K_M quantization -- needs empirical testing
+- Exact memory overhead of jarvis-backend container -- estimate based on similar Node.js apps
+- Playwright WebSocket test stability against live Proxmox -- needs testing in practice
 
 ---
 
-*Architecture research: 2026-01-26*
+*Architecture research for milestone integration: 2026-01-26*
