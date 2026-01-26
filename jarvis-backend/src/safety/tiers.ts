@@ -1,0 +1,152 @@
+/**
+ * 4-tier action classification for MCP tool safety enforcement.
+ *
+ * Every tool invocation passes through checkSafety() which:
+ *  1. Looks up the tool's tier
+ *  2. Checks if the target is a protected resource (always blocked)
+ *  3. Applies tier-specific logic (GREEN auto-exec, RED needs confirmation, BLACK blocked)
+ *
+ * Fail-safe: unknown tools default to BLACK (blocked).
+ */
+
+import { isProtectedResource } from './protected.js';
+
+// ---------------------------------------------------------------------------
+// Tier enum
+// ---------------------------------------------------------------------------
+
+export enum ActionTier {
+  /** Auto-execute: read-only operations, no side effects */
+  GREEN = 'green',
+
+  /** Execute + log: service restarts, safe operational commands */
+  YELLOW = 'yellow',
+
+  /** Require confirmed=true flag: VM/CT start/stop/restart */
+  RED = 'red',
+
+  /** Always blocked: destructive operations that could break the cluster */
+  BLACK = 'black',
+}
+
+// ---------------------------------------------------------------------------
+// Tool-to-tier mapping
+// ---------------------------------------------------------------------------
+
+export const TOOL_TIERS: Record<string, ActionTier> = {
+  // GREEN -- read-only cluster monitoring
+  get_cluster_status: ActionTier.GREEN,
+  get_node_status: ActionTier.GREEN,
+  get_vms: ActionTier.GREEN,
+  get_containers: ActionTier.GREEN,
+  get_storage: ActionTier.GREEN,
+  get_cluster_resources: ActionTier.GREEN,
+  get_node_temperature: ActionTier.GREEN,
+  get_recent_tasks: ActionTier.GREEN,
+  get_backups: ActionTier.GREEN,
+
+  // YELLOW -- operational commands with controlled side effects
+  execute_ssh: ActionTier.YELLOW,
+  restart_service: ActionTier.YELLOW,
+  wake_node: ActionTier.YELLOW,
+
+  // RED -- VM/CT lifecycle changes requiring explicit confirmation
+  start_vm: ActionTier.RED,
+  stop_vm: ActionTier.RED,
+  restart_vm: ActionTier.RED,
+  start_container: ActionTier.RED,
+  stop_container: ActionTier.RED,
+  restart_container: ActionTier.RED,
+
+  // BLACK -- always blocked destructive operations
+  reboot_node: ActionTier.BLACK,
+};
+
+// ---------------------------------------------------------------------------
+// Lookup helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the safety tier for a tool. Unknown tools return BLACK (fail-safe).
+ */
+export function getToolTier(toolName: string): ActionTier {
+  return TOOL_TIERS[toolName] ?? ActionTier.BLACK;
+}
+
+// ---------------------------------------------------------------------------
+// Safety check
+// ---------------------------------------------------------------------------
+
+export interface SafetyResult {
+  allowed: boolean;
+  reason?: string;
+  tier: ActionTier;
+}
+
+/**
+ * Determine whether a tool invocation should be allowed.
+ *
+ * Evaluation order:
+ *  1. Look up tool tier
+ *  2. Check if target is a protected resource -> BLOCK
+ *  3. BLACK -> always block
+ *  4. RED && !confirmed -> block with "requires confirmation"
+ *  5. YELLOW -> allow
+ *  6. GREEN -> allow
+ *  7. Default: block (fail-safe, should never be reached)
+ */
+export function checkSafety(
+  tool: string,
+  args: Record<string, unknown>,
+  confirmed: boolean = false,
+): SafetyResult {
+  const tier = getToolTier(tool);
+
+  // Step 2: Protected resource check (overrides everything)
+  const protectedCheck = isProtectedResource(args);
+  if (protectedCheck.protected) {
+    return {
+      allowed: false,
+      reason: protectedCheck.reason ?? `Target is a protected resource: ${protectedCheck.resource}`,
+      tier,
+    };
+  }
+
+  // Step 3: BLACK tier -- always blocked
+  if (tier === ActionTier.BLACK) {
+    return {
+      allowed: false,
+      reason: `Tool "${tool}" is classified as BLACK tier and is always blocked`,
+      tier,
+    };
+  }
+
+  // Step 4: RED tier -- requires explicit confirmation
+  if (tier === ActionTier.RED) {
+    if (!confirmed) {
+      return {
+        allowed: false,
+        reason: `Tool "${tool}" is classified as RED tier and requires confirmed=true`,
+        tier,
+      };
+    }
+    return { allowed: true, tier };
+  }
+
+  // Step 5: YELLOW tier -- allowed
+  if (tier === ActionTier.YELLOW) {
+    return { allowed: true, tier };
+  }
+
+  // Step 6: GREEN tier -- allowed
+  if (tier === ActionTier.GREEN) {
+    return { allowed: true, tier };
+  }
+
+  // Step 7: Fail-safe -- block anything unclassified
+  return {
+    allowed: false,
+    reason: `Tool "${tool}" has unrecognized tier "${tier}" -- blocked by fail-safe`,
+    tier,
+  };
+}
