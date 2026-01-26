@@ -3,7 +3,7 @@ import type { Socket } from 'socket.io-client';
 import { createEventsSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useClusterStore } from '../stores/cluster';
-import { getMonitorStatus } from '../services/api';
+import { getMonitorStatus, getRecentEvents } from '../services/api';
 import type { JarvisEvent } from '../types/events';
 
 /**
@@ -18,6 +18,7 @@ export function useEventsSocket(): void {
   const socketRef = useRef<Socket | null>(null);
 
   const addEvent = useClusterStore((s) => s.addEvent);
+  const setEvents = useClusterStore((s) => s.setEvents);
   const setKillSwitch = useClusterStore((s) => s.setKillSwitch);
   const setMonitorStatus = useClusterStore((s) => s.setMonitorStatus);
 
@@ -45,6 +46,8 @@ export function useEventsSocket(): void {
     function onConnect() {
       // Fetch initial monitor status on socket connection
       getMonitorStatus(token!).then(setMonitorStatus).catch(() => {});
+      // Seed ActivityFeed with recent event history
+      getRecentEvents(token!, 50).then(setEvents).catch(() => {});
     }
 
     function onConnectError(err: Error) {
@@ -69,5 +72,5 @@ export function useEventsSocket(): void {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [token, logout, addEvent, setKillSwitch, setMonitorStatus]);
+  }, [token, logout, addEvent, setEvents, setKillSwitch, setMonitorStatus]);
 }

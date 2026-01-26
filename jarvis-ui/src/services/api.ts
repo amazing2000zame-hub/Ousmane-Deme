@@ -50,7 +50,7 @@ export async function executeToolApi(
 
 /* ── Monitor API ─────────────────────────────────────────────── */
 
-import type { MonitorStatus } from '../types/events';
+import type { MonitorStatus, JarvisEvent } from '../types/events';
 
 /** Get current monitor service status */
 export async function getMonitorStatus(token: string): Promise<MonitorStatus> {
@@ -77,6 +77,50 @@ export async function setAutonomyLevel(
     method: 'PUT',
     body: JSON.stringify({ level }),
   }, token);
+}
+
+/* ── Events API ────────────────────────────────────────────── */
+
+/** Map a raw DB event record to the JarvisEvent interface */
+function mapDbEventToJarvisEvent(dbEvent: Record<string, unknown>): JarvisEvent {
+  const summary = (dbEvent.summary as string) ?? '';
+  let title: string;
+  let message: string;
+  const bracketMatch = summary.match(/^\[.*?\]\s*(.+?):\s*(.+)$/);
+  if (bracketMatch) {
+    title = bracketMatch[1].trim();
+    message = bracketMatch[2].trim();
+  } else {
+    const colonIdx = summary.indexOf(':');
+    if (colonIdx > 0 && colonIdx < 60) {
+      title = summary.slice(0, colonIdx).trim();
+      message = summary.slice(colonIdx + 1).trim();
+    } else {
+      title = summary.slice(0, 80);
+      message = summary;
+    }
+  }
+  return {
+    id: String(dbEvent.id ?? Date.now()),
+    type: (dbEvent.type as JarvisEvent['type']) ?? 'status',
+    severity: (dbEvent.severity as JarvisEvent['severity']) ?? 'info',
+    title,
+    message,
+    node: (dbEvent.node as string) ?? undefined,
+    source: (dbEvent.source as JarvisEvent['source']) ?? undefined,
+    timestamp: (dbEvent.timestamp as string) ?? new Date().toISOString(),
+    resolvedAt: (dbEvent.resolvedAt as string) ?? undefined,
+  };
+}
+
+/** Fetch recent events from the backend memory API */
+export async function getRecentEvents(token: string, limit = 50): Promise<JarvisEvent[]> {
+  const data = await apiCall<{ events: Array<Record<string, unknown>> }>(
+    `/api/memory/events?limit=${limit}`,
+    {},
+    token,
+  );
+  return (data.events ?? []).map(mapDbEventToJarvisEvent);
 }
 
 /** Retrieve recent autonomous actions from the audit log */
