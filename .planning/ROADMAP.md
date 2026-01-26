@@ -181,12 +181,12 @@ Plans:
 - Claude API has usage-based cost -- complex conversations consume tokens rapidly
 - System prompt must be tuned for personality consistency while remaining functional
 
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Chat interface panel with message history, streaming display, and WebSocket integration
-- [ ] 03-02: Claude API integration with tool calling pipeline and context injection
-- [ ] 03-03: Action confirmation UX (tiered safety cards) and JARVIS personality tuning
+- [ ] 03-01-PLAN.md -- Backend AI pipeline: Claude client, tool definitions, system prompt, agentic loop, /chat namespace
+- [ ] 03-02-PLAN.md -- Frontend chat UI: Zustand store, socket hook, ChatPanel, ChatMessage, ChatInput, CenterDisplay CHAT tab
+- [ ] 03-03-PLAN.md -- Confirmation UX (ConfirmCard, BlockedCard, ToolStatusCard) and JARVIS personality tuning
 
 ---
 
@@ -382,6 +382,6 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 |-------|---------------|--------|-----------|
 | 1. Backend Foundation & Safety Layer | 4/4 | Complete | 2026-01-26 |
 | 2. Real-Time Dashboard & eDEX-UI | 6/6 | Complete | 2026-01-26 |
-| 3. AI Chat & Claude Integration | 0/3 | Not started | - |
+| 3. AI Chat & Claude Integration | 0/3 | Planning complete | - |
 | 4. Autonomous Monitoring & Remediation | 0/3 | Not started | - |
 | 5. Hybrid LLM Intelligence & Persistent Memory | 0/3 | Not started | - |
