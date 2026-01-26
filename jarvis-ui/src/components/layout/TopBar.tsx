@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useClusterStore } from '../../stores/cluster';
 import { useUIStore } from '../../stores/ui';
 import { useTerminalStore } from '../../stores/terminal';
+import { useAuthStore } from '../../stores/auth';
 import { StatusDot } from '../shared/StatusDot';
 import { DataPulse } from '../../effects/DataPulse';
 import { RadialThemePicker } from './RadialThemePicker';
+import { toggleKillSwitch } from '../../services/api';
 import type { VisualMode } from '../../theme/modes';
 
 const MODE_LABELS: { key: VisualMode; label: string }[] = [
@@ -16,13 +18,32 @@ const MODE_LABELS: { key: VisualMode; label: string }[] = [
 export function TopBar() {
   const quorum = useClusterStore((s) => s.quorum);
   const connected = useClusterStore((s) => s.connected);
+  const monitorStatus = useClusterStore((s) => s.monitorStatus);
+  const setKillSwitch = useClusterStore((s) => s.setKillSwitch);
   const visualMode = useUIStore((s) => s.visualMode);
   const setVisualMode = useUIStore((s) => s.setVisualMode);
   const isTerminalCollapsed = useTerminalStore((s) => s.isCollapsed);
   const toggleTerminal = useTerminalStore((s) => s.toggleCollapse);
+  const token = useAuthStore((s) => s.token);
   const [time, setTime] = useState(() => new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+
+  const isKillSwitchActive = monitorStatus?.killSwitch ?? false;
+
+  /** Toggle autonomous action kill switch with optimistic update */
+  function handleKillSwitchToggle() {
+    const newValue = !isKillSwitchActive;
+    // Optimistic update for instant feedback
+    setKillSwitch(newValue);
+    // Persist via API
+    if (token) {
+      toggleKillSwitch(newValue, token).catch(() => {
+        // Revert on API error
+        setKillSwitch(!newValue);
+      });
+    }
+  }
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000);
@@ -43,7 +64,7 @@ export function TopBar() {
 
   // Quorum display
   const quorumText = quorum
-    ? `${quorum.totalVotes}/${quorum.expectedVotes}`
+    ? `${quorum.nodes}/${quorum.expected}`
     : '---';
   const quorumColor = quorum
     ? quorum.quorate
@@ -92,6 +113,29 @@ export function TopBar() {
             {connected ? 'LIVE' : 'DISC'}
           </span>
         </div>
+
+        {/* Kill switch toggle */}
+        <button
+          type="button"
+          onClick={handleKillSwitchToggle}
+          title={isKillSwitchActive
+            ? 'Autonomous Actions: DISABLED (Kill Switch Active)'
+            : 'Autonomous Actions: ENABLED'}
+          className={`
+            flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono tracking-wider rounded
+            transition-all duration-200
+            ${isKillSwitchActive
+              ? 'text-jarvis-red border border-jarvis-red/30 line-through'
+              : 'text-jarvis-green border border-jarvis-green/30'}
+          `}
+        >
+          <StatusDot
+            status={isKillSwitchActive ? 'offline' : 'online'}
+            size="sm"
+            pulse={!isKillSwitchActive}
+          />
+          AUTO
+        </button>
 
         {/* Visual mode switcher */}
         <div className="flex items-center gap-0.5">
