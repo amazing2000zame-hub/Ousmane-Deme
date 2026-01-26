@@ -6,7 +6,7 @@ Jarvis 3.1 transforms a 4-node Proxmox homelab cluster into an AI-operated comma
 
 ## Milestone 1: MVP
 
-- [ ] **Phase 1: Backend Foundation & Safety Layer** - Express 5 API, MCP tool server, SQLite memory schema, Proxmox REST client, SSH client, safety framework
+- [x] **Phase 1: Backend Foundation & Safety Layer** - Express 5 API, MCP tool server, SQLite memory schema, Proxmox REST client, SSH client, safety framework
 - [ ] **Phase 2: Real-Time Dashboard & eDEX-UI Visual Identity** - React 19 SPA, 3-column layout, live cluster monitoring, xterm.js terminal, sci-fi aesthetic
 - [ ] **Phase 3: AI Chat & Claude Integration** - Chat interface, Claude API tool calling, JARVIS personality, action confirmation UX
 - [ ] **Phase 4: Autonomous Monitoring & Remediation** - Background monitoring loop, threshold alerts, auto-remediation runbooks, activity feed, email reports
@@ -69,10 +69,10 @@ Jarvis 3.1 transforms a 4-node Proxmox homelab cluster into an AI-operated comma
 **Plans**: 4 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Express 5 backend scaffold with Docker Compose, health endpoint, JWT auth, Socket.IO
-- [ ] 01-02-PLAN.md -- Proxmox REST API client and SSH client with connection pooling
-- [ ] 01-03-PLAN.md -- MCP tool server with all 18 tools, safety framework, and tier enforcement
-- [ ] 01-04-PLAN.md -- SQLite memory store schema and event persistence layer
+- [x] 01-01-PLAN.md -- Express 5 backend scaffold with Docker Compose, health endpoint, JWT auth, Socket.IO
+- [x] 01-02-PLAN.md -- Proxmox REST API client and SSH client with connection pooling
+- [x] 01-03-PLAN.md -- MCP tool server with all 18 tools, safety framework, and tier enforcement
+- [x] 01-04-PLAN.md -- SQLite memory store schema and event persistence layer
 
 ---
 
@@ -378,7 +378,7 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 1. Backend Foundation & Safety Layer | 0/4 | Planned | - |
+| 1. Backend Foundation & Safety Layer | 4/4 | Complete | 2026-01-26 |
 | 2. Real-Time Dashboard & eDEX-UI | 0/4 | Not started | - |
 | 3. AI Chat & Claude Integration | 0/3 | Not started | - |
 | 4. Autonomous Monitoring & Remediation | 0/3 | Not started | - |
