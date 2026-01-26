@@ -39,6 +39,7 @@ import type { LLMProvider } from '../ai/providers.js';
 import { memoryStore } from '../db/memory.js';
 import { config } from '../config.js';
 import { extractMemoriesFromSession, detectPreferences } from '../ai/memory-extractor.js';
+import { detectRecallQuery, buildRecallBlock } from '../ai/memory-recall.js';
 import { memoryBank } from '../db/memories.js';
 
 // Provider lookup map
@@ -157,11 +158,19 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         const provider = providers[decision.provider];
         console.log(`[Chat] Routing to ${decision.provider}: ${decision.reason}`);
 
+        // Detect recall queries and build enriched context
+        let recallBlock: string | undefined;
+        const recall = detectRecallQuery(message);
+        if (recall.isRecall) {
+          recallBlock = buildRecallBlock(recall.searchTerms);
+          console.log(`[Chat] Recall query detected, ${recall.searchTerms.length} search terms`);
+        }
+
         // Build provider-specific system prompt with live cluster context + memory
         const summary = await buildClusterSummary();
         const systemPrompt = decision.provider === 'claude'
-          ? buildClaudeSystemPrompt(summary, overrideActive, message)
-          : buildQwenSystemPrompt(summary, message);
+          ? buildClaudeSystemPrompt(summary, overrideActive, message, recallBlock)
+          : buildQwenSystemPrompt(summary, message, recallBlock);
 
         // Create abort controller for this session
         const abortController = new AbortController();
