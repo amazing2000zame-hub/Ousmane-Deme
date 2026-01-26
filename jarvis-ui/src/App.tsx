@@ -1,10 +1,15 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useCallback, type FormEvent } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import { useAuthStore } from './stores/auth';
+import { useUIStore } from './stores/ui';
 import { useClusterSocket } from './hooks/useClusterSocket';
 import { useEventsSocket } from './hooks/useEventsSocket';
 import { login } from './services/api';
 import { Dashboard } from './components/layout/Dashboard';
+import { BootSequence } from './components/boot/BootSequence';
+import { ScanLines } from './effects/ScanLines';
+import { GridBackground } from './effects/GridBackground';
 
 function LoginForm() {
   const setToken = useAuthStore((s) => s.setToken);
@@ -83,7 +88,23 @@ function AuthenticatedApp() {
   useClusterSocket();
   useEventsSocket();
 
-  return <Dashboard />;
+  const bootComplete = useUIStore((s) => s.bootComplete);
+  const setBootComplete = useUIStore((s) => s.setBootComplete);
+
+  const handleBootComplete = useCallback(() => {
+    setBootComplete(true);
+  }, [setBootComplete]);
+
+  return (
+    <>
+      <AnimatePresence mode="wait">
+        {!bootComplete && (
+          <BootSequence key="boot" onComplete={handleBootComplete} />
+        )}
+      </AnimatePresence>
+      {bootComplete && <Dashboard />}
+    </>
+  );
 }
 
 function App() {
@@ -91,6 +112,10 @@ function App() {
 
   return (
     <>
+      {/* Ambient effects -- always rendered, respect visual mode internally */}
+      <GridBackground />
+      <ScanLines />
+
       {isAuthenticated ? <AuthenticatedApp /> : <LoginForm />}
       <Toaster
         theme="dark"
