@@ -3,6 +3,8 @@ import type { Request, Response } from 'express';
 import { healthRouter } from './health.js';
 import { authMiddleware, handleLogin } from '../auth/jwt.js';
 import { memoryStore } from '../db/memory.js';
+import { executeTool, getToolList } from '../mcp/server.js';
+import { emitNodesNow, emitStorageNow } from '../realtime/emitter.js';
 
 const router = Router();
 
@@ -92,7 +94,79 @@ router.put('/api/memory/preferences/:key', (req: Request, res: Response) => {
   res.json({ preference: pref });
 });
 
-// Protected routes will be added here by later plans
-// e.g., router.use('/api/cluster', clusterRouter);
+// ---------------------------------------------------------------------------
+// Tools API -- execute MCP tools from the dashboard (all protected by auth)
+// ---------------------------------------------------------------------------
+
+// GET /api/tools -- list all registered tools with their safety tiers
+router.get('/api/tools', (_req: Request, res: Response) => {
+  const tools = getToolList();
+  res.json({ tools });
+});
+
+// POST /api/tools/execute -- execute an MCP tool with safety enforcement
+router.post('/api/tools/execute', async (req: Request, res: Response) => {
+  const { tool, args, confirmed } = req.body as {
+    tool?: string;
+    args?: Record<string, unknown>;
+    confirmed?: boolean;
+  };
+
+  if (!tool || typeof tool !== 'string') {
+    res.status(400).json({ success: false, error: 'tool name is required' });
+    return;
+  }
+
+  const toolArgs = args ?? {};
+  if (confirmed) {
+    toolArgs.confirmed = true;
+  }
+
+  const result = await executeTool(tool, toolArgs, 'api');
+
+  // If blocked by safety tier, return 403
+  if (result.blocked) {
+    const statusCode = result.reason?.includes('not found') ? 404 : 403;
+    res.status(statusCode).json({
+      success: false,
+      error: result.reason ?? 'Tool execution blocked',
+      tier: result.tier,
+      blocked: true,
+    });
+    return;
+  }
+
+  // If execution error (not blocked, but handler threw)
+  if (result.isError) {
+    res.status(500).json({
+      success: false,
+      error: result.content?.[0]?.text ?? 'Tool execution failed',
+      tier: result.tier,
+    });
+    return;
+  }
+
+  // Success -- immediately emit updated data to connected clients
+  // Determine affected resource type from tool name
+  const storageTools = ['get_storage', 'get_backups'];
+  const isStorageTool = storageTools.includes(tool);
+
+  try {
+    if (isStorageTool) {
+      await emitStorageNow();
+    } else {
+      await emitNodesNow();
+    }
+  } catch (emitErr) {
+    // Log but don't fail the request -- the tool execution succeeded
+    console.warn('[Routes] Failed to emit after tool execution:', emitErr instanceof Error ? emitErr.message : emitErr);
+  }
+
+  res.json({
+    success: true,
+    result: result.content,
+    tier: result.tier,
+  });
+});
 
 export { router };

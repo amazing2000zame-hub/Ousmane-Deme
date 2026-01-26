@@ -40,5 +40,7 @@ export const config = {
   corsOrigins: [
     'http://192.168.1.65:3004',
     'http://localhost:3004',
+    'http://localhost:5173',
+    'http://192.168.1.50:5173',
   ] as string[],
 } as const;

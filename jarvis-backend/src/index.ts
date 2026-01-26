@@ -7,6 +7,7 @@ import { setupSocketIO } from './realtime/socket.js';
 import { runMigrations } from './db/migrate.js';
 import { getToolList } from './mcp/server.js';
 import { closeAllConnections } from './clients/ssh.js';
+import { startEmitter, stopEmitter } from './realtime/emitter.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -45,6 +46,9 @@ for (const t of tools) {
   console.log(`  [${t.tier.toUpperCase().padEnd(6)}] ${t.name}`);
 }
 
+// Start real-time data emitter (polls Proxmox and pushes to /cluster namespace)
+startEmitter(clusterNs);
+
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
 server.listen(config.port, () => {
   console.log(`Jarvis backend running on port ${config.port}`);
@@ -55,6 +59,7 @@ server.listen(config.port, () => {
 // Graceful shutdown
 function shutdown(signal: string) {
   console.log(`\n[${signal}] Shutting down gracefully...`);
+  stopEmitter();
   closeAllConnections();
   io.close();
   server.close(() => {
