@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://192.168.1.65:4000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://192.168.1.50:4000';
 
 /** Create a Socket.IO client for the /cluster namespace */
 export function createClusterSocket(token: string): Socket {

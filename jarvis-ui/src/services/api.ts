@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://192.168.1.65:4000';
+const BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://192.168.1.50:4000';
 
 /** Generic authenticated API call with JSON handling */
 export async function apiCall<T>(
