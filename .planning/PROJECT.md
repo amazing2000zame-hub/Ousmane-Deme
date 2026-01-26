@@ -93,14 +93,17 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Hybrid LLM (Claude + Qwen) | Claude for complex reasoning, Qwen for fast routine ops | -- Pending |
-| MCP protocol for tool layer | Standard protocol, works with Claude natively, extensible | -- Pending |
-| Management VM deployment | Already the management hub, Docker ready, good resource balance | -- Pending |
-| Iron Man JARVIS personality | User's core vision -- not just functional, experiential | -- Pending |
-| React + TypeScript frontend | Existing scaffold, rich ecosystem for complex UI | -- Pending |
-| SQLite + markdown for memory | SQLite for structured events, markdown for LLM context injection | -- Pending |
-| Act + report autonomy model | Fix problems automatically, report after -- availability first | -- Pending |
-| Text-only for v1 | TTS deferred, focus on core dashboard + AI actions | -- Pending |
+| Hybrid LLM (Claude + Qwen) | Claude for complex reasoning, Qwen for fast routine ops | Confirmed -- Claude-only in Phase 3, hybrid in Phase 5 |
+| MCP protocol for tool layer | Standard protocol, works with Claude natively, extensible | Confirmed -- MCP SDK v1.25+ with Express middleware |
+| Management VM deployment | Already the management hub, Docker ready, good resource balance | Confirmed -- 2 containers (frontend Nginx + backend Node.js) |
+| Iron Man JARVIS personality | User's core vision -- not just functional, experiential | Confirmed -- eDEX-UI aesthetic, 3 visual modes |
+| React + TypeScript frontend | Existing scaffold, rich ecosystem for complex UI | Confirmed -- React 19 + Vite 6 + Tailwind v4 |
+| SQLite + markdown for memory | SQLite for structured events, markdown for LLM context injection | Confirmed -- better-sqlite3 + Drizzle ORM |
+| Act + report autonomy model | Fix problems automatically, report after -- availability first | Confirmed -- 5-level autonomy model with runbooks |
+| Text-only for v1 | TTS deferred, focus on core dashboard + AI actions | Confirmed |
+| Express 5 backend | MCP SDK has official Express middleware adapter | Confirmed -- Phase 1 |
+| Modular monolith architecture | Single Node.js process, 6 clean modules, no microservices | Confirmed -- research HIGH confidence |
+| Safety-first Phase 1 | CRITICAL pitfalls must be architectural, not retrofitted | Confirmed -- dependency DAG + command allowlist |
 
 ---
-*Last updated: 2026-01-26 after initialization*
+*Last updated: 2026-01-26 after research and roadmap completion*
