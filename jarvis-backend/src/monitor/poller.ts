@@ -245,10 +245,39 @@ export async function pollImportant(
 
 export async function pollRoutine(eventsNs: Namespace): Promise<void> {
   try {
-    // Placeholder for service health checks and temperature monitoring
-    // Will be extended in future plans
-    void eventsNs; // acknowledge parameter
-    console.log('[Monitor] Routine poll completed');
+    const pve = getAnyClient();
+    const raw = (await pve.getClusterResources('node')) as Array<Record<string, unknown>>;
+
+    const totalNodes = raw.length;
+    const onlineNodes = raw.filter((r) => (r.status as string) === 'online').length;
+    const allHealthy = onlineNodes === totalNodes;
+
+    const title = allHealthy ? 'Systems Nominal' : 'Cluster Degraded';
+    const severity = allHealthy ? 'info' as const : 'warning' as const;
+    const message = allHealthy
+      ? `All ${totalNodes} nodes online -- cluster healthy`
+      : `${onlineNodes}/${totalNodes} nodes online -- investigate offline nodes`;
+
+    // Save heartbeat to DB
+    memoryStore.saveEvent({
+      type: 'status',
+      severity,
+      source: 'monitor',
+      summary: `[Monitor] ${title}: ${message}`,
+    });
+
+    // Emit heartbeat to /events namespace
+    eventsNs.emit('event', {
+      id: crypto.randomUUID(),
+      type: 'status',
+      severity,
+      title,
+      message,
+      source: 'monitor',
+      timestamp: new Date().toISOString(),
+    });
+
+    console.log(`[Monitor] Heartbeat: ${title} (${onlineNodes}/${totalNodes} nodes)`);
   } catch (err) {
     console.error('[Monitor] Routine poll error:', err instanceof Error ? err.message : err);
   }
@@ -260,12 +289,78 @@ export async function pollRoutine(eventsNs: Namespace): Promise<void> {
 
 export async function pollBackground(eventsNs: Namespace): Promise<void> {
   try {
-    void eventsNs; // acknowledge parameter
+    // Storage capacity check -- warn at 85%, critical at 95%
+    try {
+      const pve = getAnyClient();
+      const storageRaw = (await pve.getClusterResources('storage')) as Array<Record<string, unknown>>;
+
+      for (const s of storageRaw) {
+        const disk = (s.disk as number) ?? 0;
+        const maxdisk = (s.maxdisk as number) ?? 0;
+        if (maxdisk === 0) continue;
+
+        const usagePercent = Math.round((disk / maxdisk) * 100);
+        const storageName = (s.storage as string) ?? 'unknown';
+        const storageNode = (s.node as string) ?? 'unknown';
+
+        if (usagePercent >= 95) {
+          const title = `Storage critical: ${storageName}`;
+          const message = `${storageName} on ${storageNode} at ${usagePercent}% capacity`;
+
+          memoryStore.saveEvent({
+            type: 'alert',
+            severity: 'critical',
+            source: 'monitor',
+            node: storageNode,
+            summary: `[Monitor] ${title}: ${message}`,
+          });
+
+          eventsNs.emit('event', {
+            id: crypto.randomUUID(),
+            type: 'alert',
+            severity: 'critical',
+            title,
+            message,
+            node: storageNode,
+            source: 'monitor',
+            timestamp: new Date().toISOString(),
+          });
+
+          console.log(`[Monitor] ${title} -- ${message}`);
+        } else if (usagePercent >= 85) {
+          const title = `Storage warning: ${storageName}`;
+          const message = `${storageName} on ${storageNode} at ${usagePercent}% capacity`;
+
+          memoryStore.saveEvent({
+            type: 'alert',
+            severity: 'warning',
+            source: 'monitor',
+            node: storageNode,
+            summary: `[Monitor] ${title}: ${message}`,
+          });
+
+          eventsNs.emit('event', {
+            id: crypto.randomUUID(),
+            type: 'alert',
+            severity: 'warning',
+            title,
+            message,
+            node: storageNode,
+            source: 'monitor',
+            timestamp: new Date().toISOString(),
+          });
+
+          console.log(`[Monitor] ${title} -- ${message}`);
+        }
+      }
+    } catch (storageErr) {
+      console.warn('[Monitor] Storage capacity check failed:', storageErr instanceof Error ? storageErr.message : storageErr);
+    }
 
     // Clean up old autonomy action records (older than 30 days)
     memoryStore.cleanupOldActions(30);
 
-    console.log('[Monitor] Background poll completed (audit log cleanup done)');
+    console.log('[Monitor] Background poll completed (storage check + audit log cleanup done)');
   } catch (err) {
     console.error('[Monitor] Background poll error:', err instanceof Error ? err.message : err);
   }
