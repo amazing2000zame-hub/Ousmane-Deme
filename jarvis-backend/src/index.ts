@@ -5,6 +5,8 @@ import { config } from './config.js';
 import { router } from './api/routes.js';
 import { setupSocketIO } from './realtime/socket.js';
 import { runMigrations } from './db/migrate.js';
+import { getToolList } from './mcp/server.js';
+import { closeAllConnections } from './clients/ssh.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -36,6 +38,13 @@ try {
   console.warn('Starting server without database -- persistence will be unavailable');
 }
 
+// Initialize MCP tool server
+const tools = getToolList();
+console.log(`MCP server initialized: ${tools.length} tools registered`);
+for (const t of tools) {
+  console.log(`  [${t.tier.toUpperCase().padEnd(6)}] ${t.name}`);
+}
+
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
 server.listen(config.port, () => {
   console.log(`Jarvis backend running on port ${config.port}`);
@@ -46,6 +55,7 @@ server.listen(config.port, () => {
 // Graceful shutdown
 function shutdown(signal: string) {
   console.log(`\n[${signal}] Shutting down gracefully...`);
+  closeAllConnections();
   io.close();
   server.close(() => {
     console.log('Server closed.');
