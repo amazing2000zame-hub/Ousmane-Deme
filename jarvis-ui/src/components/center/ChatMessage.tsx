@@ -1,13 +1,16 @@
 import type { ChatMessage as ChatMessageType, ToolCall } from '../../stores/chat';
+import { useVoiceStore } from '../../stores/voice';
 import { BlockedCard } from './BlockedCard';
 import { ConfirmCard } from './ConfirmCard';
 import { ToolStatusCard } from './ToolStatusCard';
 import { ProviderBadge } from './ProviderBadge';
+import { VoicePlayButton } from './VoicePlayButton';
 
 interface ChatMessageProps {
   message: ChatMessageType;
   onConfirm?: (toolUseId: string) => void;
   onDeny?: (toolUseId: string) => void;
+  onSpeak?: (text: string, messageId: string) => void;
 }
 
 function ToolCallRenderer({
@@ -52,14 +55,18 @@ function ToolCallRenderer({
   );
 }
 
-export function ChatMessage({ message, onConfirm, onDeny }: ChatMessageProps) {
+export function ChatMessage({ message, onConfirm, onDeny, onSpeak }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isEmptyAssistant =
     !isUser && message.content === '' && (!message.toolCalls || message.toolCalls.length === 0);
+  const voiceEnabled = useVoiceStore((s) => s.enabled);
+  const isPlaying = useVoiceStore((s) => s.isPlaying);
+  const playingMessageId = useVoiceStore((s) => s.playingMessageId);
+  const isThisPlaying = isPlaying && playingMessageId === message.id;
 
   return (
     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-3`}>
-      {/* Role label + provider badge */}
+      {/* Role label + provider badge + voice button */}
       <div className="flex items-center gap-1.5 mb-0.5 px-1">
         <span
           className={`text-[9px] font-display tracking-wider uppercase ${
@@ -70,6 +77,12 @@ export function ChatMessage({ message, onConfirm, onDeny }: ChatMessageProps) {
         </span>
         {!isUser && message.provider && (
           <ProviderBadge provider={message.provider} />
+        )}
+        {!isUser && voiceEnabled && message.content && (
+          <VoicePlayButton
+            isPlaying={isThisPlaying}
+            onPlay={() => onSpeak?.(message.content, message.id)}
+          />
         )}
       </div>
 
