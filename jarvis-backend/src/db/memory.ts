@@ -1,4 +1,4 @@
-import { eq, desc, gte, sql, and } from 'drizzle-orm';
+import { eq, desc, gte, sql } from 'drizzle-orm';
 import { db } from './index.js';
 import { events, conversations, clusterSnapshots, preferences } from './schema.js';
 
