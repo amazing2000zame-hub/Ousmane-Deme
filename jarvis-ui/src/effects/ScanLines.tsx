@@ -56,7 +56,7 @@ export function ScanLines({
           background: `linear-gradient(
             to bottom,
             transparent,
-            rgba(255, 184, 0, ${sweepOpacity}),
+            color-mix(in srgb, var(--color-jarvis-amber) ${Math.round(sweepOpacity * 100)}%, transparent),
             transparent
           )`,
           zIndex: local ? 11 : 41,

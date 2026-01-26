@@ -20,19 +20,10 @@ export function CenterDisplay() {
         <div className="flex flex-col items-center justify-center h-64">
           {/* Hexagonal frame placeholder */}
           <div
-            className="relative w-24 h-24 flex items-center justify-center mb-4"
-            style={{
-              border: '1px solid rgba(255, 184, 0, 0.15)',
-              borderRadius: '12px',
-              transform: 'rotate(0deg)',
-            }}
+            className="relative w-24 h-24 flex items-center justify-center mb-4 rounded-xl border border-jarvis-amber/15"
           >
             <div
-              className="w-16 h-16 flex items-center justify-center"
-              style={{
-                border: '1px solid rgba(255, 184, 0, 0.1)',
-                borderRadius: '8px',
-              }}
+              className="w-16 h-16 flex items-center justify-center rounded-lg border border-jarvis-amber/10"
             >
               <span className="font-display text-jarvis-amber/40 text-xs tracking-wider">
                 HUD

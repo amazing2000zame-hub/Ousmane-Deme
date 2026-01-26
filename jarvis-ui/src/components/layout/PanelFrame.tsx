@@ -38,7 +38,7 @@ export function PanelFrame({
   // Box shadow for glow effects
   const glowStyle: React.CSSProperties = {};
   if (isFocused && modeConfig.glowEffects) {
-    glowStyle.boxShadow = '0 0 8px rgba(255, 184, 0, 0.3)';
+    glowStyle.boxShadow = 'var(--shadow-jarvis-glow-sm)';
   } else if (modeConfig.glowEffects) {
     // Hover glow is handled via CSS transition; we set a default to transition FROM
     glowStyle.boxShadow = 'none';

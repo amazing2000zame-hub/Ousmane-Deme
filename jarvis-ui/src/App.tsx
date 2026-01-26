@@ -1,4 +1,4 @@
-import { useState, useCallback, type FormEvent } from 'react';
+import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import { useAuthStore } from './stores/auth';
@@ -10,6 +10,18 @@ import { Dashboard } from './components/layout/Dashboard';
 import { BootSequence } from './components/boot/BootSequence';
 import { ScanLines } from './effects/ScanLines';
 import { GridBackground } from './effects/GridBackground';
+
+/** Sync colorTheme store value to <html data-theme="..."> */
+function useApplyColorTheme() {
+  const colorTheme = useUIStore((s) => s.colorTheme);
+  useEffect(() => {
+    if (colorTheme === 'amber') {
+      delete document.documentElement.dataset.theme;
+    } else {
+      document.documentElement.dataset.theme = colorTheme;
+    }
+  }, [colorTheme]);
+}
 
 function LoginForm() {
   const setToken = useAuthStore((s) => s.setToken);
@@ -109,6 +121,7 @@ function AuthenticatedApp() {
 
 function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  useApplyColorTheme();
 
   return (
     <>
@@ -122,9 +135,9 @@ function App() {
         position="bottom-right"
         toastOptions={{
           style: {
-            background: '#0d0d14',
-            border: '1px solid rgba(255, 184, 0, 0.2)',
-            color: '#e8e0d0',
+            background: 'var(--color-jarvis-bg-panel)',
+            border: '1px solid color-mix(in srgb, var(--color-jarvis-amber) 20%, transparent)',
+            color: 'var(--color-jarvis-text)',
           },
         }}
       />

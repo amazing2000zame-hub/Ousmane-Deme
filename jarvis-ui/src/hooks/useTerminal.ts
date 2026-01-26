@@ -6,7 +6,8 @@ import type { Socket } from 'socket.io-client';
 import { createTerminalSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useTerminalStore } from '../stores/terminal';
-import { XTERM_THEME } from '../theme/colors';
+import { useUIStore } from '../stores/ui';
+import { getXtermTheme } from '../theme/colors';
 
 /**
  * Hook that manages the full xterm.js terminal lifecycle including
@@ -26,6 +27,7 @@ export function useTerminal(
   const isConnected = useTerminalStore((s) => s.isConnected);
   const selectNode = useTerminalStore((s) => s.selectNode);
   const setConnected = useTerminalStore((s) => s.setConnected);
+  const colorTheme = useUIStore((s) => s.colorTheme);
 
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -44,7 +46,7 @@ export function useTerminal(
       cursorBlink: true,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       fontSize: 14,
-      theme: XTERM_THEME,
+      theme: getXtermTheme(),
       convertEol: true,
     });
 
@@ -119,6 +121,13 @@ export function useTerminal(
     // containerRef is a ref -- stable across renders
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Re-apply xterm theme when color theme changes ────────────────
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.theme = getXtermTheme();
+  }, [colorTheme]);
 
   // ── Disconnect ─────────────────────────────────────────────────────
   const disconnect = useCallback(() => {

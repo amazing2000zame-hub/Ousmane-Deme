@@ -21,8 +21,8 @@ export function GridBackground() {
       style={{
         zIndex: -1,
         backgroundImage: `
-          linear-gradient(to right, rgba(255, 184, 0, 0.03) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(255, 184, 0, 0.03) 1px, transparent 1px)
+          linear-gradient(to right, color-mix(in srgb, var(--color-jarvis-amber) 3%, transparent) 1px, transparent 1px),
+          linear-gradient(to bottom, color-mix(in srgb, var(--color-jarvis-amber) 3%, transparent) 1px, transparent 1px)
         `,
         backgroundSize: '50px 50px',
         willChange: 'transform',

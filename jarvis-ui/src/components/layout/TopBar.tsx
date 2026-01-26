@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useClusterStore } from '../../stores/cluster';
-import { useUIStore } from '../../stores/ui';
+import { useUIStore, type ColorTheme } from '../../stores/ui';
 import { StatusDot } from '../shared/StatusDot';
 import { DataPulse } from '../../effects/DataPulse';
 import type { VisualMode } from '../../theme/modes';
@@ -11,11 +11,21 @@ const MODE_LABELS: { key: VisualMode; label: string }[] = [
   { key: 'minimal', label: 'M' },
 ];
 
+const THEME_SWATCHES: { key: ColorTheme; color: string; label: string }[] = [
+  { key: 'amber',  color: '#ffb800', label: 'Amber' },
+  { key: 'cyan',   color: '#00d4ff', label: 'Cyan' },
+  { key: 'green',  color: '#33ff88', label: 'Green' },
+  { key: 'purple', color: '#b366ff', label: 'Purple' },
+  { key: 'red',    color: '#ff3333', label: 'Red' },
+];
+
 export function TopBar() {
   const quorum = useClusterStore((s) => s.quorum);
   const connected = useClusterStore((s) => s.connected);
   const visualMode = useUIStore((s) => s.visualMode);
   const setVisualMode = useUIStore((s) => s.setVisualMode);
+  const colorTheme = useUIStore((s) => s.colorTheme);
+  const setColorTheme = useUIStore((s) => s.setColorTheme);
 
   const [time, setTime] = useState(() => new Date());
 
@@ -93,6 +103,24 @@ export function TopBar() {
             >
               {label}
             </button>
+          ))}
+        </div>
+
+        {/* Color theme swatches */}
+        <div className="flex items-center gap-1">
+          {THEME_SWATCHES.map(({ key, color, label }) => (
+            <button
+              key={key}
+              type="button"
+              title={label}
+              onClick={() => setColorTheme(key)}
+              className="w-3 h-3 rounded-full transition-all duration-200 border"
+              style={{
+                backgroundColor: colorTheme === key ? color : 'transparent',
+                borderColor: color,
+                boxShadow: colorTheme === key ? `0 0 6px ${color}80` : 'none',
+              }}
+            />
           ))}
         </div>
 

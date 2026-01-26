@@ -21,7 +21,7 @@ export function DataPulse() {
       style={{
         width: '6px',
         height: '6px',
-        backgroundColor: '#ffb800',
+        backgroundColor: 'var(--color-jarvis-amber)',
         transform: 'rotate(45deg)',
         willChange: 'transform, opacity',
         animation: 'dataPulseHeart 2s ease-in-out infinite',

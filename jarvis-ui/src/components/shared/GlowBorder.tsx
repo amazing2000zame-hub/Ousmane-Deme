@@ -10,12 +10,16 @@ interface GlowBorderProps {
   className?: string;
 }
 
+/** Primary glow uses CSS vars so it follows the active color theme */
+const PRIMARY_GLOW = {
+  low: 'var(--shadow-jarvis-glow-xs)',
+  medium: 'var(--shadow-jarvis-glow-sm)',
+  high: 'var(--shadow-jarvis-glow)',
+} as const;
+
+/** Semantic color glows stay fixed regardless of theme */
 const GLOW_MAP = {
-  amber: {
-    low: '0 0 4px rgba(255,184,0,0.2)',
-    medium: '0 0 8px rgba(255,184,0,0.3)',
-    high: '0 0 15px rgba(255,184,0,0.4)',
-  },
+  amber: PRIMARY_GLOW,
   cyan: {
     low: '0 0 4px rgba(0,212,255,0.2)',
     medium: '0 0 8px rgba(0,212,255,0.3)',

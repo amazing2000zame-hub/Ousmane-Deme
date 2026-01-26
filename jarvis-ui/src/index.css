@@ -25,6 +25,7 @@
   /* --- Glow Shadows --- */
   --shadow-jarvis-glow: 0 0 15px rgba(255, 184, 0, 0.4), 0 0 30px rgba(255, 184, 0, 0.2);
   --shadow-jarvis-glow-sm: 0 0 8px rgba(255, 184, 0, 0.3);
+  --shadow-jarvis-glow-xs: 0 0 4px rgba(255, 184, 0, 0.2);
   --shadow-jarvis-glow-cyan: 0 0 15px rgba(0, 212, 255, 0.4);
 
   /* --- Fonts --- */
@@ -80,11 +81,92 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* --- Custom Scrollbar (amber-tinted) --- */
+/* ======================================================
+   COLOR THEMES — override accent, glow, and tint per theme
+   Default (no data-theme) = Amber/Gold
+   ====================================================== */
+
+/* --- Cyan / Teal (eDEX-UI / TRON) --- */
+[data-theme="cyan"] {
+  --color-jarvis-amber: #00d4ff;
+  --color-jarvis-gold: #66e8ff;
+  --color-jarvis-amber-dim: #0098b8;
+  --color-jarvis-bg: #060a0f;
+  --color-jarvis-bg-panel: #080d14;
+  --color-jarvis-bg-card: #0a1118;
+  --color-jarvis-bg-hover: #0e161f;
+  --color-jarvis-text: #d0e0e8;
+  --color-jarvis-text-dim: #607a7a;
+  --color-jarvis-text-muted: #404a4a;
+  --color-jarvis-cyan: #ffb800;          /* swap — info uses amber when primary is cyan */
+  --shadow-jarvis-glow: 0 0 15px rgba(0, 212, 255, 0.4), 0 0 30px rgba(0, 212, 255, 0.2);
+  --shadow-jarvis-glow-sm: 0 0 8px rgba(0, 212, 255, 0.3);
+  --shadow-jarvis-glow-xs: 0 0 4px rgba(0, 212, 255, 0.2);
+  --shadow-jarvis-glow-cyan: 0 0 15px rgba(255, 184, 0, 0.4);
+}
+
+/* --- Green / Emerald (Matrix) --- */
+[data-theme="green"] {
+  --color-jarvis-amber: #33ff88;
+  --color-jarvis-gold: #88ffbb;
+  --color-jarvis-amber-dim: #22b35e;
+  --color-jarvis-bg: #060f0a;
+  --color-jarvis-bg-panel: #081008;
+  --color-jarvis-bg-card: #0a1410;
+  --color-jarvis-bg-hover: #0e1a14;
+  --color-jarvis-text: #d0e8d8;
+  --color-jarvis-text-dim: #607a66;
+  --color-jarvis-text-muted: #404a42;
+  --color-jarvis-green: #00d4ff;          /* swap — success uses cyan when primary is green */
+  --shadow-jarvis-glow: 0 0 15px rgba(51, 255, 136, 0.4), 0 0 30px rgba(51, 255, 136, 0.2);
+  --shadow-jarvis-glow-sm: 0 0 8px rgba(51, 255, 136, 0.3);
+  --shadow-jarvis-glow-xs: 0 0 4px rgba(51, 255, 136, 0.2);
+  --shadow-jarvis-glow-cyan: 0 0 15px rgba(0, 212, 255, 0.4);
+}
+
+/* --- Purple / Violet (Cyberpunk) --- */
+[data-theme="purple"] {
+  --color-jarvis-amber: #b366ff;
+  --color-jarvis-gold: #d4a0ff;
+  --color-jarvis-amber-dim: #7a3db3;
+  --color-jarvis-bg: #0a060f;
+  --color-jarvis-bg-panel: #0d0814;
+  --color-jarvis-bg-card: #110a18;
+  --color-jarvis-bg-hover: #160e1f;
+  --color-jarvis-text: #e0d0e8;
+  --color-jarvis-text-dim: #7a6080;
+  --color-jarvis-text-muted: #4a4050;
+  --shadow-jarvis-glow: 0 0 15px rgba(179, 102, 255, 0.4), 0 0 30px rgba(179, 102, 255, 0.2);
+  --shadow-jarvis-glow-sm: 0 0 8px rgba(179, 102, 255, 0.3);
+  --shadow-jarvis-glow-xs: 0 0 4px rgba(179, 102, 255, 0.2);
+  --shadow-jarvis-glow-cyan: 0 0 15px rgba(0, 212, 255, 0.4);
+}
+
+/* --- Red / Crimson (Military HUD) --- */
+[data-theme="red"] {
+  --color-jarvis-amber: #ff3333;
+  --color-jarvis-gold: #ff6666;
+  --color-jarvis-amber-dim: #b32222;
+  --color-jarvis-orange: #ff8800;
+  --color-jarvis-bg: #0f0606;
+  --color-jarvis-bg-panel: #140808;
+  --color-jarvis-bg-card: #180a0a;
+  --color-jarvis-bg-hover: #1f0e0e;
+  --color-jarvis-text: #e8d0d0;
+  --color-jarvis-text-dim: #7a6060;
+  --color-jarvis-text-muted: #4a4040;
+  --color-jarvis-red: #ff8800;            /* swap — error uses orange when primary is red */
+  --shadow-jarvis-glow: 0 0 15px rgba(255, 51, 51, 0.4), 0 0 30px rgba(255, 51, 51, 0.2);
+  --shadow-jarvis-glow-sm: 0 0 8px rgba(255, 51, 51, 0.3);
+  --shadow-jarvis-glow-xs: 0 0 4px rgba(255, 51, 51, 0.2);
+  --shadow-jarvis-glow-cyan: 0 0 15px rgba(0, 212, 255, 0.4);
+}
+
+/* --- Custom Scrollbar (theme-aware via currentColor trick) --- */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 184, 0, 0.2); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 184, 0, 0.4); }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--color-jarvis-amber) 20%, transparent); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--color-jarvis-amber) 40%, transparent); }
 
 /* --- Panel Focus Utility --- */
 .panel-focused {

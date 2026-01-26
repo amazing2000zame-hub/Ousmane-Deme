@@ -26,7 +26,7 @@ export default function TerminalPanel() {
 
   // Amber glow on terminal border when connected
   const connectedBorderStyle: React.CSSProperties = isConnected && modeConfig.glowEffects
-    ? { boxShadow: '0 0 6px rgba(255, 184, 0, 0.2)' }
+    ? { boxShadow: 'var(--shadow-jarvis-glow-sm)' }
     : {};
 
   return (
