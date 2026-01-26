@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Phase 3 -- AI Chat & Claude Integration
+**Current focus:** Phase 4 -- Autonomous Monitoring & Remediation
 
 ## Current Position
 
-Phase: 3 of 5 (AI Chat & Claude Integration)
-Plan: 0 of 3 in current phase
-Status: Ready to plan
-Last activity: 2026-01-26 -- Completed Phase 2 (dashboard, eDEX-UI, globe HUD, 5-theme system)
+Phase: 4 of 5 (Autonomous Monitoring & Remediation)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-01-26 -- Completed 04-01-PLAN.md (monitor detection backbone)
 
-Progress: [####......] 2/5 phases complete
+Progress: [###########.....] 11/16 plans complete (69%)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
-- Average duration: 5.4 min
-- Total execution time: 54 min
+- Total plans completed: 11
+- Average duration: 5.2 min
+- Total execution time: 58 min
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [####......] 2/5 phases complete
 |-------|-------|-------|----------|
 | 01 | 4/4 | 22 min | 5.5 min |
 | 02 | 6/6 | 32 min | 5.3 min |
+| 04 | 1/3 | 4 min | 4.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (7 min), 02-05 (3 min), 02-03 (5 min), 02-04 (5 min), 02-06 (6 min)
-- Trend: consistent
+- Last 5 plans: 02-03 (5 min), 02-04 (5 min), 02-06 (6 min), 04-01 (4 min)
+- Trend: consistent, improving
 
 *Updated after each plan completion*
 
@@ -85,6 +86,11 @@ Recent decisions affecting current work:
 - [02-06]: RadialDataRing SVG arcs for per-node CPU visualization around globe
 - [02-06]: Theme picker hidden behind CFG dropdown in TopBar to reduce clutter
 - [02-06]: Terminal toggle (>_) button in TopBar, collapsed terminal fully hides (0px) preserving xterm state
+- [04-01]: Threshold order: DISK_CRITICAL (95%) before DISK_HIGH (90%) so highest severity wins
+- [04-01]: 5-second startup delay for monitor to let emitter populate first
+- [04-01]: Polling offsets 12s/32s vs emitter 10s/30s to avoid API thundering herd
+- [04-01]: State tracker in-memory Maps (not SQLite) for hot-path performance
+- [04-01]: Only running->stopped transitions trigger VM_CRASHED/CT_CRASHED
 
 ### Pending Todos
 
@@ -99,5 +105,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-26
-Stopped at: Phase 2 complete, ready for Phase 3 planning
+Stopped at: Completed 04-01-PLAN.md, ready for 04-02
 Resume file: None
