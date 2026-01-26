@@ -38,6 +38,8 @@ import { qwenProvider } from '../ai/providers/qwen-provider.js';
 import type { LLMProvider } from '../ai/providers.js';
 import { memoryStore } from '../db/memory.js';
 import { config } from '../config.js';
+import { extractMemoriesFromSession, detectPreferences } from '../ai/memory-extractor.js';
+import { memoryBank } from '../db/memories.js';
 
 // Provider lookup map
 const providers: Record<string, LLMProvider> = {
@@ -101,6 +103,23 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           // Non-critical: continue even if DB save fails
         }
 
+        // Detect and persist user preferences immediately
+        try {
+          const prefs = detectPreferences(message);
+          for (const pref of prefs) {
+            memoryBank.upsertMemory({
+              tier: 'semantic',
+              category: 'user_preference',
+              key: pref.key,
+              content: pref.content,
+              source: 'user',
+              sessionId,
+            });
+          }
+        } catch {
+          // Non-critical
+        }
+
         // Load conversation history
         let history: Array<{ role: string; content: string }> = [];
         try {
@@ -138,11 +157,11 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         const provider = providers[decision.provider];
         console.log(`[Chat] Routing to ${decision.provider}: ${decision.reason}`);
 
-        // Build provider-specific system prompt with live cluster context
+        // Build provider-specific system prompt with live cluster context + memory
         const summary = await buildClusterSummary();
         const systemPrompt = decision.provider === 'claude'
-          ? buildClaudeSystemPrompt(summary, overrideActive)
-          : buildQwenSystemPrompt(summary);
+          ? buildClaudeSystemPrompt(summary, overrideActive, message)
+          : buildQwenSystemPrompt(summary, message);
 
         // Create abort controller for this session
         const abortController = new AbortController();
@@ -201,6 +220,17 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
               } catch {
                 // Non-critical
               }
+            }
+
+            // Extract memories from completed session
+            try {
+              const sessionMsgs = [...chatMessages];
+              if (accumulatedText.length > 0) {
+                sessionMsgs.push({ role: 'assistant', content: accumulatedText });
+              }
+              extractMemoriesFromSession(sessionId, sessionMsgs, decision.provider);
+            } catch {
+              // Non-critical
             }
 
             // Track provider for follow-up routing

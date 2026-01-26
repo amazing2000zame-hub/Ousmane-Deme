@@ -12,11 +12,17 @@
  */
 
 import { executeTool } from '../mcp/server.js';
+import { buildMemoryContext } from './memory-context.js';
 
 /**
  * Build the full JARVIS system prompt for Claude with tool instructions.
  */
-export function buildClaudeSystemPrompt(clusterSummary: string, overrideActive: boolean = false): string {
+export function buildClaudeSystemPrompt(
+  clusterSummary: string,
+  overrideActive: boolean = false,
+  userMessage?: string,
+  recallBlock?: string,
+): string {
   const overrideBlock = overrideActive
     ? `\n\n## Override Active
 The operator has provided the override passkey. You now have ELEVATED access for this message:
@@ -80,7 +86,10 @@ ${overrideBlock}
 
 <cluster_context>
 ${clusterSummary}
-</cluster_context>`;
+</cluster_context>${userMessage ? buildMemoryContext(userMessage, 'claude') : ''}${recallBlock ? '\n' + recallBlock : ''}
+
+## Memory
+You have persistent memory across sessions. The <memory_context> section (when present) contains recalled preferences, past events, and conversation summaries. Reference specific memories when relevant to the user's query. If no memory context is present, this is a fresh interaction.`;
 }
 
 /**
@@ -88,7 +97,11 @@ ${clusterSummary}
  * Keeps the personality but omits tool categories, safety tiers, and
  * override passkey details since Qwen has no tool-use capability.
  */
-export function buildQwenSystemPrompt(clusterSummary: string): string {
+export function buildQwenSystemPrompt(
+  clusterSummary: string,
+  userMessage?: string,
+  recallBlock?: string,
+): string {
   return `You are J.A.R.V.I.S. -- Just A Rather Very Intelligent System. You are a conversational AI assistant for the HomeCluster, a 4-node Proxmox VE homelab.
 
 ## Personality
@@ -101,7 +114,7 @@ export function buildQwenSystemPrompt(clusterSummary: string): string {
 You are in conversational mode without cluster management tools. If the operator asks you to perform cluster actions (start/stop VMs, check node status, execute commands, etc.), let them know that their request requires the full JARVIS system with tool access, and suggest they rephrase or try again -- the system will route tool-requiring messages to the appropriate handler automatically.
 
 ## Cluster Context
-${clusterSummary}`;
+${clusterSummary}${userMessage ? buildMemoryContext(userMessage, 'qwen') : ''}${recallBlock ? '\n' + recallBlock : ''}`;
 }
 
 /**
