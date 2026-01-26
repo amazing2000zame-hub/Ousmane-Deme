@@ -66,13 +66,13 @@ Jarvis 3.1 transforms a 4-node Proxmox homelab cluster into an AI-operated comma
 - Management VM is Ubuntu, not PVE -- pvesh is unavailable, REST API is the only path
 - SSH key must be mounted read-only into Docker container -- security boundary
 
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 01-01: Express 5 backend scaffold with Docker Compose, health endpoint, JWT auth, Socket.IO
-- [ ] 01-02: Proxmox REST API client and SSH client with connection pooling
-- [ ] 01-03: MCP tool server with all 18 tools, safety framework, and tier enforcement
-- [ ] 01-04: SQLite memory store schema and event persistence layer
+- [ ] 01-01-PLAN.md -- Express 5 backend scaffold with Docker Compose, health endpoint, JWT auth, Socket.IO
+- [ ] 01-02-PLAN.md -- Proxmox REST API client and SSH client with connection pooling
+- [ ] 01-03-PLAN.md -- MCP tool server with all 18 tools, safety framework, and tier enforcement
+- [ ] 01-04-PLAN.md -- SQLite memory store schema and event persistence layer
 
 ---
 
@@ -378,7 +378,7 @@ All phases are strictly sequential. Each phase depends on all prior phases.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 1. Backend Foundation & Safety Layer | 0/4 | Not started | - |
+| 1. Backend Foundation & Safety Layer | 0/4 | Planned | - |
 | 2. Real-Time Dashboard & eDEX-UI | 0/4 | Not started | - |
 | 3. AI Chat & Claude Integration | 0/3 | Not started | - |
 | 4. Autonomous Monitoring & Remediation | 0/3 | Not started | - |
