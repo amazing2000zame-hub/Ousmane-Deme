@@ -1,10 +1,13 @@
-/** Terminal panel with node selector, connection controls, and xterm.js display */
+/** Terminal panel with node selector, connection controls, xterm.js display, and eDEX-UI scan lines */
 
 import { useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
 
 import { useTerminalStore } from '../../stores/terminal';
+import { useUIStore } from '../../stores/ui';
+import { VISUAL_MODES } from '../../theme/modes';
 import { useTerminal } from '../../hooks/useTerminal';
+import { ScanLines } from '../../effects/ScanLines';
 import NodeSelector from './NodeSelector';
 import TerminalView from './TerminalView';
 
@@ -12,12 +15,25 @@ export default function TerminalPanel() {
   const selectedNode = useTerminalStore((s) => s.selectedNode);
   const isCollapsed = useTerminalStore((s) => s.isCollapsed);
   const toggleCollapse = useTerminalStore((s) => s.toggleCollapse);
+  const visualMode = useUIStore((s) => s.visualMode);
+  const modeConfig = VISUAL_MODES[visualMode];
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { connect, disconnect, isConnected } = useTerminal(containerRef);
 
+  // Enhanced scan line opacity for terminal (heavier than global overlay)
+  const terminalScanEnabled = modeConfig.scanLines;
+
+  // Amber glow on terminal border when connected
+  const connectedBorderStyle: React.CSSProperties = isConnected && modeConfig.glowEffects
+    ? { boxShadow: '0 0 6px rgba(255, 184, 0, 0.2)' }
+    : {};
+
   return (
-    <div className="flex flex-col h-full bg-jarvis-bg-panel border-l border-jarvis-amber/10">
+    <div
+      className="relative flex flex-col h-full bg-jarvis-bg-panel border-l border-jarvis-amber/10 transition-shadow duration-200"
+      style={connectedBorderStyle}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-jarvis-amber/10">
         <span className="font-display text-jarvis-amber-dim text-xs tracking-wider uppercase">
@@ -67,8 +83,15 @@ export default function TerminalPanel() {
           )}
         </div>
 
-        {/* Terminal mount point */}
-        <TerminalView containerRef={containerRef} />
+        {/* Terminal mount point with local scan lines overlay */}
+        <div className="relative flex-1 min-h-0">
+          <TerminalView containerRef={containerRef} />
+
+          {/* Enhanced scan lines over terminal area */}
+          {terminalScanEnabled && (
+            <ScanLines staticOpacity={0.25} sweepOpacity={0.12} local />
+          )}
+        </div>
       </div>
     </div>
   );

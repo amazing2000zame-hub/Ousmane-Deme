@@ -86,11 +86,22 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(255, 184, 0, 0.2); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 184, 0, 0.4); }
 
+/* --- Panel Focus Utility --- */
+.panel-focused {
+  border-color: var(--color-jarvis-amber);
+  box-shadow: var(--shadow-jarvis-glow-sm);
+}
+
 /* --- Reduced Motion --- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Hide scan lines and grid background entirely */
+  .scan-lines, .grid-bg, [data-effect="ambient"] {
+    display: none !important;
   }
 }

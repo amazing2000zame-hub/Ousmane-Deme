@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useClusterStore } from '../../stores/cluster';
 import { useUIStore } from '../../stores/ui';
 import { StatusDot } from '../shared/StatusDot';
+import { DataPulse } from '../../effects/DataPulse';
 import type { VisualMode } from '../../theme/modes';
 
 const MODE_LABELS: { key: VisualMode; label: string }[] = [
@@ -60,15 +61,16 @@ export function TopBar() {
         </span>
       </div>
 
-      {/* Right: Connection + Mode + Clock */}
+      {/* Right: Connection + DataPulse + Mode + Clock */}
       <div className="flex items-center gap-4">
-        {/* Connection status */}
+        {/* Connection status + DataPulse */}
         <div className="flex items-center gap-1.5">
           <StatusDot
             status={connected ? 'online' : 'offline'}
             size="sm"
             pulse={connected}
           />
+          <DataPulse />
           <span className="text-[10px] font-mono text-jarvis-text-dim uppercase">
             {connected ? 'LIVE' : 'DISC'}
           </span>
@@ -83,10 +85,10 @@ export function TopBar() {
               onClick={() => setVisualMode(key)}
               className={`
                 px-1.5 py-0.5 text-[10px] font-display tracking-wider rounded
-                transition-colors
+                transition-all duration-200
                 ${visualMode === key
-                  ? 'bg-jarvis-amber/20 text-jarvis-amber'
-                  : 'text-jarvis-text-dim hover:text-jarvis-amber-dim'}
+                  ? 'bg-jarvis-amber/20 text-jarvis-amber border border-jarvis-amber/30'
+                  : 'text-jarvis-text-dim hover:text-jarvis-amber-dim border border-transparent'}
               `}
             >
               {label}
