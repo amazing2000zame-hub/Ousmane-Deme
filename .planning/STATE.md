@@ -5,15 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** v1.1 Hybrid Intelligence & Deployment
+**Current focus:** Phase 7 - Hybrid LLM Router + Cost Tracking
 
 ## Current Position
 
 Milestone: v1.1 Hybrid Intelligence & Deployment
-Phase: Not started (defining requirements)
+Phase: 7 of 10 (Hybrid LLM Router + Cost Tracking)
 Plan: --
-Status: Defining requirements
-Last activity: 2026-01-26 -- Milestone v1.1 started
+Status: Ready to plan
+Last activity: 2026-01-26 -- v1.1 roadmap created
+
+Progress: [██████░░░░░░░░░░░░░░] 60% (v1.0 complete, v1.1 starting)
 
 ## Performance Metrics
 
@@ -32,17 +34,32 @@ Last activity: 2026-01-26 -- Milestone v1.1 started
 | 04 | 3/3 | 23 min | 7.7 min |
 | 06 | 2/2 | 6 min | 3.0 min |
 
+**v1.1 Phases:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| 07 | 0/? | -- | -- |
+| 08 | 0/? | -- | -- |
+| 09 | 0/? | -- | -- |
+| 10 | 0/? | -- | -- |
+
 ## Accumulated Context
 
-### Key Decisions (v1.0)
+### Key Decisions (v1.1)
 
-Full decision log in .planning/milestones/v1.0-ROADMAP.md. Key architectural decisions:
+Full decision log in PROJECT.md. Key decisions for v1.1:
+
+- Hybrid LLM (Claude + Qwen) -- Claude for complex reasoning, Qwen for fast routine ops
+- SQLite (not Redis) for memory storage -- single-user, <1ms queries, no external service
+- NO LLM gateway (LiteLLM, OpenRouter) -- two-provider system, abstraction in application code
+- Phase ordering: Router → Memory → Docker → Testing (dependency-driven)
+- Vitest (not Jest) for testing -- native ESM + TypeScript, 30-70% faster
+
+Recent architectural decisions from v1.0:
 
 - 4-tier safety framework (GREEN/YELLOW/RED/BLACK) with fail-safe BLACK default
 - Socket.IO namespaces /cluster, /events, /chat, /terminal for data separation
 - Dependency injection pattern for eventsNs across modules
-- Optimistic UI updates with API revert on failure
-- CSS 3D transforms for globe HUD (no Three.js)
 
 ### Pending Todos
 
@@ -51,10 +68,12 @@ None.
 ### Blockers/Concerns
 
 - Proxmox API tokens (`root@pam!jarvis`) must be created manually on each PVE node before deployment
-- Phase 5 (Hybrid LLM) deferred from v1.0, now primary focus for v1.1
+- Context window overflow on local LLM (4096 tokens, need separate minimal system prompt for Qwen)
+- SQLite WAL files require proper SIGTERM handler in Docker (WAL checkpoint before shutdown)
+- SSH keys must be mounted as volumes, NOT baked into Docker images
 
 ## Session Continuity
 
 Last session: 2026-01-26
-Stopped at: Milestone v1.1 initialized. Defining requirements.
+Stopped at: v1.1 roadmap created with 4 phases (7-10), all 43 requirements mapped
 Resume file: None

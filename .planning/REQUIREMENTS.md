@@ -94,49 +94,49 @@
 
 | REQ | Phase | Status |
 |-----|-------|--------|
-| ROUTE-01 | — | pending |
-| ROUTE-02 | — | pending |
-| ROUTE-03 | — | pending |
-| ROUTE-04 | — | pending |
-| ROUTE-05 | — | pending |
-| ROUTE-06 | — | pending |
-| ROUTE-07 | — | pending |
-| ROUTE-08 | — | pending |
-| ROUTE-09 | — | pending |
-| ROUTE-10 | — | pending |
-| MEM-01 | — | pending |
-| MEM-02 | — | pending |
-| MEM-03 | — | pending |
-| MEM-04 | — | pending |
-| MEM-05 | — | pending |
-| MEM-06 | — | pending |
-| MEM-07 | — | pending |
-| MEM-08 | — | pending |
-| MEM-09 | — | pending |
-| MEM-10 | — | pending |
-| DOCK-01 | — | pending |
-| DOCK-02 | — | pending |
-| DOCK-03 | — | pending |
-| DOCK-04 | — | pending |
-| DOCK-05 | — | pending |
-| DOCK-06 | — | pending |
-| DOCK-07 | — | pending |
-| DOCK-08 | — | pending |
-| DOCK-09 | — | pending |
-| DOCK-10 | — | pending |
-| DOCK-11 | — | pending |
-| TEST-01 | — | pending |
-| TEST-02 | — | pending |
-| TEST-03 | — | pending |
-| TEST-04 | — | pending |
-| TEST-05 | — | pending |
-| TEST-06 | — | pending |
-| TEST-07 | — | pending |
-| TEST-08 | — | pending |
-| TEST-09 | — | pending |
-| TEST-10 | — | pending |
-| TEST-11 | — | pending |
-| TEST-12 | — | pending |
+| ROUTE-01 | Phase 7 | pending |
+| ROUTE-02 | Phase 7 | pending |
+| ROUTE-03 | Phase 7 | pending |
+| ROUTE-04 | Phase 7 | pending |
+| ROUTE-05 | Phase 7 | pending |
+| ROUTE-06 | Phase 7 | pending |
+| ROUTE-07 | Phase 7 | pending |
+| ROUTE-08 | Phase 7 | pending |
+| ROUTE-09 | Phase 7 | pending |
+| ROUTE-10 | Phase 7 | pending |
+| MEM-01 | Phase 8 | pending |
+| MEM-02 | Phase 8 | pending |
+| MEM-03 | Phase 8 | pending |
+| MEM-04 | Phase 8 | pending |
+| MEM-05 | Phase 8 | pending |
+| MEM-06 | Phase 8 | pending |
+| MEM-07 | Phase 8 | pending |
+| MEM-08 | Phase 8 | pending |
+| MEM-09 | Phase 8 | pending |
+| MEM-10 | Phase 8 | pending |
+| DOCK-01 | Phase 9 | pending |
+| DOCK-02 | Phase 9 | pending |
+| DOCK-03 | Phase 9 | pending |
+| DOCK-04 | Phase 9 | pending |
+| DOCK-05 | Phase 9 | pending |
+| DOCK-06 | Phase 9 | pending |
+| DOCK-07 | Phase 9 | pending |
+| DOCK-08 | Phase 9 | pending |
+| DOCK-09 | Phase 9 | pending |
+| DOCK-10 | Phase 9 | pending |
+| DOCK-11 | Phase 9 | pending |
+| TEST-01 | Phase 10 | pending |
+| TEST-02 | Phase 10 | pending |
+| TEST-03 | Phase 10 | pending |
+| TEST-04 | Phase 10 | pending |
+| TEST-05 | Phase 10 | pending |
+| TEST-06 | Phase 10 | pending |
+| TEST-07 | Phase 10 | pending |
+| TEST-08 | Phase 10 | pending |
+| TEST-09 | Phase 10 | pending |
+| TEST-10 | Phase 10 | pending |
+| TEST-11 | Phase 10 | pending |
+| TEST-12 | Phase 10 | pending |
 
 ---
 
