@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useChatSocket } from '../../hooks/useChatSocket';
 import { useChatStore } from '../../stores/chat';
 import { ChatInput } from './ChatInput';
@@ -9,10 +9,19 @@ import { ChatMessage } from './ChatMessage';
  * Connects to the backend /chat namespace via useChatSocket hook.
  */
 export function ChatPanel() {
-  const { sendMessage } = useChatSocket();
+  const { sendMessage, confirmTool } = useChatSocket();
   const messages = useChatStore((s) => s.messages);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleConfirm = useCallback(
+    (toolUseId: string) => confirmTool(toolUseId, true),
+    [confirmTool],
+  );
+  const handleDeny = useCallback(
+    (toolUseId: string) => confirmTool(toolUseId, false),
+    [confirmTool],
+  );
 
   // Auto-scroll to bottom when messages change or tokens stream in
   useEffect(() => {
@@ -32,7 +41,7 @@ export function ChatPanel() {
         ) : (
           <>
             {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
+              <ChatMessage key={msg.id} message={msg} onConfirm={handleConfirm} onDeny={handleDeny} />
             ))}
             <div ref={messagesEndRef} />
           </>

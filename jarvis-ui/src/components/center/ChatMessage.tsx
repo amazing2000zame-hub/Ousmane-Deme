@@ -1,94 +1,60 @@
 import type { ChatMessage as ChatMessageType, ToolCall } from '../../stores/chat';
+import { BlockedCard } from './BlockedCard';
+import { ConfirmCard } from './ConfirmCard';
+import { ToolStatusCard } from './ToolStatusCard';
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  onConfirm?: (toolUseId: string) => void;
+  onDeny?: (toolUseId: string) => void;
 }
 
-function ToolCallCard({ tool }: { tool: ToolCall }) {
-  const statusIndicator = () => {
-    switch (tool.status) {
-      case 'executing':
-        return (
-          <span className="flex items-center gap-1.5 text-jarvis-amber text-[10px] font-mono">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-jarvis-amber animate-pulse" />
-            Executing {tool.name}...
-          </span>
-        );
-      case 'done':
-        return (
-          <span className="flex items-center gap-1.5 text-green-400 text-[10px] font-mono">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400" />
-            Completed
-            {tool.result && (
-              <span className="text-jarvis-text-muted ml-1 truncate max-w-[200px]">
-                {tool.result.slice(0, 100)}
-              </span>
-            )}
-          </span>
-        );
-      case 'error':
-        return (
-          <span className="flex items-center gap-1.5 text-red-400 text-[10px] font-mono">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
-            Failed
-            {tool.result && (
-              <span className="text-red-400/70 ml-1 truncate max-w-[200px]">
-                {tool.result.slice(0, 100)}
-              </span>
-            )}
-          </span>
-        );
-      case 'confirmation_needed':
-        return (
-          <span className="flex items-center gap-1.5 text-jarvis-amber text-[10px] font-mono">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-jarvis-amber" />
-            AWAITING AUTHORIZATION
-          </span>
-        );
-      case 'blocked':
-        return (
-          <span className="flex items-center gap-1.5 text-red-400 text-[10px] font-mono">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
-            BLOCKED{tool.reason ? ` - ${tool.reason}` : ''}
-          </span>
-        );
-      case 'confirmed':
-        return (
-          <span className="flex items-center gap-1.5 text-green-400 text-[10px] font-mono">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400" />
-            Authorized
-          </span>
-        );
-      case 'denied':
-        return (
-          <span className="flex items-center gap-1.5 text-red-400 text-[10px] font-mono">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
-            Denied
-          </span>
-        );
-    }
-  };
+function ToolCallRenderer({
+  tool,
+  onConfirm,
+  onDeny,
+}: {
+  tool: ToolCall;
+  onConfirm?: (toolUseId: string) => void;
+  onDeny?: (toolUseId: string) => void;
+}) {
+  if (tool.status === 'confirmation_needed') {
+    return (
+      <ConfirmCard
+        toolName={tool.name}
+        toolInput={tool.input}
+        toolUseId={tool.toolUseId}
+        tier={tool.tier}
+        onConfirm={onConfirm ?? (() => {})}
+        onDeny={onDeny ?? (() => {})}
+      />
+    );
+  }
 
-  const borderColor =
-    tool.status === 'confirmation_needed'
-      ? 'border-jarvis-amber/40'
-      : tool.status === 'blocked' || tool.status === 'error' || tool.status === 'denied'
-        ? 'border-red-400/30'
-        : 'border-jarvis-amber/10';
+  if (tool.status === 'blocked') {
+    return (
+      <BlockedCard
+        toolName={tool.name}
+        reason={tool.reason ?? 'This action has been blocked by the safety framework.'}
+        tier={tool.tier}
+      />
+    );
+  }
 
   return (
-    <div className={`my-1 px-2 py-1.5 rounded border ${borderColor} bg-jarvis-bg-panel/50`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-mono text-jarvis-text-dim">{tool.name}</span>
-        {statusIndicator()}
-      </div>
-    </div>
+    <ToolStatusCard
+      name={tool.name}
+      status={tool.status}
+      result={tool.result}
+      isError={tool.isError}
+    />
   );
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onConfirm, onDeny }: ChatMessageProps) {
   const isUser = message.role === 'user';
-  const isEmptyAssistant = !isUser && message.content === '' && (!message.toolCalls || message.toolCalls.length === 0);
+  const isEmptyAssistant =
+    !isUser && message.content === '' && (!message.toolCalls || message.toolCalls.length === 0);
 
   return (
     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-3`}>
@@ -111,7 +77,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
       >
         {/* Text content */}
         {message.content ? (
-          <p className={`text-sm text-jarvis-text whitespace-pre-wrap break-words ${!isUser ? 'font-mono' : ''}`}>
+          <p
+            className={`text-sm text-jarvis-text whitespace-pre-wrap break-words ${!isUser ? 'font-mono' : ''}`}
+          >
             {message.content}
           </p>
         ) : isEmptyAssistant ? (
@@ -122,7 +90,12 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className={message.content ? 'mt-2' : ''}>
             {message.toolCalls.map((tc) => (
-              <ToolCallCard key={tc.toolUseId} tool={tc} />
+              <ToolCallRenderer
+                key={tc.toolUseId}
+                tool={tc}
+                onConfirm={onConfirm}
+                onDeny={onDeny}
+              />
             ))}
           </div>
         )}
