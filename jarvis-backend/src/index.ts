@@ -4,6 +4,7 @@ import cors from 'cors';
 import { config } from './config.js';
 import { router } from './api/routes.js';
 import { setupSocketIO } from './realtime/socket.js';
+import { runMigrations } from './db/migrate.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -26,6 +27,14 @@ const { io, clusterNs, eventsNs } = setupSocketIO(server);
 
 // Export for use by other modules (e.g., emitting events)
 export { io, clusterNs, eventsNs };
+
+// Run database migrations, then start listening
+try {
+  await runMigrations();
+} catch (err) {
+  console.error('Failed to run database migrations:', err);
+  console.warn('Starting server without database -- persistence will be unavailable');
+}
 
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
 server.listen(config.port, () => {
