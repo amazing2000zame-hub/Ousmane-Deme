@@ -60,10 +60,17 @@ export const config = {
   memoryCleanupIntervalMinutes: parseInt(process.env.MEMORY_CLEANUP_INTERVAL_MIN || '60', 10),
   memoryContextTokenBudget: parseInt(process.env.MEMORY_CONTEXT_BUDGET || '600', 10),
 
-  // TTS (Text-to-Speech)
+  // TTS (Text-to-Speech) — OpenAI fallback
   ttsVoice: process.env.TTS_VOICE || 'onyx',
   ttsSpeed: parseFloat(process.env.TTS_SPEED || '1.0'),
   ttsModel: process.env.TTS_MODEL || 'tts-1',
+
+  // ElevenLabs TTS (preferred when ELEVENLABS_API_KEY is set)
+  elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID || 'onwK4e9ZLuTAKqWW03F9', // "Daniel" — deep British male
+  elevenlabsModel: process.env.ELEVENLABS_MODEL || 'eleven_multilingual_v2',
+  elevenlabsStability: parseFloat(process.env.ELEVENLABS_STABILITY || '0.5'),
+  elevenlabsSimilarity: parseFloat(process.env.ELEVENLABS_SIMILARITY || '0.75'),
+  elevenlabsStyle: parseFloat(process.env.ELEVENLABS_STYLE || '0.4'),
 
   // CORS
   corsOrigins: [

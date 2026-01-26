@@ -7,7 +7,7 @@
  *  - speed: TTS playback speed (0.5 - 2.0)
  *  - voice: OpenAI TTS voice name (onyx = deep JARVIS, fable = British warmth)
  *  - volume: playback volume (0.0 - 1.0)
- *  - provider: 'openai' (backend API) or 'browser' (Web Speech API fallback)
+ *  - provider: 'elevenlabs' (preferred) | 'openai' (fallback) | 'browser' (Web Speech API)
  *  - micEnabled: microphone input toggle (STT)
  *  - wakeWordEnabled: listen for "JARVIS" wake word
  */
@@ -15,7 +15,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
-export type TTSProvider = 'openai' | 'browser';
+export type TTSProvider = 'elevenlabs' | 'openai' | 'browser';
 export type TTSVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
 
 interface VoiceSettings {
@@ -90,7 +90,7 @@ const defaults: VoiceSettings = {
   speed: 1.0,
   voice: 'onyx',
   volume: 0.8,
-  provider: 'openai',
+  provider: 'elevenlabs',
   micEnabled: false,
   wakeWordEnabled: false,
 };

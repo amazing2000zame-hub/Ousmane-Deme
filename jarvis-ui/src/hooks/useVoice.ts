@@ -159,13 +159,13 @@ export function useVoice(): UseVoiceReturn {
 
     const state = useVoiceStore.getState();
 
-    // Try backend (OpenAI) first, fall back to browser
-    if (state.provider === 'openai') {
+    // ElevenLabs and OpenAI both use the backend /api/tts endpoint
+    if (state.provider === 'elevenlabs' || state.provider === 'openai') {
       const success = await speakWithBackend(text, messageId);
       if (success) return;
     }
 
-    // Browser fallback
+    // Browser fallback (also used when backend fails)
     speakWithBrowser(text, messageId);
   }, [stop, speakWithBackend, speakWithBrowser]);
 

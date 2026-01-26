@@ -21,9 +21,10 @@ const VOICES: { value: TTSVoice; label: string; desc: string }[] = [
   { value: 'shimmer', label: 'Shimmer', desc: 'Soft, expressive' },
 ];
 
-const PROVIDERS: { value: TTSProvider; label: string }[] = [
-  { value: 'openai', label: 'OpenAI TTS' },
-  { value: 'browser', label: 'Browser (Free)' },
+const PROVIDERS: { value: TTSProvider; label: string; desc: string }[] = [
+  { value: 'elevenlabs', label: 'ElevenLabs', desc: 'Natural, expressive' },
+  { value: 'openai', label: 'OpenAI TTS', desc: 'Standard quality' },
+  { value: 'browser', label: 'Browser (Free)', desc: 'Basic, no API needed' },
 ];
 
 export function VoiceSettings({ onClose }: VoiceSettingsProps) {
@@ -67,10 +68,19 @@ export function VoiceSettings({ onClose }: VoiceSettingsProps) {
           className="bg-jarvis-bg-card border border-jarvis-amber/20 rounded px-2 py-1 text-xs text-jarvis-text font-mono"
         >
           {PROVIDERS.map((p) => (
-            <option key={p.value} value={p.value}>{p.label}</option>
+            <option key={p.value} value={p.value}>
+              {p.label} — {p.desc}
+            </option>
           ))}
         </select>
       </SettingRow>
+
+      {/* ElevenLabs note */}
+      {provider === 'elevenlabs' && (
+        <div className="text-[9px] text-jarvis-text-muted font-mono px-1">
+          Voice configured server-side (ELEVENLABS_VOICE_ID). Recommended: "Daniel" for JARVIS tone.
+        </div>
+      )}
 
       {/* Voice Selection (only for OpenAI) */}
       {provider === 'openai' && (
