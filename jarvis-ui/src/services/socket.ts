@@ -37,3 +37,15 @@ export function createTerminalSocket(token: string): Socket {
     reconnectionAttempts: Infinity,
   });
 }
+
+/** Create a Socket.IO client for the /chat namespace */
+export function createChatSocket(token: string): Socket {
+  return io(`${BACKEND_URL}/chat`, {
+    auth: { token },
+    autoConnect: false,
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity,
+  });
+}
