@@ -1,18 +1,10 @@
 import { TopBar } from './TopBar';
 import { NodeGrid } from '../left/NodeGrid';
+import { VMList } from '../left/VMList';
+import { StoragePanel } from '../left/StoragePanel';
+import { CenterDisplay } from '../center/CenterDisplay';
+import TerminalPanel from '../right/TerminalPanel';
 
-/**
- * Dashboard layout shell with 3-column CSS grid.
- *
- * Section ownership across plans:
- * - Plan 02-03 (this): Creates the 3-column grid shell. Left column has NodeGrid.
- *   Center and right columns are placeholders.
- * - Plan 02-04: Adds VMList and StoragePanel to LEFT column (below NodeGrid).
- *   Replaces center placeholder with CenterDisplay. Does NOT modify right column.
- * - Plan 02-05: Replaces right placeholder with TerminalPanel.
- *   Does NOT modify left or center columns.
- * - Plan 02-06: Adds responsive breakpoints, keyboard nav, data-panel attributes.
- */
 export function Dashboard() {
   return (
     <div className="flex flex-col h-screen bg-jarvis-bg">
@@ -22,20 +14,18 @@ export function Dashboard() {
         {/* Left column: Infrastructure panels */}
         <aside className="overflow-y-auto p-2 space-y-2">
           <NodeGrid />
+          <VMList />
+          <StoragePanel />
         </aside>
 
-        {/* Center column: Placeholder for CenterDisplay (Plan 02-04) */}
-        <main className="overflow-y-auto border-x border-jarvis-amber/10 flex items-center justify-center">
-          <span className="font-display text-jarvis-text-muted text-lg tracking-[0.3em]">
-            JARVIS DISPLAY
-          </span>
+        {/* Center column: Activity feed */}
+        <main className="overflow-y-auto border-x border-jarvis-amber/10">
+          <CenterDisplay />
         </main>
 
-        {/* Right column: Placeholder for TerminalPanel (Plan 02-05) */}
-        <aside className="overflow-y-auto flex items-center justify-center">
-          <span className="font-display text-jarvis-text-muted text-lg tracking-[0.3em]">
-            TERMINAL
-          </span>
+        {/* Right column: Terminal */}
+        <aside className="flex flex-col min-h-0">
+          <TerminalPanel />
         </aside>
       </div>
     </div>
