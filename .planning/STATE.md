@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-01-26)
 ## Current Position
 
 Phase: 1 of 5 (Backend Foundation & Safety Layer)
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: In progress
-Last activity: 2026-01-26 -- Completed 01-01-PLAN.md (Express 5 backend scaffold)
+Last activity: 2026-01-26 -- Completed 01-02-PLAN.md (Infrastructure Clients: Proxmox + SSH)
 
-Progress: [##........] 1/4 Phase 1 plans complete (25%)
+Progress: [#####.....] 2/4 Phase 1 plans complete (50%)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 7 min
-- Total execution time: 7 min
+- Total plans completed: 2
+- Average duration: 5 min
+- Total execution time: 10 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 1/4 | 7 min | 7 min |
+| 01 | 2/4 | 10 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (7 min)
-- Trend: baseline established
+- Last 5 plans: 01-01 (7 min), 01-02 (3 min)
+- Trend: accelerating
 
 *Updated after each plan completion*
 
@@ -50,6 +50,8 @@ Recent decisions affecting current work:
 - [01-01]: Socket.IO namespaces /cluster and /events for real-time data separation
 - [01-01]: JWT 7-day expiry with single operator role (homelab simplicity)
 - [01-01]: All Phase 1 deps installed upfront in 01-01
+- [01-02]: PVEAPIToken auth format, self-signed TLS via env var, SSH privateKeyPath not privateKey
+- [01-02]: SSH connection pool with auto-reconnect on stale connections
 
 ### Pending Todos
 
@@ -58,10 +60,11 @@ None.
 ### Blockers/Concerns
 
 - Proxmox API tokens (`root@pam!jarvis`) do not exist yet -- must be created manually on each PVE node before Phase 1 backend can connect
-- Self-signed TLS on Proxmox nodes requires verifySsl: false in client config
+- Self-signed TLS on Proxmox nodes handled via NODE_TLS_REJECT_UNAUTHORIZED=0 env var
+- closeAllConnections() should be integrated into server shutdown handler
 
 ## Session Continuity
 
-Last session: 2026-01-26T07:11:00Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-01-26T07:18:00Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
