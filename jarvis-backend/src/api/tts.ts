@@ -1,9 +1,9 @@
 /**
  * TTS REST endpoint.
  *
- * POST /api/tts — accepts { text, voice?, speed? } and streams back audio/mpeg.
+ * POST /api/tts — accepts { text, voice?, speed?, provider? } and streams back audio.
  * Requires JWT authentication. Returns 503 if no TTS provider is configured.
- * Automatically uses ElevenLabs when available, falls back to OpenAI.
+ * Provider priority: local XTTS > ElevenLabs > OpenAI.
  */
 
 import { Router } from 'express';
@@ -18,7 +18,7 @@ ttsRouter.post('/', async (req, res) => {
     if (!ttsAvailable()) {
       res.status(503).json({
         error: 'TTS unavailable',
-        message: 'No TTS API key configured (ELEVENLABS_API_KEY or OPENAI_API_KEY). Use browser speech synthesis as fallback.',
+        message: 'No TTS provider configured (LOCAL_TTS_ENDPOINT, ELEVENLABS_API_KEY, or OPENAI_API_KEY). Use browser speech synthesis as fallback.',
         fallback: 'browser',
       });
       return;

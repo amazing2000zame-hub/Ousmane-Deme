@@ -22,6 +22,7 @@ const VOICES: { value: TTSVoice; label: string; desc: string }[] = [
 ];
 
 const PROVIDERS: { value: TTSProvider; label: string; desc: string }[] = [
+  { value: 'local', label: 'JARVIS Voice', desc: 'Custom clone (local)' },
   { value: 'elevenlabs', label: 'ElevenLabs', desc: 'Natural, expressive' },
   { value: 'openai', label: 'OpenAI TTS', desc: 'Standard quality' },
   { value: 'browser', label: 'Browser (Free)', desc: 'Basic, no API needed' },
@@ -75,7 +76,12 @@ export function VoiceSettings({ onClose }: VoiceSettingsProps) {
         </select>
       </SettingRow>
 
-      {/* ElevenLabs note */}
+      {/* Provider notes */}
+      {provider === 'local' && (
+        <div className="text-[9px] text-jarvis-text-muted font-mono px-1">
+          Custom JARVIS voice clone via XTTS v2. Runs locally on cluster (CPU). May be slower than cloud providers.
+        </div>
+      )}
       {provider === 'elevenlabs' && (
         <div className="text-[9px] text-jarvis-text-muted font-mono px-1">
           Voice configured server-side (ELEVENLABS_VOICE_ID). Recommended: "Daniel" for JARVIS tone.

@@ -1,15 +1,16 @@
 /**
  * Text-to-Speech provider abstraction.
  *
- * Supports two backends:
- *  - **ElevenLabs** (preferred): Natural, expressive voices with fine-tuned
- *    stability and similarity controls. Deep British male voices like "Daniel"
- *    deliver a convincing JARVIS tone.
+ * Supports three backends:
+ *  - **Local XTTS** (preferred): Zero-shot voice cloning using Coqui XTTS v2.
+ *    Runs on-cluster with custom JARVIS voice from reference audio clips.
+ *    No API costs. CPU inference (~10-30s per response).
+ *  - **ElevenLabs**: Natural, expressive voices with fine-tuned stability
+ *    and similarity controls. Requires API key.
  *  - **OpenAI** (fallback): tts-1 model with preset voices (onyx, fable, etc).
  *    Functional but less natural inflection.
  *
- * Provider selection: ElevenLabs is used when ELEVENLABS_API_KEY is set,
- * otherwise falls back to OpenAI if OPENAI_API_KEY is set.
+ * Provider selection priority: local > elevenlabs > openai
  */
 
 import OpenAI from 'openai';
@@ -20,7 +21,7 @@ import { config } from '../config.js';
 // Types
 // ---------------------------------------------------------------------------
 
-export type TTSProvider = 'elevenlabs' | 'openai';
+export type TTSProvider = 'local' | 'elevenlabs' | 'openai';
 export type OpenAIVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
 
 interface TTSOptions {
@@ -40,7 +41,34 @@ interface TTSResult {
 // Provider detection
 // ---------------------------------------------------------------------------
 
+/** Whether the local XTTS service is configured (endpoint set). */
+function localTTSConfigured(): boolean {
+  return !!config.localTtsEndpoint;
+}
+
+/** Check if local XTTS service is actually reachable. Cached for 60s. */
+let localTTSHealthy = false;
+let lastHealthCheck = 0;
+
+async function checkLocalTTSHealth(): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastHealthCheck < 60_000) return localTTSHealthy;
+
+  try {
+    const res = await fetch(`${config.localTtsEndpoint}/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    const data = await res.json() as { status?: string; voice_ready?: boolean };
+    localTTSHealthy = data.status === 'ready' && data.voice_ready === true;
+  } catch {
+    localTTSHealthy = false;
+  }
+  lastHealthCheck = now;
+  return localTTSHealthy;
+}
+
 export function getActiveProvider(): TTSProvider | null {
+  if (localTTSConfigured()) return 'local';
   if (process.env.ELEVENLABS_API_KEY) return 'elevenlabs';
   if (process.env.OPENAI_API_KEY) return 'openai';
   return null;
@@ -48,6 +76,40 @@ export function getActiveProvider(): TTSProvider | null {
 
 export function ttsAvailable(): boolean {
   return getActiveProvider() !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Local XTTS v2 (zero-shot voice cloning)
+// ---------------------------------------------------------------------------
+
+async function synthesizeLocal(options: TTSOptions): Promise<TTSResult> {
+  const { text, speed } = options;
+  const endpoint = config.localTtsEndpoint;
+
+  const response = await fetch(`${endpoint}/synthesize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      voice: 'jarvis',
+      language: 'en',
+      speed: speed ?? 1.0,
+    }),
+    signal: AbortSignal.timeout(120_000), // 2 min timeout for CPU inference
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Local XTTS error ${response.status}: ${body}`);
+  }
+
+  const nodeStream = Readable.fromWeb(response.body as import('stream/web').ReadableStream);
+
+  return {
+    stream: nodeStream,
+    contentType: response.headers.get('content-type') ?? 'audio/wav',
+    provider: 'local',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,13 +198,23 @@ async function synthesizeOpenAI(options: TTSOptions): Promise<TTSResult> {
 
 /**
  * Synthesize speech from text. Automatically selects the best available provider.
- * ElevenLabs is preferred when configured, OpenAI as fallback.
+ * Priority: local XTTS > ElevenLabs > OpenAI.
  */
 export async function synthesizeSpeech(options: TTSOptions): Promise<TTSResult> {
   const requestedProvider = options.provider ?? getActiveProvider();
 
   if (!requestedProvider) {
-    throw new Error('TTS unavailable: no API key configured (ELEVENLABS_API_KEY or OPENAI_API_KEY)');
+    throw new Error('TTS unavailable: no provider configured (LOCAL_TTS_ENDPOINT, ELEVENLABS_API_KEY, or OPENAI_API_KEY)');
+  }
+
+  // Local XTTS v2 — preferred (free, custom JARVIS voice)
+  if (requestedProvider === 'local' && localTTSConfigured()) {
+    const healthy = await checkLocalTTSHealth();
+    if (healthy) {
+      return synthesizeLocal(options);
+    }
+    // Fall through to cloud providers if local is down
+    console.warn('[TTS] Local XTTS service unhealthy, falling back to cloud provider');
   }
 
   if (requestedProvider === 'elevenlabs' && process.env.ELEVENLABS_API_KEY) {
@@ -153,24 +225,22 @@ export async function synthesizeSpeech(options: TTSOptions): Promise<TTSResult> 
     return synthesizeOpenAI(options);
   }
 
-  // Fallback: try whatever is available
-  const fallback = getActiveProvider();
-  if (!fallback) {
-    throw new Error('TTS unavailable: no API key configured');
-  }
+  // Fallback: try whatever is available (skip local if already failed)
+  if (process.env.ELEVENLABS_API_KEY) return synthesizeElevenLabs(options);
+  if (process.env.OPENAI_API_KEY) return synthesizeOpenAI(options);
 
-  return fallback === 'elevenlabs'
-    ? synthesizeElevenLabs(options)
-    : synthesizeOpenAI(options);
+  throw new Error('TTS unavailable: no provider configured');
 }
 
 /**
  * Estimate TTS cost for a given text.
+ * - Local XTTS: $0.00 (runs on cluster hardware)
  * - OpenAI: $0.015 per 1,000 characters (tts-1)
  * - ElevenLabs: ~$0.30 per 1,000 characters (starter plan, varies by tier)
  */
 export function estimateTTSCost(text: string, provider?: TTSProvider): number {
   const p = provider ?? getActiveProvider() ?? 'openai';
+  if (p === 'local') return 0;
   const chars = text.length;
   if (p === 'elevenlabs') {
     return (chars / 1000) * 0.30;

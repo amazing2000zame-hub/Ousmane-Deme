@@ -15,7 +15,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
-export type TTSProvider = 'elevenlabs' | 'openai' | 'browser';
+export type TTSProvider = 'local' | 'elevenlabs' | 'openai' | 'browser';
 export type TTSVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
 
 interface VoiceSettings {
@@ -90,7 +90,7 @@ const defaults: VoiceSettings = {
   speed: 1.0,
   voice: 'onyx',
   volume: 0.8,
-  provider: 'elevenlabs',
+  provider: 'local',
   micEnabled: false,
   wakeWordEnabled: false,
 };

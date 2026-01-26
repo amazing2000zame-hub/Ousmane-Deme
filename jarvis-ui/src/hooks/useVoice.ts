@@ -159,8 +159,8 @@ export function useVoice(): UseVoiceReturn {
 
     const state = useVoiceStore.getState();
 
-    // ElevenLabs and OpenAI both use the backend /api/tts endpoint
-    if (state.provider === 'elevenlabs' || state.provider === 'openai') {
+    // All non-browser providers use the backend /api/tts endpoint
+    if (state.provider === 'local' || state.provider === 'elevenlabs' || state.provider === 'openai') {
       const success = await speakWithBackend(text, messageId);
       if (success) return;
     }

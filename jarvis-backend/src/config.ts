@@ -60,6 +60,9 @@ export const config = {
   memoryCleanupIntervalMinutes: parseInt(process.env.MEMORY_CLEANUP_INTERVAL_MIN || '60', 10),
   memoryContextTokenBudget: parseInt(process.env.MEMORY_CONTEXT_BUDGET || '600', 10),
 
+  // TTS — Local XTTS v2 (preferred, custom JARVIS voice clone)
+  localTtsEndpoint: process.env.LOCAL_TTS_ENDPOINT || 'http://192.168.1.50:5050',
+
   // TTS (Text-to-Speech) — OpenAI fallback
   ttsVoice: process.env.TTS_VOICE || 'onyx',
   ttsSpeed: parseFloat(process.env.TTS_SPEED || '1.0'),
