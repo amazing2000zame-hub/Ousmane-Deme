@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-26)
 ## Current Position
 
 Phase: 4 of 5 (Autonomous Monitoring & Remediation)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-01-26 -- Completed 04-01-PLAN.md (monitor detection backbone)
+Last activity: 2026-01-26 -- Completed 04-02-PLAN.md (remediation engine, guardrails, reporter)
 
-Progress: [###########.....] 11/16 plans complete (69%)
+Progress: [############....] 12/16 plans complete (75%)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
-- Average duration: 5.2 min
-- Total execution time: 58 min
+- Total plans completed: 12
+- Average duration: 5.8 min
+- Total execution time: 69 min
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [###########.....] 11/16 plans complete (69%)
 |-------|-------|-------|----------|
 | 01 | 4/4 | 22 min | 5.5 min |
 | 02 | 6/6 | 32 min | 5.3 min |
-| 04 | 1/3 | 4 min | 4.0 min |
+| 04 | 2/3 | 15 min | 7.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-03 (5 min), 02-04 (5 min), 02-06 (6 min), 04-01 (4 min)
-- Trend: consistent, improving
+- Last 5 plans: 02-04 (5 min), 02-06 (6 min), 04-01 (4 min), 04-02 (11 min)
+- Trend: consistent
 
 *Updated after each plan completion*
 
@@ -91,6 +91,11 @@ Recent decisions affecting current work:
 - [04-01]: Polling offsets 12s/32s vs emitter 10s/30s to avoid API thundering herd
 - [04-01]: State tracker in-memory Maps (not SQLite) for hot-path performance
 - [04-01]: Only running->stopped transitions trigger VM_CRASHED/CT_CRASHED
+- [04-02]: Dependency injection for eventsNs via setupMonitorRoutes(router, eventsNs) -- avoids circular import
+- [04-02]: Kill switch double-check: once in checkGuardrails + once before executeTool (race condition guard)
+- [04-02]: Escalation emails bypass 5-minute rate limit -- always sent
+- [04-02]: Runbook execution fire-and-forget from pollCritical() -- never blocks poll loop
+- [04-02]: Stale remediation cleanup at 10-minute timeout prevents blast radius deadlock
 
 ### Pending Todos
 
@@ -105,5 +110,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-26
-Stopped at: Completed 04-01-PLAN.md, ready for 04-02
+Stopped at: Completed 04-02-PLAN.md, ready for 04-03
 Resume file: None
