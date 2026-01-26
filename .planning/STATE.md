@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-01-26)
 ## Current Position
 
 Phase: 1 of 5 (Backend Foundation & Safety Layer)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In progress
-Last activity: 2026-01-26 -- Completed 01-02-PLAN.md (Infrastructure Clients: Proxmox + SSH)
+Last activity: 2026-01-26 -- Completed 01-04-PLAN.md (SQLite Persistence Layer)
 
-Progress: [#####.....] 2/4 Phase 1 plans complete (50%)
+Progress: [#######...] 3/4 Phase 1 plans complete (75%)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
+- Total plans completed: 3
 - Average duration: 5 min
-- Total execution time: 10 min
+- Total execution time: 15 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 2/4 | 10 min | 5 min |
+| 01 | 3/4 | 15 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (7 min), 01-02 (3 min)
-- Trend: accelerating
+- Last 5 plans: 01-01 (7 min), 01-02 (3 min), 01-04 (5 min)
+- Trend: consistent
 
 *Updated after each plan completion*
 
@@ -52,6 +52,9 @@ Recent decisions affecting current work:
 - [01-01]: All Phase 1 deps installed upfront in 01-01
 - [01-02]: PVEAPIToken auth format, self-signed TLS via env var, SSH privateKeyPath not privateKey
 - [01-02]: SSH connection pool with auto-reconnect on stale connections
+- [01-04]: Dual migration strategy (drizzle migrator + direct SQL fallback)
+- [01-04]: onConflictDoUpdate for preference upsert semantics
+- [01-04]: JS Date for resolvedAt to avoid drizzle type complexity
 
 ### Pending Todos
 
@@ -65,6 +68,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-26T07:18:00Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-01-26T07:19:44Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
