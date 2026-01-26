@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-01-26)
 ## Current Position
 
 Phase: 2 of 5 (Real-Time Dashboard & eDEX-UI Visual Identity)
-Plan: 2 of 6 in current phase
-Status: In progress (plans 02-01, 02-02 complete, 4 remaining)
-Last activity: 2026-01-26 -- Completed 02-02-PLAN.md (real-time emitter, tool execution, terminal)
+Plan: 5 of 6 in current phase
+Status: In progress (plans 02-01, 02-02, 02-05 complete; 02-03, 02-04 parallel; 02-06 remaining)
+Last activity: 2026-01-26 -- Completed 02-05-PLAN.md (terminal panel with xterm.js + Socket.IO PTY)
 
-Progress: [##........] 1/5 phases complete, plan 2/6 in phase 2
+Progress: [##........] 1/5 phases complete, plan 5/6 in phase 2
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 5.7 min
-- Total execution time: 35 min
+- Total plans completed: 7
+- Average duration: 5.4 min
+- Total execution time: 38 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 4/4 | 22 min | 5.5 min |
-| 02 | 2/6 | 13 min | 6.5 min |
+| 02 | 3/6 | 16 min | 5.3 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-04 (5 min), 01-03 (7 min), 02-01 (6 min), 02-02 (7 min)
-- Trend: consistent
+- Last 5 plans: 01-03 (7 min), 02-01 (6 min), 02-02 (7 min), 02-05 (3 min)
+- Trend: consistent, 02-05 fast (2 focused tasks)
 
 *Updated after each plan completion*
 
@@ -69,6 +69,9 @@ Recent decisions affecting current work:
 - [02-02]: On-demand emit before API response return for instant WebSocket client updates
 - [02-02]: Terminal namespace uses case-insensitive node name resolution
 - [02-02]: External timeout for SSH commands via Promise.race (ssh2 ExecOptions lacks timeout)
+- [02-05]: WebGL addon with try/catch DOM fallback -- context loss disposes WebGL addon gracefully
+- [02-05]: display:none for collapsed state preserves xterm.js instance (no re-create on expand)
+- [02-05]: Single session enforced at hook level -- connect() auto-disconnects previous session
 
 ### Pending Todos
 
@@ -82,6 +85,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-26T08:57:25Z
-Stopped at: Completed 02-02-PLAN.md (real-time emitter, tool execution, terminal)
+Last session: 2026-01-26T09:07:00Z
+Stopped at: Completed 02-05-PLAN.md (terminal panel with xterm.js + Socket.IO PTY)
 Resume file: None
