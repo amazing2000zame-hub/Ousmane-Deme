@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { ActivityFeed } from './ActivityFeed';
+import { ChatPanel } from './ChatPanel';
 import { GlobeHUD } from './GlobeHUD';
 
-type CenterView = 'hud' | 'feed';
+type CenterView = 'hud' | 'feed' | 'chat';
 
 /**
  * CenterDisplay -- split view with Iron Man-style Globe HUD above
@@ -16,10 +17,10 @@ export function CenterDisplay() {
       {/* Header with view tabs */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-jarvis-amber/10 bg-jarvis-bg-panel shrink-0">
         <span className="font-display text-jarvis-amber-dim text-xs tracking-wider uppercase">
-          JARVIS {view === 'hud' ? 'HUD' : 'ACTIVITY'}
+          JARVIS {view === 'hud' ? 'HUD' : view === 'feed' ? 'ACTIVITY' : 'CHAT'}
         </span>
         <div className="flex gap-0.5">
-          {(['hud', 'feed'] as const).map((v) => (
+          {(['hud', 'feed', 'chat'] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -38,7 +39,9 @@ export function CenterDisplay() {
 
       {/* Content area */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {view === 'hud' ? (
+        {view === 'chat' ? (
+          <ChatPanel />
+        ) : view === 'hud' ? (
           <div className="flex flex-col">
             {/* Globe HUD */}
             <GlobeHUD />
