@@ -8,6 +8,7 @@ import { runMigrations } from './db/migrate.js';
 import { getToolList } from './mcp/server.js';
 import { closeAllConnections } from './clients/ssh.js';
 import { startEmitter, stopEmitter } from './realtime/emitter.js';
+import { startMonitor, stopMonitor } from './monitor/index.js';
 import { setupTerminalHandlers } from './realtime/terminal.js';
 import { setupChatHandlers } from './realtime/chat.js';
 
@@ -51,6 +52,9 @@ for (const t of tools) {
 // Start real-time data emitter (polls Proxmox and pushes to /cluster namespace)
 startEmitter(clusterNs);
 
+// Start autonomous monitoring service (detects state changes and threshold violations)
+startMonitor(eventsNs);
+
 // Register SSH PTY terminal handlers on the /terminal namespace
 setupTerminalHandlers(terminalNs);
 
@@ -68,6 +72,7 @@ server.listen(config.port, () => {
 // Graceful shutdown
 function shutdown(signal: string) {
   console.log(`\n[${signal}] Shutting down gracefully...`);
+  stopMonitor();
   stopEmitter();
   closeAllConnections();
   io.close();
