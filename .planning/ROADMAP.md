@@ -123,12 +123,12 @@ Plans:
   3. User can ask JARVIS to list contents of any directory on any cluster node and see file names, sizes, and types
   4. JARVIS rejects download requests targeting internal/private IP addresses (192.168.x.x, 10.x.x.x, localhost) and logs the blocked attempt
   5. JARVIS rejects any file path containing traversal patterns (../) or targeting protected system directories (/etc/pve/priv/, /root/.ssh/) and returns a clear denial message
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 12-01: Path sanitization infrastructure + protected paths + disk space checks
-- [ ] 12-02: File listing + file info MCP tools (GREEN tier)
-- [ ] 12-03: File download with SSRF protection + cross-node file transfer (YELLOW tier)
+- [ ] 12-01-PLAN.md -- Path sanitization infrastructure + URL/SSRF validation + disk space checks + context race fix
+- [ ] 12-02-PLAN.md -- File listing + file info MCP tools (GREEN tier, 2 tools)
+- [ ] 12-03-PLAN.md -- File download with SSRF protection + file copy + cross-node transfer (YELLOW tier, 3 tools)
 
 #### Phase 13: Project Intelligence
 **Goal**: Users can browse, read, and search across all 24 indexed projects on the cluster through natural language requests to JARVIS, with automatic blocking of sensitive files
@@ -220,7 +220,7 @@ Total requirements: 73 (55 v1.0-v1.2 + 18 v1.3)
 2. ~~**SQLite WAL cleanup**~~ (RESOLVED: Phase 9 -- STOPSIGNAL SIGTERM + stop_grace_period 15s in Docker Compose)
 3. **Context window overflow** - Qwen 4096 token limit requires aggressive history pruning
 4. ~~**SSH key management**~~ (RESOLVED: Phase 9 -- keys volume-mounted via docker-compose.yml, not baked into images)
-5. **Override context race condition** - Global mutable state in context.ts is a latent race condition with concurrent WebSocket clients (flagged by v1.3 research, should be addressed in Phase 12)
+5. **Override context race condition** - Global mutable state in context.ts is a latent race condition with concurrent WebSocket clients (flagged by v1.3 research, addressed in Phase 12 Plan 01)
 6. **Triple-registration validation** - New tools require changes in 3 files (handler, tier, Claude description) with no automated mismatch detection
 
 ---
@@ -242,7 +242,7 @@ Phases 12 through 15 execute sequentially. Phase 15 depends on Phase 12 (file do
 | 9. Docker Deployment | v1.1 | 2/2 | Complete | 2026-01-26 |
 | 10. E2E Testing | v1.1 | 2/2 | Complete | 2026-01-26 |
 | 11. JARVIS Voice | v1.2 | 4/4 | Complete | 2026-01-26 |
-| 12. File Operations | v1.3 | 0/3 | Not started | - |
+| 12. File Operations | v1.3 | 0/3 | Planned | - |
 | 13. Project Intelligence | v1.3 | 0/3 | Not started | - |
 | 14. Code Analysis | v1.3 | 0/2 | Not started | - |
 | 15. Voice Retraining | v1.3 | 0/3 | Not started | - |
