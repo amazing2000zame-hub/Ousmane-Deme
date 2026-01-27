@@ -54,6 +54,7 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   get_project_structure: ActionTier.GREEN,
   read_project_file: ActionTier.GREEN,
   search_project_files: ActionTier.GREEN,
+  analyze_project: ActionTier.GREEN,
 
   // YELLOW -- operational commands with controlled side effects
   execute_ssh: ActionTier.YELLOW,

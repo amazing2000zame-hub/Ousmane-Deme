@@ -1,5 +1,5 @@
 /**
- * MCP server instance with all 27 tools registered.
+ * MCP server instance with all 28 tools registered.
  *
  * Provides executeTool() as the single entry point for all cluster operations.
  * The pipeline: sanitize -> checkSafety -> execute handler -> log to memory store.

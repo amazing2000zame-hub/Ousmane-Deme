@@ -1,5 +1,5 @@
 /**
- * LLM-optimized Claude tool definitions for all 27 MCP tools.
+ * LLM-optimized Claude tool definitions for all 28 MCP tools.
  *
  * These are hardcoded (not auto-converted from Zod schemas) to give Claude
  * the best possible descriptions for tool selection. Each description guides
@@ -520,6 +520,26 @@ export function getClaudeTools(): Anthropic.Tool[] {
           },
         },
         required: ['project', 'pattern'],
+      },
+    },
+    {
+      name: 'analyze_project',
+      description:
+        'Gather comprehensive project context for in-depth code analysis. Use when the user asks you to analyze, review, or assess a project (e.g., "analyze the telegram bot", "review the file-organizer code", "what could be improved in jarvis-ui"). Reads project structure, manifest, key source files, code metrics, and patterns (TODOs, error handling). Returns structured context that you should then analyze to provide architecture overview, code quality observations, and specific actionable improvement suggestions. Optional focus: architecture, quality, security, performance, or all.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          project: {
+            type: 'string',
+            description: 'Project name from the registry (e.g., "file-organizer", "homecluster-telegram-bot", "jarvis-ui")',
+          },
+          focus: {
+            type: 'string',
+            description: 'Analysis focus area: "architecture", "quality", "security", "performance", or "all" (default: "all")',
+            enum: ['architecture', 'quality', 'security', 'performance', 'all'],
+          },
+        },
+        required: ['project'],
       },
     },
   ];
