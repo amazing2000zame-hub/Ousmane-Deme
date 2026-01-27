@@ -1,455 +1,677 @@
-# Technology Stack -- v1.2 Milestone Additions
+# Technology Stack: Jarvis v1.5 Optimization & Latency Reduction
 
-**Project:** Jarvis 3.1 v1.2 -- File Operations, Project Browsing/Analysis, Voice Retraining
-**Researched:** 2026-01-26
-**Overall Confidence:** HIGH (versions verified via npm registry and web search; system-installed tools verified on host)
+**Project:** Jarvis 3.1 v1.5 Milestone
+**Researched:** 2026-01-27
+**Overall Confidence:** HIGH
+**Mode:** Ecosystem (Stack dimension for subsequent milestone)
 
-**Scope:** This document covers ONLY the stack additions/changes for v1.2. The existing stack (Express 5, React 19, Vite 6, Socket.IO 4, Anthropic SDK, MCP SDK, better-sqlite3, Drizzle ORM, Zod 4, node-ssh, openai) is validated and unchanged. See the v1.1 STACK.md for those decisions.
-
----
-
-## Critical Context: What Already Exists on the Host
-
-Before recommending any new packages, here is what is already installed and available:
-
-| Tool | Location | Version | Relevance |
-|------|----------|---------|-----------|
-| `ffmpeg` | `/usr/bin/ffmpeg` (host) | 7.1.3 | Audio extraction from video, format conversion, silence removal |
-| `ffprobe` | `/usr/bin/ffprobe` (host) | 7.1.3 | Media file metadata/duration probing |
-| `yt-dlp` | `/usr/local/bin/yt-dlp` (host) | 2025.12.08 | Download video/audio from URLs (YouTube, etc.) |
-| `ffmpeg` | Docker container (`jarvis-tts`) | 5.1.8 | Available inside the TTS container for audio processing |
-| `node-ssh` | `jarvis-backend` | 13.2.1 | SSH execution on cluster nodes -- reusable for remote file operations |
-| `librosa` | TTS Docker container | 0.11.0 | Audio analysis (already installed) |
-| `scipy` | TTS Docker container | 1.17.0 | Signal processing (already installed) |
-| `torchaudio` | TTS Docker container | 2.2.2+cpu | Audio loading/transforms (already installed) |
-| Node.js | Host | 22.22.0 | Built-in `fs.glob()` (stable), `fs.readdir({ recursive: true })`, `child_process` |
-
-**Key insight:** Most of what we need is already on the system. The v1.2 stack additions are minimal -- primarily thin wrappers and one download helper.
+**Scope:** This document covers ONLY the stack additions/changes for v1.5. The existing stack (Express 5, React 19, Vite 6, Socket.IO 4, better-sqlite3, Drizzle ORM, XTTS v2 TTS container, Zustand stores, progressive audio queue) is validated and unchanged. See previous STACK.md files for those decisions.
 
 ---
 
-## 1. File Import/Download
+## Critical Context: What Already Exists
 
-### Recommendation: Built-in `fetch()` + `child_process.execFile()` for yt-dlp
+Before recommending new packages, here is what is already in place and relevant to v1.5:
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Built-in `fetch()` | Node.js 22 native | Download files from HTTP/HTTPS URLs | Zero dependencies. Node 22's `fetch()` (powered by undici) is fully stable with streaming support via `Readable.fromWeb(response.body)`. Supports piping to `createWriteStream()` for large files. Handles redirects, headers, and status codes. No npm package needed. | HIGH |
-| Built-in `child_process` | Node.js 22 native | Execute `yt-dlp` for video/audio downloads | `yt-dlp` (already installed at `/usr/local/bin/yt-dlp`) handles 1800+ sites including YouTube, Vimeo, Twitter, etc. Use `execFile('yt-dlp', [...args])` with `AbortController` for cancellation. No npm wrapper needed -- direct CLI invocation is more reliable and always up-to-date with the installed binary. | HIGH |
-| Built-in `child_process` | Node.js 22 native | Execute `ffprobe` for file metadata | Get duration, codec, sample rate, dimensions from downloaded files. Use promisified `execFile('ffprobe', ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', file])`. Already installed at `/usr/bin/ffprobe`. | HIGH |
+| Component | Location | Version | Relevance to v1.5 |
+|-----------|----------|---------|-------------------|
+| XTTS v2 TTS | Docker `jarvis-tts` | Custom build | Primary TTS, 3-10s/sentence CPU. Piper becomes fallback. |
+| FFmpeg | Host `/usr/bin/ffmpeg` | 7.1.3 (with `--enable-libopus`) | WAV-to-Opus encoding. Already compiled with libopus. |
+| better-sqlite3 | Backend npm | 12.6.2 | WAL mode already enabled (line 15 of `db/index.ts`). Needs additional PRAGMAs. |
+| Progressive audio queue | Frontend `progressive-queue.ts` | Custom | Plays WAV via `decodeAudioData()`. Works with OGG Opus without code changes. |
+| `synthesizeSentenceToBuffer()` | Backend `tts.ts` | Custom | 20s timeout, LRU cache (50 entries). Natural fallback insertion point. |
+| Socket.IO binary events | Backend `chat.ts` | 4.8.3 | `chat:audio_chunk` already sends binary audio. Format-agnostic. |
+| Node.js | Host + Docker | 22 | Built-in `performance.now()`, `fetch()`, `AbortSignal.timeout()` |
 
-### Download Strategy
-
-**Direct HTTP files (PDFs, images, audio, archives):**
-```typescript
-import { createWriteStream } from 'node:fs';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-
-const response = await fetch(url);
-const readable = Readable.fromWeb(response.body);
-await pipeline(readable, createWriteStream(destPath));
-```
-
-**Video/audio from streaming sites (YouTube, etc.):**
-```typescript
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-const execFileAsync = promisify(execFile);
-
-await execFileAsync('yt-dlp', [
-  '-x',                    // extract audio only
-  '--audio-format', 'wav', // output WAV for training
-  '--audio-quality', '0',  // best quality
-  '-o', outputPath,
-  url
-], { timeout: 300_000 });  // 5 min timeout
-```
-
-### What NOT to Add
-
-- **`ytdlp-nodejs` (npm wrapper):** The npm wrapper (v2.3.4 or v3.3.9) bundles its own yt-dlp binary and auto-updates it. This conflicts with our host-installed `yt-dlp` which is already at v2025.12.08 and managed by the system. Direct `execFile()` is simpler, has no version conflicts, and avoids a 30MB+ bundled binary. The wrapper adds complexity for zero benefit when the binary is already on `$PATH`.
-
-- **`node-fetch` / `axios` / `got`:** Node.js 22's built-in `fetch()` is fully stable and performant (powered by undici). There is zero reason to add an HTTP client library in 2026.
-
-- **`fluent-ffmpeg`:** Archived and deprecated as of May 2025. The repository is read-only and does not work properly with recent ffmpeg versions. Do NOT use it. Direct `child_process.execFile()` invocation of ffmpeg/ffprobe is the recommended approach (even the fluent-ffmpeg maintainer said "at its core, fluent-ffmpeg is just a fancy command-line generator for ffmpeg").
-
-- **`ffmpeg-static`:** Provides a bundled ffmpeg binary (v6.1.1). We already have ffmpeg 7.1.3 installed on the host. The npm package is both older and unnecessary.
-
-### Integration Points
-
-```
-NEW: src/mcp/tools/files.ts          File import/download MCP tools
-NEW: src/services/download.ts        Download orchestrator (fetch vs yt-dlp routing)
-NEW: src/services/media-probe.ts     ffprobe wrapper for file metadata
-Reuse: src/safety/sanitize.ts        Path sanitization for download destinations
-Reuse: src/safety/tiers.ts           Safety tier assignment for new tools
-```
-
-### Safety Classification
-
-| Tool | Tier | Rationale |
-|------|------|-----------|
-| `probe_file` | GREEN | Read-only metadata extraction |
-| `download_file` | RED | Writes to filesystem, needs confirmation |
-| `download_media` | RED | Executes yt-dlp, writes to filesystem |
+**Key insight:** v1.5 requires only 1 new Docker container (Piper), 1 system package in the backend Dockerfile (ffmpeg), and 1 optional npm package (virtualization). Everything else uses existing APIs and built-ins.
 
 ---
 
-## 2. Project Read/Browse
+## 1. Piper TTS -- Fast Fallback Voice Synthesis
 
-### Recommendation: Built-in Node.js `fs` APIs Only
+### Recommendation
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Built-in `fs/promises` | Node.js 22 native | Read files, list directories | `fs.readFile()`, `fs.readdir({ recursive: true, withFileTypes: true })`, `fs.stat()` cover all needs. Zero dependencies. | HIGH |
-| Built-in `fs.glob()` | Node.js 22 native (stable since 22.17.0) | Pattern-based file search | `fs.glob('**/*.ts', { cwd: projectRoot, exclude: ['node_modules/**'] })` provides native glob support. Stable since Node 22.17.0 (verified). Eliminates need for `glob`, `fast-glob`, or `globby` npm packages. | HIGH |
-| Built-in `path` | Node.js 22 native | Path manipulation | `path.resolve()`, `path.relative()`, `path.extname()` for safe path operations. | HIGH |
+| Technology | Version | Image/Package | Purpose |
+|------------|---------|---------------|---------|
+| Piper TTS | 1.3.0 (OHF-Voice/piper1-gpl) | Self-built Python image | Fast CPU TTS fallback when XTTS is slow/unhealthy |
 
-### File Browsing Capabilities
+### Why Piper
 
-These are pure MCP tools that use Node.js built-in APIs:
+XTTS v2 produces high-quality cloned voice but takes 3-10s per sentence on CPU. Piper uses ONNX Runtime with VITS models and synthesizes in **under 200ms** per sentence on CPU -- roughly 20-50x faster than XTTS. This makes it the ideal fallback:
 
-1. **`list_directory`** -- `fs.readdir(path, { withFileTypes: true })` returning name, type (file/dir), size
-2. **`read_file`** -- `fs.readFile(path, 'utf-8')` with size limit (e.g., 1MB max)
-3. **`search_files`** -- `fs.glob(pattern, { cwd: root })` for pattern matching
-4. **`get_file_info`** -- `fs.stat(path)` for metadata (size, modified date, permissions)
-5. **`read_file_lines`** -- Read specific line ranges from large files (stream-based)
+- **Latency:** Sub-second synthesis vs. 3-10s XTTS. First-audio target of 2-4s becomes achievable when XTTS is slow.
+- **Reliability:** ONNX inference is deterministic and lightweight. No GPU required, no model loading failures. Achieves the 99%+ TTS reliability target.
+- **Quality tradeoff:** Piper voices sound less natural than XTTS cloned voice, but are fully intelligible and acceptable for fallback scenarios.
 
-### Path Safety
+### Docker Integration Strategy
 
-Critical: all file tools MUST enforce path containment to prevent directory traversal attacks.
+**Recommended: Self-built Python container with HTTP server**
 
+The `rhasspy/wyoming-piper` Docker image uses the Wyoming protocol (designed for Home Assistant), which requires a custom client. The Piper HTTP server is simpler and produces standard REST responses. Build a minimal container:
+
+```dockerfile
+FROM python:3.11-slim
+RUN pip install --no-cache-dir piper-tts[http]==1.3.0
+RUN python3 -m piper.download_voices en_US-lessac-medium
+EXPOSE 5000
+CMD ["python3", "-m", "piper.http_server", "-m", "en_US-lessac-medium", "--host", "0.0.0.0"]
+```
+
+**docker-compose.yml addition:**
+
+```yaml
+jarvis-piper:
+  build:
+    context: /opt/jarvis-piper
+  container_name: jarvis-piper
+  restart: unless-stopped
+  networks:
+    - jarvis-net
+  deploy:
+    resources:
+      limits:
+        cpus: "4"
+        memory: 1G
+      reservations:
+        cpus: "1"
+        memory: 256M
+  healthcheck:
+    test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/voices')"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 30s
+```
+
+### Voice Model Selection
+
+| Voice | Quality | Sample Rate | Recommendation |
+|-------|---------|-------------|----------------|
+| `en_US-lessac-medium` | Medium | 22050 Hz | **Primary choice.** Best quality/speed balance. Clear male voice. |
+| `en_GB-alan-medium` | Medium | 22050 Hz | **Evaluate.** British male, closer to JARVIS persona. |
+| `en_US-amy-low` | Low | 16000 Hz | Not recommended. Noticeably degraded quality. |
+
+Voice models are ONNX files (~15-60MB) with a companion `.onnx.json` config file. Downloaded from [HuggingFace rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).
+
+### API Interface
+
+The Piper HTTP server exposes:
+
+- **POST `/`** -- Synthesize speech
+  - Body: `{"text": "Hello world", "length_scale": 1.0}`
+  - Response: WAV audio (22050 Hz, 16-bit mono)
+  - Latency: ~50-200ms for typical sentences on CPU
+
+- **GET `/voices`** -- List available voice models (useful for health check)
+
+### Integration with Existing TTS Service
+
+The current `tts.ts` has a provider abstraction (`TTSProvider` union type). The `synthesizeSpeech()` function currently throws when XTTS is unhealthy. Integration:
+
+1. Add `'piper'` to the `TTSProvider` union type.
+2. Add `config.piperTtsEndpoint` to `config.ts` (default: `http://jarvis-piper:5000`).
+3. Modify `synthesizeSpeech()`: try XTTS first, fall back to Piper on timeout/error.
+4. The existing `synthesizeSentenceToBuffer()` 20s timeout already creates a natural fallback window. Reduce XTTS timeout to 8s for v1.5 to allow Piper fallback within acceptable latency.
+
+**Fallback logic:**
+
+```
+Is XTTS healthy? -> Try XTTS (timeout: 8s)
+  Success -> Return XTTS audio (high quality, audio/wav)
+  Timeout/Error -> Try Piper (timeout: 3s)
+    Success -> Return Piper audio (fast, acceptable quality, audio/wav)
+    Error -> Return null (skip this sentence)
+```
+
+### Important Note: Repository Change
+
+The original `rhasspy/piper` was archived October 2025. Development moved to [OHF-Voice/piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) under GPLv3 license. The PyPI package `piper-tts` v1.3.0 (July 2025) is the current release. Use the PyPI package for the self-built image rather than cloning the Git repo.
+
+### Confidence: HIGH
+
+- Piper HTTP API verified via [official docs](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_HTTP.md)
+- Voice model format and downloads verified via [HuggingFace](https://huggingface.co/rhasspy/piper-voices)
+- Performance claims (sub-second CPU synthesis) verified across multiple benchmark sources
+- Docker integration follows the same pattern as existing XTTS container
+
+---
+
+## 2. Opus Audio Codec -- Bandwidth and Buffer Size Reduction
+
+### Recommendation
+
+| Component | Technology | Version | Purpose |
+|-----------|------------|---------|---------|
+| Backend encoding | FFmpeg via `child_process.spawn` | System FFmpeg 7.1.3 (add to Docker) | WAV-to-OGG/Opus transcoding |
+| Browser decoding | Native `decodeAudioData()` | Built-in browser API | Handles OGG Opus natively |
+
+### Why Opus
+
+| Format | Bitrate (speech) | Chunk size (5s clip) | Browser decode |
+|--------|-------------------|---------------------|----------------|
+| WAV (current) | ~705 kbps (16-bit 44.1kHz) | ~440 KB | Native |
+| **OGG Opus** | **48 kbps** | **~30 KB** | **Native** |
+
+Opus at 48kbps speech quality is perceptually equivalent to much higher bitrate formats. The primary benefit is not bandwidth (local network) but **buffer size**: a 5-second audio chunk shrinks from ~440KB to ~30KB. This means:
+
+- **14x smaller Socket.IO binary payloads** -- faster delivery, less memory
+- **Faster `decodeAudioData()` calls** -- less data to process on main thread
+- **Smaller LRU cache footprint** -- 50 cached sentences use ~1.5MB instead of ~22MB
+
+### Backend: FFmpeg Encoding
+
+FFmpeg with `libopus` is already compiled on the host system (verified: FFmpeg 7.1.3 with `--enable-libopus`). Add it to the backend Docker image:
+
+**Dockerfile change (line 9):**
+```dockerfile
+# Change from:
+RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
+# To:
+RUN apt-get update && apt-get install -y --no-install-recommends wget ffmpeg && rm -rf /var/lib/apt/lists/*
+```
+
+**Encoding function:**
 ```typescript
-function safePath(basePath: string, requestedPath: string): string {
-  const resolved = path.resolve(basePath, requestedPath);
-  if (!resolved.startsWith(path.resolve(basePath))) {
-    throw new Error('Path traversal detected');
-  }
-  return resolved;
+import { spawn } from 'node:child_process';
+
+function wavToOpus(wavBuffer: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-f', 'wav', '-i', 'pipe:0',        // Input: WAV from stdin
+      '-c:a', 'libopus',                    // Codec: Opus
+      '-b:a', '48k',                        // Bitrate: 48kbps (excellent for speech)
+      '-ar', '48000',                        // Opus native sample rate
+      '-application', 'voip',                // Optimize for speech
+      '-f', 'ogg', 'pipe:1'                 // Output: OGG container to stdout
+    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    const chunks: Buffer[] = [];
+    ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
+    ffmpeg.stderr.on('data', () => {});      // Suppress FFmpeg stderr
+    ffmpeg.on('close', (code) => {
+      if (code === 0) resolve(Buffer.concat(chunks));
+      else reject(new Error(`FFmpeg opus encode failed (code ${code})`));
+    });
+    ffmpeg.on('error', reject);
+
+    ffmpeg.stdin.write(wavBuffer);
+    ffmpeg.stdin.end();
+  });
 }
 ```
 
-Allowed base directories should be configurable:
-- `/root/jarvis-backend/` -- backend source
-- `/root/jarvis-ui/` -- frontend source
-- `/opt/jarvis-tts/` -- TTS service
-- `/opt/jarvis/` -- Jarvis config
-- Additional paths via config
+Insert this after `synthesizeSentenceToBuffer()` collects the WAV buffer and before caching/emitting. The ~5-10ms encoding overhead is negligible compared to TTS synthesis time.
+
+### Browser: Zero Changes Required
+
+The existing `progressive-queue.ts` line 193 calls:
+```typescript
+const audioBuffer = await ctx.decodeAudioData(chunk.buffer.slice(0));
+```
+
+`AudioContext.decodeAudioData()` handles OGG Opus natively in all modern browsers (Chrome 94+, Firefox 133+, Safari 26+, Edge 94+). **No frontend code changes needed** -- just change the `contentType` from `audio/wav` to `audio/ogg` in the Socket.IO event.
+
+### Why FFmpeg over Native Node.js Opus Libraries
+
+| Option | Verdict | Reason |
+|--------|---------|--------|
+| **FFmpeg spawn** | **Use this** | Battle-tested, already on host with libopus, handles WAV parsing + OGG container. ~5-10ms overhead per sentence. |
+| `@discordjs/opus` v0.10.0 | Do not use | Raw Opus frames only (no OGG container), requires node-gyp C++ compilation in Docker, security CVE history |
+| `opus-encdec` | Do not use | Browser-focused WASM, limited Node.js support |
+| `node-opus` | Do not use | Unmaintained, no Node 22 support |
 
 ### What NOT to Add
 
-- **`glob` / `fast-glob` / `globby` (npm):** Node.js 22.17.0+ has stable `fs.glob()`. No third-party package needed for glob operations.
+- **`@discordjs/opus`** -- Native addons require node-gyp build in Docker. FFmpeg handles encoding without compilation.
+- **`opus-recorder` / `opus-encdec`** -- Browser-focused. The `opus-recorder` project is no longer maintained (maintainers recommend WebCodecs API).
+- **WebCodecs `AudioDecoder` setup on frontend** -- Over-engineered. `decodeAudioData` with OGG containers is simpler and already works.
 
-- **`chokidar` (file watcher):** We are building read/browse tools, not a live file watcher. Jarvis reads files on demand via MCP tool invocation. If real-time file watching is needed later (e.g., auto-detect project changes), chokidar v5.0.0 (ESM-only, Node 20+) would be the right choice -- but that is not in scope for v1.2.
+### Confidence: HIGH
 
-- **`tree-kill` / directory tree libraries:** A recursive `fs.readdir` with `withFileTypes: true` and a simple depth limit produces directory tree output. No library needed.
-
-- **AST parsing libraries (babel, acorn, typescript compiler API):** The project analysis feature uses LLM-based analysis, not AST parsing. We send source code to Claude/Qwen and get analysis back in natural language. AST parsing would be a different feature (automated refactoring, lint rules) that is not in scope.
-
-### Safety Classification
-
-| Tool | Tier | Rationale |
-|------|------|-----------|
-| `list_directory` | GREEN | Read-only directory listing |
-| `read_file` | GREEN | Read-only file content |
-| `search_files` | GREEN | Read-only glob search |
-| `get_file_info` | GREEN | Read-only metadata |
-| `read_file_lines` | GREEN | Read-only partial file read |
-
-### Integration Points
-
-```
-NEW: src/mcp/tools/project.ts        Project browsing MCP tools
-NEW: src/services/project-reader.ts   File reading with path safety enforcement
-Reuse: src/safety/tiers.ts           All tools are GREEN tier
-Reuse: src/safety/sanitize.ts        Path and input sanitization
-```
+- FFmpeg libopus verified on host: `ffmpeg -version` shows `--enable-libopus`
+- Browser `decodeAudioData` OGG Opus support verified via Can I Use and MDN
+- The `child_process.spawn` FFmpeg pattern is well-established
 
 ---
 
-## 3. Project Analysis
+## 3. List Virtualization -- Chat Panel Performance
 
-### Recommendation: Existing Claude API + System Prompt Engineering
+### Recommendation
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| `@anthropic-ai/sdk` | ^0.71.2 (existing) | LLM-powered code analysis | **No new dependency.** Claude already handles tool execution via the agentic loop in `loop.ts`. Project analysis is a prompt engineering task: read files with GREEN-tier tools, then ask Claude to analyze them. Claude's 200K context window handles large codebases. | HIGH |
-| `openai` | ^6.16.0 (existing) | Local LLM fallback for simpler analysis | **No new dependency.** Local Qwen 2.5 7B can handle simpler analysis tasks (file summaries, basic code review) within its 4K context window. Route to Claude for deep analysis, local for summaries. | HIGH |
+| Technology | Version | Package |
+|------------|---------|---------|
+| `@tanstack/react-virtual` | ^3.13.18 | `npm i @tanstack/react-virtual` |
 
-### Analysis Capabilities (All Prompt-Driven)
+### Why @tanstack/react-virtual (NOT react-window)
 
-These are composite MCP tools that combine file reading with LLM analysis:
+The original question asked about `react-window`. After research, `@tanstack/react-virtual` is the better choice:
 
-1. **`analyze_project`** -- Read project structure + key files -> LLM summarizes architecture
-2. **`review_code`** -- Read specific file(s) -> LLM identifies issues, suggests improvements
-3. **`explain_code`** -- Read file -> LLM explains what the code does
-4. **`suggest_improvements`** -- Read project -> LLM suggests architectural improvements
+| Criterion | react-window 2.2.5 | @tanstack/react-virtual 3.13.18 |
+|-----------|---------------------|-------------------------------|
+| Weekly downloads | ~4.1M | ~7.4M (more popular) |
+| API style | Component-based (`<VariableSizeList>`) | Hooks-based (`useVirtualizer`) |
+| Dynamic heights | Manual: measure + `resetAfterIndex()` | Built-in: `measureElement` ref callback |
+| Chat UX | Difficult for dynamic content | Better: headless, full layout control |
+| React 19 | Not tested | Actively maintained, tested |
+| Bundle size | ~6KB gzipped | ~10KB gzipped |
+
+**Critical factor for chat:** Chat messages have variable heights (short text, code blocks, tool results, markdown). `react-window`'s `VariableSizeList` requires pre-computed heights or manual measurement with `resetAfterIndex()` -- a [well-documented pain point](https://github.com/bvaughn/react-window/issues/190) with 190+ comments. `@tanstack/react-virtual` handles this natively via `measureElement`.
+
+### Integration with ChatPanel.tsx
+
+The current `ChatPanel.tsx` renders all messages in a scrolling `div` (lines 113-139). With virtualization:
+
+```tsx
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+const parentRef = useRef<HTMLDivElement>(null);
+
+const virtualizer = useVirtualizer({
+  count: messages.length,
+  getScrollElement: () => parentRef.current,
+  estimateSize: () => 80,
+  overscan: 5,
+});
+
+// In render:
+<div ref={parentRef} className="flex-1 min-h-0 overflow-y-auto">
+  <div style={{ height: virtualizer.getTotalSize() }}>
+    {virtualizer.getVirtualItems().map((vItem) => (
+      <div key={vItem.key} ref={virtualizer.measureElement} data-index={vItem.index}>
+        <ChatMessage message={messages[vItem.index]} ... />
+      </div>
+    ))}
+  </div>
+</div>
+```
+
+### Priority Assessment
+
+Virtualization is only impactful when the message list grows large (100+ messages in a session). For v1.5's primary goal of latency reduction, this is a **lower priority optimization**. Recommend:
+
+- **Include in v1.5 scope** if a "UI performance" phase exists.
+- **Defer** if phases focus exclusively on TTS/audio latency.
+
+### What NOT to Add
+
+- **`react-window`**: Worse dynamic height support for chat messages.
+- **`react-virtuoso`**: Good alternative but heavier (~20KB), less popular.
+- **`react-virtualized`**: Legacy predecessor, unmaintained.
+
+### Confidence: HIGH
+
+- Version 3.13.18 verified on [npm](https://www.npmjs.com/package/@tanstack/react-virtual) (published 2026-01-16)
+- Dynamic height `measureElement` API verified via [TanStack Virtual docs](https://tanstack.com/virtual/latest)
+
+---
+
+## 4. Web Workers for Audio Decoding
+
+### Recommendation: DEFER -- Not Needed for v1.5
+
+### Critical Finding
+
+**`AudioContext` and `OfflineAudioContext` are NOT available inside Web Workers** as of January 2026. This is an [open feature request](https://github.com/WebAudio/web-audio-api-v2/issues/16) in the Web Audio API v2 specification. The main `decodeAudioData()` call that converts audio buffers to playable `AudioBuffer` objects **must run on the main thread**.
+
+### What IS Possible in Workers
+
+| Operation | Available in Worker? | Notes |
+|-----------|---------------------|-------|
+| Transfer `ArrayBuffer` (Transferable) | Yes | Zero-copy transfer |
+| Parse WAV/OGG headers | Yes | Manual byte parsing |
+| `AudioContext.decodeAudioData()` | **No** | Main thread only |
+| WebCodecs `AudioDecoder` | Yes (Chrome, Edge, Firefox) | Not Safari < 26.1 |
+| `AudioWorklet` processing | Yes (during playback) | Not for decoding |
+
+### Why Deferral is the Right Choice
+
+With the Opus codec switch, audio chunks shrink from ~440KB to ~30KB per sentence. The `decodeAudioData()` call for a 30KB OGG Opus buffer takes ~1-3ms on the main thread -- well below the 16ms frame budget. The bottleneck is TTS synthesis time (seconds), not audio decoding (milliseconds).
+
+If profiling later shows `decodeAudioData` blocking the main thread (unlikely with Opus-sized buffers), the path forward would be:
+1. Use WebCodecs `AudioDecoder` in a Worker (available in Chrome/Edge/Firefox)
+2. Transfer decoded PCM data back to main thread as `Float32Array` (Transferable)
+3. Create `AudioBuffer` from PCM on main thread
+
+But this adds complexity for a problem that likely does not exist after the Opus switch.
+
+### What NOT to Add
+
+- **`standardized-audio-context`** polyfill -- Not needed. All target browsers support AudioContext natively.
+- **Custom WASM Opus decoder in Worker** -- Over-engineered. Native `decodeAudioData` handles OGG Opus.
+- **`audio-worklet-polyfill`** -- Only needed for Safari < 14.1. Not relevant.
+
+### Confidence: HIGH
+
+- AudioContext Worker limitation verified via [Web Audio API v2 spec discussion](https://github.com/WebAudio/web-audio-api-v2/issues/16)
+- WebCodecs Worker availability verified via [MDN](https://developer.mozilla.org/en-US/docs/Web/API/AudioDecoder)
+
+---
+
+## 5. SQLite WAL Mode & Performance PRAGMAs
+
+### Status: WAL Already Enabled -- Add Additional PRAGMAs
+
+The current codebase at `/root/jarvis-backend/src/db/index.ts` line 15 already has `sqlite.pragma('journal_mode = WAL')`. No new dependencies needed. Add these additional PRAGMAs for v1.5 performance:
+
+```typescript
+const sqlite: DatabaseType = new Database(config.dbPath);
+
+// Performance tuning (add these after the existing WAL line)
+sqlite.pragma('journal_mode = WAL');          // EXISTING
+sqlite.pragma('synchronous = NORMAL');        // NEW: Safe with WAL, ~2x write speed
+sqlite.pragma('cache_size = -64000');         // NEW: 64MB cache (default ~2MB)
+sqlite.pragma('foreign_keys = ON');           // NEW: Data integrity
+sqlite.pragma('temp_store = MEMORY');         // NEW: Temp tables in memory
+sqlite.pragma('mmap_size = 268435456');       // NEW: 256MB memory-mapped I/O
+```
+
+**Rationale for each:**
+
+| PRAGMA | Default | New Value | Why |
+|--------|---------|-----------|-----|
+| `synchronous` | FULL | NORMAL | With WAL, NORMAL provides crash safety against app crashes (not OS crashes). For a homelab dashboard, acceptable tradeoff for ~2x write speed. |
+| `cache_size` | ~2MB | 64MB | Home node has 24GB RAM. More cache = fewer disk reads for repeated chat history queries. |
+| `foreign_keys` | OFF | ON | Enforces referential integrity. Small overhead, big safety. |
+| `temp_store` | DEFAULT (disk) | MEMORY | Temp tables and indices in memory. Faster for complex queries. |
+| `mmap_size` | 0 | 256MB | Memory-mapped I/O for read-heavy workloads. Chat history reads benefit. |
+
+### WAL Checkpoint Management
+
+Add periodic checkpoint to prevent WAL file growth:
+
+```typescript
+setInterval(() => {
+  try { sqlite.pragma('wal_checkpoint(PASSIVE)'); }
+  catch { /* non-critical */ }
+}, 300_000).unref(); // Every 5 minutes
+```
+
+### Drizzle ORM Note
+
+Drizzle ORM does NOT have a built-in `onOpen` or pragma API. The current pattern of setting PRAGMAs on the raw `better-sqlite3` instance before passing to `drizzle()` is the [recommended approach](https://github.com/drizzle-team/drizzle-orm/issues/4968).
+
+### No New Dependencies
+
+All uses existing `better-sqlite3` v12.6.2 API.
+
+### Confidence: HIGH
+
+- Current implementation verified by reading `/root/jarvis-backend/src/db/index.ts`
+- PRAGMA recommendations verified via [better-sqlite3 performance docs](https://github.com/WiseLibs/better-sqlite3/blob/master/docs/performance.md)
+
+---
+
+## 6. Latency Tracing
+
+### Recommendation: Native `performance.now()` -- No Libraries
+
+| Option | Verdict | Reason |
+|--------|---------|--------|
+| **`performance.now()` / `perf_hooks`** | **Use this** | Built-in Node.js 22, sub-millisecond resolution, zero overhead |
+| OpenTelemetry | Overkill | Designed for distributed microservices, not a 3-container homelab stack |
+| `pino` structured logging | Consider later | Good for production observability but adds dependency for a feature that only needs timing |
+| Datadog / New Relic | Wrong tool | Cloud SaaS, wrong for self-hosted homelab |
 
 ### Implementation Pattern
 
-Analysis tools are NOT standalone MCP tools. They are **composite operations** that:
-1. Use GREEN-tier file reading tools to gather source code
-2. Build a structured prompt with the gathered code
-3. Send to Claude (or local LLM for simple tasks) for analysis
-4. Return the LLM's analysis as the tool result
+**Server-side (chat.ts):**
 
-This means analysis tools are really just **specialized system prompts** + **file reading orchestration**. No new libraries needed.
+```typescript
+import { performance } from 'node:perf_hooks';
 
-### What NOT to Add
+// In handleSend():
+const t0 = performance.now();
+let firstTokenMs = 0;
+let firstAudioMs = 0;
 
-- **`tree-sitter` / AST parsing:** LLM-based analysis does not need AST parsing. Claude understands code directly from source text. AST parsing would be needed for automated code modification (not in scope).
+callbacks.onTextDelta = (text) => {
+  if (!firstTokenMs) firstTokenMs = Math.round(performance.now() - t0);
+  // ... existing logic
+};
 
-- **`eslint` / `prettier` (as libraries):** These are linting/formatting tools, not analysis tools. If the user wants lint results, they can run them via `execute_ssh`. We do not embed them in the backend.
+// In drainTtsQueue(), after first audio chunk emitted:
+if (item.index === 0) firstAudioMs = Math.round(performance.now() - t0);
 
-- **Code embedding / vector DB (ChromaDB, Pinecone, etc.):** Semantic code search via embeddings is premature. For a 4-node homelab with ~24 projects, reading files directly and sending to the LLM is fast and simple. Vector search becomes relevant at 100K+ file scale.
-
-- **LangChain:** Unnecessary abstraction for what amounts to "read files, build prompt, call Claude."
-
-### Safety Classification
-
-| Tool | Tier | Rationale |
-|------|------|-----------|
-| `analyze_project` | GREEN | Read-only analysis, no side effects |
-| `review_code` | GREEN | Read-only analysis |
-| `explain_code` | GREEN | Read-only analysis |
-| `suggest_improvements` | GREEN | Read-only analysis |
-
-### Integration Points
-
+// In onDone:
+socket.emit('chat:latency_trace', {
+  sessionId,
+  llmFirstTokenMs: firstTokenMs,
+  ttsFirstAudioMs: firstAudioMs,
+  totalMs: Math.round(performance.now() - t0),
+  ttsProvider: lastTtsProvider, // 'xtts' or 'piper'
+  sentenceCount: audioChunkIndex,
+});
 ```
-NEW: src/mcp/tools/analysis.ts       Analysis MCP tool definitions
-NEW: src/services/code-analysis.ts   Prompt construction + LLM routing for analysis
-Reuse: src/services/project-reader.ts  File reading (from section 2)
-Reuse: src/ai/claude.ts              Claude API client
-Reuse: src/ai/local-llm.ts           Local LLM for simpler analysis
-Reuse: src/ai/loop.ts                Agentic loop handles tool chaining
+
+**Client-side (useChatSocket.ts):**
+
+```typescript
+// Standard browser API
+const sendTime = performance.now();
+
+socket.on('chat:audio_chunk', (data) => {
+  if (data.index === 0) {
+    const firstAudioLatencyMs = Math.round(performance.now() - sendTime);
+    // Display in UI or store in Zustand
+  }
+});
 ```
+
+### Trace Data Structure
+
+```typescript
+interface LatencyTrace {
+  sessionId: string;
+  llmFirstTokenMs: number;     // Request -> first LLM token
+  ttsFirstAudioMs: number;     // Request -> first audio chunk emitted
+  totalMs: number;             // Request -> audio_done
+  ttsProvider: 'xtts' | 'piper'; // Which TTS served first audio
+  sentenceCount: number;        // Total sentences synthesized
+}
+```
+
+### No New Dependencies
+
+Uses `performance.now()` from built-in `node:perf_hooks` (server) and `window.performance.now()` (browser).
+
+### Confidence: HIGH
+
+- Native APIs, fully supported in Node.js 22 and all modern browsers
 
 ---
 
-## 4. Voice Retraining (Audio from Video)
+## 7. Health Check Endpoint -- Multi-Service Aggregation
 
-### Recommendation: Node.js Orchestration + Python Processing in TTS Container
+### Recommendation: Extend Existing Endpoint -- No Libraries
 
-The voice retraining pipeline has two halves:
-1. **Node.js backend (orchestration):** Download video, extract audio, manage files
-2. **Python TTS container (processing):** Segment audio, prepare dataset, retrain model
+The existing `/api/health` endpoint at `/root/jarvis-backend/src/api/health.ts` returns basic uptime/version info. Extend it with parallel dependency checks.
 
-| Technology | Version | Purpose | Where | Why | Confidence |
-|------------|---------|---------|-------|-----|------------|
-| Built-in `child_process` | Node.js 22 | Run `yt-dlp` and `ffmpeg` on host | Backend | Download video and extract audio. Same pattern as Section 1. | HIGH |
-| Built-in `child_process` | Node.js 22 | Run `docker exec` commands | Backend | Trigger Python scripts inside the TTS container for dataset preparation and retraining. Uses `execFile('docker', ['exec', 'jarvis-tts', 'python3', '/training/prepare_dataset.py', ...])`. | HIGH |
-| `pydub` | >=0.25.1 | Audio segmentation + silence detection | TTS container (Python) | Split extracted audio on silence boundaries to create clean training clips. `split_on_silence()` with configurable thresholds. Simple, well-established, works well for the clip sizes needed (3-15 seconds). Already has `ffmpeg` in the container as a backend. | HIGH |
-| Existing `librosa` | 0.11.0 | Audio analysis (quality checks) | TTS container (Python) | Already installed. Use for sample rate verification, loudness analysis, clip duration validation before adding to training dataset. | HIGH |
-| Existing `scipy` | 1.17.0 | Audio resampling | TTS container (Python) | Already installed and used in the TTS server for speed adjustment. Reuse for resampling extracted audio to 22050Hz (XTTS v2 input rate). | HIGH |
-| Existing `torchaudio` | 2.2.2+cpu | Audio loading/transforms | TTS container (Python) | Already installed. Can load various audio formats and handle format conversion. | HIGH |
+### Enhanced Health Response
 
-### New Python Script: `prepare_dataset.py`
+```typescript
+interface ServiceHealth {
+  name: string;
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  latencyMs: number;
+  detail?: string;
+}
 
-A new Python script added to `/opt/jarvis-tts/training/` that:
-1. Takes extracted audio files as input
-2. Segments on silence using pydub
-3. Filters clips by duration (3-15 seconds for XTTS v2)
-4. Normalizes volume (pydub's `normalize()` or ffmpeg `loudnorm`)
-5. Resamples to 22050Hz mono WAV
-6. Generates `metadata.csv` in LJSpeech format (required by existing `finetune_xtts.py`)
-7. Outputs cleaned clips to `/training/dataset/`
-
-### New Python Script: `transcribe_clips.py` (Optional but Recommended)
-
-For voice training, each audio clip needs a text transcription in `metadata.csv`. Options:
-
-| Approach | Library | Where | Pros | Cons |
-|----------|---------|-------|------|------|
-| **Local whisper.cpp** | `nodejs-whisper` (npm) or direct binary | Host | Free, private, offline | Requires ~1GB model download, slow on CPU |
-| **Local Whisper Python** | `faster-whisper` (pip) | TTS container | Faster than whisper.cpp, Python native | Adds ~1.5GB to container (model + CTranslate2) |
-| **OpenAI Whisper API** | `openai` (existing npm) | Backend | Fast, accurate, simple | Costs money per minute of audio |
-| **Manual** | None | User | Free | Tedious for large datasets |
-
-**Recommendation: `faster-whisper` inside the TTS container.** Rationale:
-- The container already has PyTorch, torchaudio, and heavy ML deps. Adding faster-whisper (~200MB without model, model downloaded on first use) is incremental cost.
-- Transcription is a batch operation (run once per training batch), not latency-sensitive.
-- Keeps everything self-hosted (no API costs for potentially hours of audio).
-- The `base` or `small` model (74MB-244MB) is sufficient for clean single-speaker English audio.
-
-| Technology | Version | Purpose | Where | Why | Confidence |
-|------------|---------|---------|-------|-----|------------|
-| `faster-whisper` | >=1.1.0 | Local speech-to-text for training transcripts | TTS container (Python) | CTranslate2-optimized Whisper. 4x faster than original Whisper on CPU. Produces word-level timestamps. Needed for automatic transcription of training clips to populate `metadata.csv`. | MEDIUM (not yet verified in container, but well-established library) |
-
-### Pipeline Overview
-
-```
-User triggers "retrain voice from video URL" via UI
-  |
-  v
-[Node.js Backend - MCP Tool]
-  1. download_media(url) -> /tmp/jarvis-training/raw_video.mp4
-  2. Extract audio: ffmpeg -i video.mp4 -ar 22050 -ac 1 audio.wav
-  3. Copy audio to TTS container volume: /training/input/
-  |
-  v
-[Python TTS Container]
-  4. prepare_dataset.py:
-     - Split on silence (pydub)
-     - Filter by duration (3-15s)
-     - Normalize & resample (scipy/librosa)
-  5. transcribe_clips.py:
-     - Whisper transcription (faster-whisper)
-     - Generate metadata.csv
-  6. compute_speaker_embedding.py (existing)
-  7. finetune_xtts.py (existing)
-  |
-  v
-[Node.js Backend]
-  8. Notify user via Socket.IO when training complete
-  9. Trigger TTS container restart to load new weights
+interface HealthResponse {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  timestamp: string;
+  uptime: number;
+  version: string;
+  services: ServiceHealth[];
+  ttsReliability: {
+    primary: 'xtts';
+    fallback: 'piper';
+    activeTtsProvider: string;
+  };
+}
 ```
 
-### Dockerfile Changes for TTS Container
+### Services to Check (Parallel)
 
-Add to `/opt/jarvis-tts/Dockerfile`:
+| Service | Check Endpoint | Critical? | Timeout |
+|---------|---------------|-----------|---------|
+| LLM (llama-server) | `http://192.168.1.50:8080/health` | Yes | 3s |
+| XTTS TTS | `http://jarvis-tts:5050/health` | No (Piper fallback) | 3s |
+| Piper TTS | `http://jarvis-piper:5000/voices` | No (XTTS primary) | 2s |
+| SQLite DB | Sync PRAGMA check | Yes | 1s |
+
+### Aggregation Logic
+
+```
+All critical healthy + any TTS healthy = "healthy"
+All critical healthy + no TTS healthy  = "degraded"
+Any critical unhealthy                  = "unhealthy"
+```
+
+### Implementation
+
+```typescript
+async function checkService(name: string, url: string, timeoutMs: number): Promise<ServiceHealth> {
+  const start = performance.now();
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    return {
+      name,
+      status: res.ok ? 'healthy' : 'degraded',
+      latencyMs: Math.round(performance.now() - start),
+    };
+  } catch {
+    return {
+      name,
+      status: 'unhealthy',
+      latencyMs: Math.round(performance.now() - start),
+      detail: 'Unreachable',
+    };
+  }
+}
+
+// All checks run in parallel
+const services = await Promise.all([
+  checkService('llm', `${config.localLlmEndpoint}/health`, 3000),
+  checkService('xtts', `${config.localTtsEndpoint}/health`, 3000),
+  checkService('piper', `${config.piperTtsEndpoint}/voices`, 2000),
+  checkSqlite(),
+]);
+```
+
+### Docker Healthcheck Compatibility
+
+The existing Docker HEALTHCHECK uses `wget --spider -q http://localhost:4000/api/health`. The enhanced endpoint still returns HTTP 200 when healthy/degraded (TTS down but LLM up). Returns HTTP 503 only when critical services are down. Drop-in compatible.
+
+### No New Dependencies
+
+Uses `fetch()` (built into Node.js 22), `AbortSignal.timeout()` (built-in), `Promise.all` for parallelism.
+
+### Confidence: HIGH
+
+- Pattern verified via [Node.js Reference Architecture health checks](https://nodeshift.dev/nodejs-reference-architecture/operations/healthchecks/)
+- Existing endpoint code reviewed
+
+---
+
+## Conversation Sliding Window
+
+### Recommendation: No Library -- Implement in chat.ts
+
+The existing `chat.ts` already has `config.chatHistoryLimit` (default 20) and `config.qwenHistoryLimit` (default 10) for context window management. The conversation sliding window for v1.5 is a refinement of this existing pattern:
+
+1. **Token-aware truncation** -- Count tokens (approximate: `text.length / 4`) instead of message count.
+2. **Priority retention** -- Keep system message + last N user/assistant pairs + tool results from current session.
+3. **Summarization trigger** -- When history exceeds budget, summarize older messages into a compact block.
+
+No external tokenizer library needed. The existing `config.qwenContextWindow` (4096) and `config.memoryContextTokenBudget` (600) already define the budget. Character-based approximation (`length / 4`) is sufficient for a 7B local model.
+
+### What NOT to Add
+
+- **`tiktoken`** (OpenAI tokenizer) -- Only accurate for GPT models. Qwen uses a different tokenizer. Character approximation is adequate.
+- **`@anthropic-ai/tokenizer`** -- Only for Claude. Not relevant for local LLM context management.
+- **LangChain memory modules** -- Over-abstraction for a straightforward sliding window.
+
+### Confidence: HIGH
+
+- Existing code reviewed at `/root/jarvis-backend/src/realtime/chat.ts` lines 132-149
+
+---
+
+## Complete v1.5 Dependency Summary
+
+### New Docker Container
+
+| Container | Base Image | Purpose | Resources |
+|-----------|------------|---------|-----------|
+| `jarvis-piper` | `python:3.11-slim` + `piper-tts[http]==1.3.0` | Fast TTS fallback | 1G RAM, 4 CPUs max |
+
+### Backend Dockerfile Change
+
 ```dockerfile
-# Add pydub for audio segmentation
-RUN pip install --no-cache-dir pydub>=0.25.1
-
-# Add faster-whisper for automatic transcription
-RUN pip install --no-cache-dir faster-whisper>=1.1.0
+# Line 9: Add ffmpeg for Opus encoding
+RUN apt-get update && apt-get install -y --no-install-recommends wget ffmpeg && rm -rf /var/lib/apt/lists/*
 ```
 
-These are pip additions to the existing container, not a new container.
+### Backend npm: No New Packages
 
-### What NOT to Add
+All backend features use Node.js 22 built-ins:
+- `child_process.spawn` for FFmpeg Opus encoding
+- `performance.now()` for latency tracing
+- `fetch()` + `AbortSignal.timeout()` for health checks
 
-- **`fluent-ffmpeg` (npm):** Archived May 2025. Use direct `child_process.execFile('ffmpeg', [...])` invocation.
+### Frontend npm (Optional)
 
-- **Separate transcription service / container:** Running whisper in its own container adds Docker orchestration complexity. The TTS container already has all ML dependencies. Keep it consolidated.
-
-- **`pyannote` (VAD):** Deep-learning voice activity detection is overkill for clean single-speaker training audio. pydub's `split_on_silence` with tuned thresholds is sufficient and uses no GPU.
-
-- **Browser-based whisper (whisper.js / @xenova/transformers):** WASM-based inference is 10-50x slower than native. We have a Python container with proper ML support. Use it.
-
-- **`nodejs-whisper` / `whisper-node` (npm):** These are Node.js bindings for whisper.cpp. While they work, the TTS container already has Python + PyTorch + torchaudio. Adding faster-whisper to that environment is the natural choice -- no need to compile whisper.cpp on the host.
-
-### Safety Classification
-
-| Tool | Tier | Rationale |
-|------|------|-----------|
-| `list_training_data` | GREEN | Read-only listing of training clips |
-| `prepare_training_data` | RED | Runs processing pipeline, writes files |
-| `start_voice_training` | RED | Starts GPU/CPU-intensive training job |
-| `get_training_status` | GREEN | Read-only training progress check |
-
-### Integration Points
-
+```bash
+# Only if adding chat virtualization:
+cd /root/jarvis-ui && npm install @tanstack/react-virtual
 ```
-NEW: src/mcp/tools/voice.ts              Voice training MCP tools
-NEW: src/services/voice-training.ts       Orchestration: download, extract, trigger container
-Reuse: src/services/download.ts           File download (from Section 1)
-Reuse: src/services/media-probe.ts        ffprobe metadata (from Section 1)
 
-NEW (Python): /opt/jarvis-tts/training/prepare_dataset.py    Audio segmentation + normalization
-NEW (Python): /opt/jarvis-tts/training/transcribe_clips.py   Whisper transcription for metadata.csv
-UPDATE: /opt/jarvis-tts/Dockerfile                           Add pydub + faster-whisper
+### New Config Values (.env)
+
+```bash
+# Piper TTS fallback
+PIPER_TTS_ENDPOINT=http://jarvis-piper:5000    # NEW: Piper HTTP server URL
+
+# TTS fallback behavior
+TTS_XTTS_TIMEOUT_MS=8000                       # NEW: XTTS timeout before Piper fallback
+TTS_PIPER_TIMEOUT_MS=3000                       # NEW: Piper timeout
+TTS_OPUS_BITRATE=48k                            # NEW: Opus encoding bitrate
+
+# Latency tracing
+LATENCY_TRACE_ENABLED=true                      # NEW: Emit latency trace events
 ```
 
 ---
 
-## Complete v1.2 Installation Commands
+## What We Are NOT Adding (and Why)
 
-### Backend (`jarvis-backend/`)
-
-```bash
-# NO NEW NPM PACKAGES NEEDED for the backend.
-# All features use Node.js 22 built-in APIs:
-#   - fetch() for HTTP downloads
-#   - child_process for ffmpeg, yt-dlp, docker exec
-#   - fs/promises for file reading, directory listing
-#   - fs.glob() for pattern matching
-#   - path for safe path manipulation
-#
-# Existing packages already cover:
-#   - @anthropic-ai/sdk for Claude-powered code analysis
-#   - openai for local LLM analysis
-#   - node-ssh for remote file operations
-#   - zod for input validation
-```
-
-**Total: 0 new npm dependencies for the backend.**
-
-### TTS Container (`/opt/jarvis-tts/`)
-
-```bash
-# Inside the Docker container (add to Dockerfile):
-pip install pydub>=0.25.1
-pip install faster-whisper>=1.1.0
-```
-
-**Total: 2 new pip packages in the existing TTS container.**
-
-### Host System (already installed, verify only)
-
-```bash
-# Verify these are available (they already are on this host):
-ffmpeg -version    # 7.1.3 -- confirmed
-ffprobe -version   # 7.1.3 -- confirmed
-yt-dlp --version   # 2025.12.08 -- confirmed
-```
+| Technology | Reason Not to Add |
+|------------|-------------------|
+| `@discordjs/opus` | FFmpeg handles Opus encoding without native addon compilation |
+| `react-window` | `@tanstack/react-virtual` has better dynamic height support for chat |
+| Web Worker audio decode library | AudioContext not available in Workers; native decode is fast enough with Opus-sized buffers |
+| OpenTelemetry / tracing library | `performance.now()` is sufficient for homelab scale |
+| Health check npm package | `fetch` + `Promise.all` is simpler than any library |
+| `opus-recorder` / `opus-encdec` | Deprecated / browser-focused; not needed for server-side encoding |
+| `tiktoken` / tokenizer library | Character-based approximation is adequate for local LLM context |
+| `express-healthcheck` | Simple hand-rolled check is more maintainable than a middleware dependency |
 
 ---
 
-## New Config Values (`.env`)
-
-```bash
-# File operations
-FILE_DOWNLOAD_DIR=/tmp/jarvis-downloads      # NEW: temp download directory
-FILE_MAX_SIZE_MB=2048                        # NEW: max download size (2GB)
-FILE_ALLOWED_ROOTS=/root/jarvis-backend,/root/jarvis-ui,/opt/jarvis-tts,/opt/jarvis
-                                             # NEW: allowed directories for file browsing
-
-# Voice training
-TRAINING_INPUT_DIR=/opt/jarvis-tts/training/input    # NEW: raw audio staging
-TRAINING_MAX_AUDIO_MINUTES=60                        # NEW: max audio duration per batch
-WHISPER_MODEL=base                                   # NEW: whisper model size (base/small/medium)
-```
-
----
-
-## Alternatives Considered (v1.2 Specific)
+## Alternatives Considered
 
 | Category | Recommended | Alternative | Why Not |
 |----------|-------------|-------------|---------|
-| HTTP downloads | Built-in `fetch()` | `axios` / `got` / `node-fetch` | Node 22 fetch is stable, performant, zero deps |
-| Video downloads | `child_process` + yt-dlp | `ytdlp-nodejs` npm wrapper | Bundles own binary (30MB+), conflicts with host yt-dlp, unnecessary abstraction |
-| FFmpeg integration | `child_process.execFile()` | `fluent-ffmpeg` | Archived May 2025, unmaintained, broken with recent ffmpeg |
-| FFmpeg integration | `child_process.execFile()` | `@mmomtchev/ffmpeg` (N-API bindings) | Beta quality, native C++ bindings add compilation complexity, overkill for CLI invocation |
-| Glob/file search | Built-in `fs.glob()` | `glob` / `fast-glob` / `globby` | Node 22.17.0+ has stable native glob |
-| Directory listing | Built-in `fs.readdir({ recursive: true })` | `recursive-readdir` npm | Built-in handles this natively |
-| MIME detection | `path.extname()` + lookup table | `mime-types` / `file-type` npm | For download validation, extension-based detection is sufficient. Magic number detection (file-type) is overkill for our use case |
-| Code analysis | Claude API (existing) | Tree-sitter AST parsing | LLM understands code from source text; AST parsing is for automated transforms, not analysis |
-| Code analysis | Claude API (existing) | ESLint-as-library | Linting is not architectural analysis. Users can run linters via execute_ssh |
-| Audio segmentation | pydub (Python) | pyAudioAnalysis | pydub is simpler, more widely used, sufficient for clean single-speaker audio |
-| Audio segmentation | pydub (Python) | ffmpeg silenceremove filter | ffmpeg's silence filter works but is harder to tune and debug. pydub gives per-segment control and duration filtering |
-| Transcription | faster-whisper (Python) | OpenAI Whisper API | Costs money; training may involve hours of audio. Self-hosted is free |
-| Transcription | faster-whisper (Python) | nodejs-whisper / whisper-node | TTS container already has Python ML stack. Adding whisper in Python is natural; whisper.cpp in Node is an extra build step |
-| File watching | Not needed (on-demand reads) | chokidar v5 | We read files when the user asks, not continuously. Watching is out of scope |
-
----
-
-## Version Pinning Strategy (v1.2 Additions)
-
-| Package | Pin Strategy | Reason |
-|---------|-------------|--------|
-| `pydub` | `>=0.25.1` | Stable, rarely updated (last major change was years ago). Floor pin is sufficient. |
-| `faster-whisper` | `>=1.1.0` | Active development. Floor pin allows getting bug fixes. CTranslate2 compatibility managed by pip resolver. |
-
-No npm version pins needed because there are zero new npm packages.
-
----
-
-## Architecture Summary (v1.2 One-Liner)
-
-v1.2 adds zero new npm dependencies: file operations use Node.js 22 built-ins (`fetch`, `fs.glob`, `child_process` for ffmpeg/yt-dlp), project analysis uses the existing Claude API, and voice retraining adds `pydub` + `faster-whisper` to the existing Python TTS container for audio segmentation and transcription.
+| TTS fallback | Piper TTS (self-built Docker) | Edge TTS (Microsoft) | Requires internet; defeats self-hosted purpose |
+| TTS fallback | Piper TTS | Bark / Tortoise TTS | Both are much slower than XTTS, defeating the fallback purpose |
+| Opus encoding | FFmpeg spawn | `@discordjs/opus` native addon | node-gyp compilation in Docker, raw frames only (no OGG container) |
+| Opus encoding | FFmpeg spawn | `opusenc` CLI | Extra binary to install; FFmpeg already includes libopus |
+| Browser Opus decode | Native `decodeAudioData` | WebCodecs `AudioDecoder` | Over-engineered; `decodeAudioData` handles OGG Opus natively |
+| Virtualization | `@tanstack/react-virtual` | `react-window` | Poor dynamic height support for chat messages |
+| Virtualization | `@tanstack/react-virtual` | `react-virtuoso` | Heavier (20KB), less popular |
+| Latency tracing | `performance.now()` | OpenTelemetry | Overkill for 3-container homelab stack |
+| Health aggregation | Hand-rolled `Promise.all` | `healthchecks-api` npm | Simple pattern; library adds unnecessary abstraction |
+| SQLite performance | Additional PRAGMAs | Switch to PostgreSQL | Massive overhaul for minimal benefit at homelab scale |
 
 ---
 
@@ -457,44 +679,59 @@ v1.2 adds zero new npm dependencies: file operations use Node.js 22 built-ins (`
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| `fluent-ffmpeg` temptation | LOW | Document clearly that it is archived. Direct `child_process` is the right approach. |
-| `fs.glob()` experimental warnings | NONE | Stable since Node 22.17.0. Verified on this host (22.22.0). |
-| `faster-whisper` model download on first use | LOW | First transcription job will take extra time (~2 min) to download the model. Document this. Model persists in Docker volume. |
-| TTS container rebuild needed | MEDIUM | Adding pip packages requires rebuilding the Docker image. Script the rebuild and document the process. Existing volumes preserve model weights. |
-| yt-dlp version drift | LOW | yt-dlp auto-updates via `yt-dlp -U`. Pin to specific version only if breaking changes observed. |
-| Large file downloads filling disk | MEDIUM | Enforce `FILE_MAX_SIZE_MB` limit. Clean up `/tmp/jarvis-downloads` on schedule. Use `node-cron` (already installed from v1.1) for periodic temp cleanup. |
+| Piper voice quality vs XTTS | LOW | Piper is fallback only; XTTS remains primary. Users hear Piper only when XTTS is slow/down. |
+| FFmpeg in Docker image size | LOW | `ffmpeg` adds ~80MB to the slim image. Acceptable for the encoding capability. |
+| Piper GPLv3 license | LOW | Piper runs in its own container. GPLv3 does not propagate to the Node.js backend or React frontend via HTTP API calls. |
+| `piper-tts` PyPI package freshness | LOW | v1.3.0 (July 2025) is 6 months old. The project is actively maintained under OHF-Voice. Monitor for v1.4+. |
+| OGG Opus browser decode edge cases | LOW | `decodeAudioData` is well-tested for OGG Opus. Fall back to WAV if decode fails (check error handler in `progressive-queue.ts` line 208). |
+| Docker Compose complexity (4 services now) | LOW | Clear service boundaries. Piper is optional -- backend works without it (just loses fallback). |
 
 ---
 
 ## Sources
 
-**Verified on host system (HIGH confidence):**
-- Node.js v22.22.0 -- `node --version` on host, `fs.glob()` and `fs.readdir({ recursive: true })` confirmed working
-- ffmpeg v7.1.3 -- `/usr/bin/ffmpeg -version` on host
-- yt-dlp v2025.12.08 -- `/usr/local/bin/yt-dlp --version` on host
-- ffmpeg v5.1.8 -- `docker exec jarvis-tts ffmpeg -version` in TTS container
-- librosa 0.11.0, scipy 1.17.0, torchaudio 2.2.2+cpu -- `docker exec jarvis-tts pip list` in TTS container
+### Piper TTS
+- [OHF-Voice/piper1-gpl GitHub](https://github.com/OHF-Voice/piper1-gpl) -- Current repository (original rhasspy/piper archived Oct 2025)
+- [Piper HTTP API docs](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_HTTP.md) -- REST endpoint specification
+- [piper-tts PyPI v1.3.0](https://pypi.org/project/piper-tts/) -- July 2025 release
+- [rhasspy/piper-voices HuggingFace](https://huggingface.co/rhasspy/piper-voices) -- Voice model downloads
+- [Piper voice samples](https://rhasspy.github.io/piper-samples/) -- Audio demos
+- [Inferless TTS model comparison](https://www.inferless.com/learn/comparing-different-text-to-speech---tts--models-part-2) -- Latency benchmarks
 
-**Verified via npm/web search (HIGH confidence):**
-- Node.js 22 built-in `fetch()` stable -- [Node.js docs](https://nodejs.org/en/learn/getting-started/fetch)
-- `fs.glob()` stable since 22.17.0 -- [Node.js 22.17.0 release notes](https://nodejs.org/en/blog/release/v22.17.0)
-- `fluent-ffmpeg` archived May 2025 -- [GitHub issue #1324](https://github.com/fluent-ffmpeg/node-fluent-ffmpeg/issues/1324), [npm](https://www.npmjs.com/package/fluent-ffmpeg)
-- `ffmpeg-static` v5.3.0 ships ffmpeg 6.1.1 -- [npm](https://www.npmjs.com/package/ffmpeg-static) (our host has 7.1.3, no need)
-- `ytdlp-nodejs` v2.3.4/3.3.9 -- [npm](https://www.npmjs.com/package/ytdlp-nodejs) (not recommended, see alternatives)
-- `child_process` best practices for ffmpeg -- [Node.js docs](https://nodejs.org/api/child_process.html)
+### Opus Audio
+- [Opus codec official](https://opus-codec.org/) -- Codec reference
+- [WebCodecs browser support](https://caniuse.com/webcodecs) -- Can I Use data
+- [Safari 26 WebCodecs](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/) -- Safari AudioDecoder support
+- [AudioDecoder MDN](https://developer.mozilla.org/en-US/docs/Web/API/AudioDecoder) -- WebCodecs API reference
 
-**Verified via web search (MEDIUM confidence):**
-- `pydub` silence detection for voice training -- [Snyk advisor](https://snyk.io/advisor/python/pydub/functions/pydub.silence.split_on_silence)
-- `faster-whisper` CPU transcription performance -- [GitHub](https://github.com/SYSTRAN/faster-whisper)
-- ffmpeg audio preprocessing pipeline for training -- [Mux guide](https://www.mux.com/articles/extract-audio-from-a-video-file-with-ffmpeg), [Google Cloud docs](https://cloud.google.com/speech-to-text/docs/optimizing-audio-files-for-speech-to-text)
+### List Virtualization
+- [@tanstack/react-virtual npm](https://www.npmjs.com/package/@tanstack/react-virtual) -- v3.13.18 (published 2026-01-16)
+- [TanStack Virtual docs](https://tanstack.com/virtual/latest) -- Official documentation
+- [react-window issue #190](https://github.com/bvaughn/react-window/issues/190) -- Dynamic height pain point
+- [npm trends comparison](https://npmtrends.com/@tanstack/react-virtual-vs-react-window) -- Download trends
 
-**Verified via codebase inspection (HIGH confidence):**
-- `jarvis-backend/package.json` -- current dependency list (no changes needed)
-- `jarvis-backend/src/mcp/tools/system.ts` -- MCP tool registration pattern
-- `jarvis-backend/src/safety/tiers.ts` -- safety tier classification pattern
-- `jarvis-backend/src/clients/ssh.ts` -- SSH execution via node-ssh (reusable for remote ops)
-- `/opt/jarvis-tts/Dockerfile` -- existing Python container with ffmpeg, PyTorch, TTS deps
-- `/opt/jarvis-tts/docker-compose.yml` -- existing Docker Compose with volume mounts
-- `/opt/jarvis-tts/app/server.py` -- existing TTS server architecture
-- `/opt/jarvis-tts/training/finetune_xtts.py` -- existing training pipeline (metadata.csv format)
-- `/opt/jarvis-tts/training/compute_speaker_embedding.py` -- existing speaker embedding computation
+### Web Workers + Audio
+- [Web Audio API v2 Worker support](https://github.com/WebAudio/web-audio-api-v2/issues/16) -- AudioContext in Workers proposal
+- [OfflineAudioContext MDN](https://developer.mozilla.org/en-US/docs/Web/API/OfflineAudioContext) -- Offline audio processing
+
+### SQLite Performance
+- [better-sqlite3 performance docs](https://github.com/WiseLibs/better-sqlite3/blob/master/docs/performance.md) -- WAL mode, PRAGMAs
+- [Drizzle ORM WAL issue #4968](https://github.com/drizzle-team/drizzle-orm/issues/4968) -- PRAGMA configuration pattern
+- [SQLite WAL documentation](https://sqlite.org/wal.html) -- Official reference
+
+### Health Checks
+- [Node.js Reference Architecture](https://nodeshift.dev/nodejs-reference-architecture/operations/healthchecks/) -- Health check best practices
+- [healthchecks-api npm](https://www.npmjs.com/package/healthchecks-api) -- Multi-service aggregation pattern (evaluated, not adopted)
+
+### Codebase Verification (HIGH confidence)
+- `/root/jarvis-backend/src/ai/tts.ts` -- Current TTS provider abstraction
+- `/root/jarvis-backend/src/config.ts` -- Current config structure
+- `/root/jarvis-backend/src/db/index.ts` -- WAL mode already enabled (line 15)
+- `/root/jarvis-backend/src/api/health.ts` -- Current health endpoint
+- `/root/jarvis-backend/src/realtime/chat.ts` -- Current streaming pipeline with TTS queue
+- `/root/jarvis-ui/src/audio/progressive-queue.ts` -- Current `decodeAudioData` usage (line 193)
+- `/root/jarvis-ui/src/components/center/ChatPanel.tsx` -- Current message rendering (lines 113-139)
+- `/root/docker-compose.yml` -- Current 3-service Docker Compose structure
+- `/root/jarvis-backend/Dockerfile` -- Current slim image with wget only
+- `/root/jarvis-backend/package.json` -- Current dependencies (better-sqlite3 v12.6.2, etc.)
+- `/root/jarvis-ui/package.json` -- Current frontend dependencies (React 19, Zustand 5, etc.)

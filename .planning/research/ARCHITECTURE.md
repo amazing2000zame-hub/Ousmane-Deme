@@ -1,1001 +1,1070 @@
-# Architecture Patterns: File Operations, Project Intelligence & Voice Retraining
+# Architecture Patterns: v1.5 Optimization & Latency Reduction
 
-**Domain:** MCP tool integration for file management, project analysis, and TTS voice pipeline
-**Researched:** 2026-01-26
-**Overall Confidence:** HIGH (verified against existing codebase -- every source file read and analyzed)
-
----
-
-## Existing Architecture (As-Built, Verified)
-
-The following is the precise current state from reading every source file in the codebase.
-
-### Current Module Map
-
-```
-jarvis-backend/src/
-  index.ts              -- Express 5 + HTTP server + Socket.IO bootstrap
-  config.ts             -- Centralized config from env vars
-
-  ai/
-    claude.ts           -- Anthropic SDK client singleton
-    local-llm.ts        -- OpenAI-compatible SSE streaming (Qwen)
-    loop.ts             -- Agentic tool-calling loop (streams + tool_use blocks)
-    router.ts           -- Intent-based LLM provider routing (keyword + entity + follow-up)
-    providers.ts        -- LLMProvider interface barrel
-    providers/
-      claude-provider.ts -- Claude provider implementation
-      qwen-provider.ts   -- Qwen provider implementation
-    system-prompt.ts    -- JARVIS personality + live cluster context injection
-    tools.ts            -- 18 Anthropic tool definitions (hardcoded for optimal descriptions)
-    tts.ts              -- TTS provider abstraction (local XTTS > ElevenLabs > OpenAI)
-    cost-tracker.ts     -- Token cost accumulation + daily budget enforcement
-    memory-extractor.ts -- Extract memories from conversations
-    memory-context.ts   -- Build memory context for LLM
-    memory-recall.ts    -- Recall relevant memories
-
-  mcp/
-    server.ts           -- McpServer instance + executeTool() pipeline
-                           Pipeline: sanitize -> checkSafety -> execute handler -> log
-    tools/
-      cluster.ts        -- 9 GREEN-tier read-only monitoring tools
-      lifecycle.ts      -- 6 RED/YELLOW-tier VM/CT start/stop/restart tools
-      system.ts         -- 3 YELLOW-tier operational tools (SSH, service restart, WOL)
-
-  safety/
-    tiers.ts            -- 4-tier ActionTier enum (GREEN/YELLOW/RED/BLACK) + checkSafety()
-    protected.ts        -- Protected resource guard (VMID 103, Docker daemon)
-    sanitize.ts         -- Input sanitization + command allowlist/blocklist
-    context.ts          -- Override context thread-local state
-
-  db/
-    index.ts            -- better-sqlite3 + Drizzle ORM init (WAL mode)
-    schema.ts           -- 6 tables: events, conversations, cluster_snapshots,
-                           preferences, memories, autonomy_actions
-    memory.ts           -- memoryStore API
-    memories.ts         -- Memory tier operations
-    migrate.ts          -- Schema migrations
-
-  clients/
-    proxmox.ts          -- ProxmoxClient class (REST over HTTPS:8006, API token auth)
-    ssh.ts              -- SSH connection pool (node-ssh, key-based, lazy connect)
-
-  monitor/              -- Tiered polling, state tracking, runbooks, guardrails
-  realtime/             -- Socket.IO: /cluster, /events, /chat, /terminal namespaces
-  api/                  -- Express routes: health, auth, memory, tools, monitor, cost, tts
-  auth/                 -- JWT sign/verify + login
-```
-
-### TTS Service (Separate Process)
-
-```
-/opt/jarvis-tts/
-  app/server.py         -- FastAPI XTTS v2 server (POST /synthesize, GET /health, GET /voices)
-  docker-compose.yml    -- Docker container config (port 5050, 8GB mem limit, 14 CPU limit)
-  Dockerfile            -- Python env with TTS, torch, torchaudio
-  voices/jarvis/        -- 10 reference WAV clips (22050Hz, mono, 16-bit PCM)
-  training/
-    dataset/
-      metadata.csv      -- LJSpeech-format: 10 entries with transcriptions
-      wavs/             -- Training audio clips
-    finetune_xtts.py    -- GPT decoder fine-tuning (6 epochs, lr=5e-6, batch=1)
-    compute_speaker_embedding.py -- Pre-compute speaker conditioning latents
-    extract_gpt_weights.py       -- Extract fine-tuned GPT weights from checkpoint
-    output/
-      jarvis_speaker.pth         -- Pre-computed speaker embedding
-      gpt_finetuned_weights.pth  -- Fine-tuned GPT decoder weights
-      mel_stats.pth              -- Mel normalization statistics
-  extract-voice.sh      -- Helper: extract audio clips from video via ffmpeg
-  prepare-audio.sh      -- Helper: convert audio to XTTS v2 format (22050Hz/mono/PCM)
-```
-
-### Current Tool Registration Pattern
-
-This is the critical integration pattern that new tools must follow:
-
-```
-1. Define handler in src/mcp/tools/<domain>.ts
-   - Export a registerXxxTools(server: McpServer) function
-   - Each tool: server.tool(name, description, zodSchema, handler)
-   - Handler returns { content: [{ type: 'text', text: ... }], isError?: boolean }
-
-2. Register in src/mcp/server.ts
-   - Import registerXxxTools
-   - Call registerXxxTools(mcpServer)
-   - The monkey-patched mcpServer.tool() captures handler references automatically
-
-3. Add safety tier in src/safety/tiers.ts
-   - Add entry to TOOL_TIERS record: toolName: ActionTier.GREEN/YELLOW/RED/BLACK
-
-4. Add Claude tool definition in src/ai/tools.ts
-   - Hardcoded Anthropic.Tool object with optimized description for Claude
-   - The confirmed parameter is NOT included (handled by safety pipeline)
-
-5. (If needed) Add sanitization in src/safety/sanitize.ts
-   - Add allowlist entries for new SSH commands
-   - Add blocklist entries for dangerous patterns
-
-6. (If needed) Update router in src/ai/router.ts
-   - Add keywords/patterns so the router sends relevant messages to Claude
-```
-
-### Current Data Flow: Tool Execution
-
-```
-User message -> chat.ts -> router.routeMessage() -> Claude provider
-     |
-     v
-Claude responds with tool_use block
-     |
-     v
-loop.ts processes tool_use:
-  1. getToolTier(name) -> GREEN/YELLOW/RED/BLACK
-  2. BLACK -> blocked, error returned to Claude
-  3. RED -> PendingConfirmation returned to frontend
-  4. GREEN/YELLOW -> executeTool()
-       |
-       v
-  mcp/server.ts executeTool():
-    1. Look up handler from toolHandlers Map
-    2. Sanitize string arguments (sanitizeInput)
-    3. checkSafety(name, args, confirmed, overrideActive)
-    4. Execute handler function
-    5. Log to memoryStore.saveEvent()
-    6. Return ToolResult with tier info
-```
+**Domain:** AI assistant voice pipeline optimization (existing system)
+**Researched:** 2026-01-27
+**Overall confidence:** HIGH (based on direct codebase reading + verified research)
 
 ---
 
-## New Feature Architecture: File Operations
+## Current Architecture (v1.4 Baseline)
 
-### What This Feature Does
+Understanding the existing system is critical before designing integration points. All v1.5 changes must fit within the modular monolith pattern already established.
 
-Enables Jarvis to perform file operations across the 4-node cluster:
-- Download files from any node to the user (via browser)
-- Import/upload files to specific node paths
-- List directory contents on any node
-- Read file contents from any node
-
-### Integration Strategy: SSH-Based, Not Agent-Based
-
-All file operations go through the existing SSH client (`clients/ssh.ts`). This is the correct approach because:
-- SSH is already established to all 4 nodes with key-based auth
-- The SSH pool handles connection lifecycle automatically
-- No new agent software needed on cluster nodes
-- File transfer via SSH (scp/sftp) is battle-tested
-- The `node-ssh` library already supports file transfer (putFile, getFile, putDirectory)
-
-Do NOT build a file agent that runs on each node. The SSH approach is simpler, uses existing infrastructure, and requires zero new deployment.
-
-### New Components
+### Component Map
 
 ```
-src/mcp/tools/files.ts      -- File operation MCP tools (4-6 tools)
-src/clients/ssh.ts           -- Extended with file transfer methods (getFile, putFile)
-src/api/files.ts             -- REST endpoint for file download streaming
++--------------------------+     +---------------------------+
+|   jarvis-frontend        |     |   jarvis-backend          |
+|   (Docker: nginx:80)     |     |   (Docker: Node.js:4000)  |
+|   React 19 + Vite 6      |     |   Express 5 + Socket.IO   |
+|                          |     |                           |
+|   stores/                |     |   ai/                     |
+|     chat.ts (Zustand)    |     |     tts.ts                |
+|     voice.ts             |     |     sentence-stream.ts    |
+|   audio/                 |     |     text-cleaner.ts       |
+|     progressive-queue.ts |     |     providers/             |
+|   hooks/                 |     |       claude-provider.ts  |
+|     useChatSocket.ts     |     |       qwen-provider.ts   |
+|     useVoice.ts          |     |   realtime/               |
+|                          |     |     chat.ts               |
++-------------|------------+     |     socket.ts             |
+              |                  |   db/                     |
+     Socket.IO (4 namespaces)    |     memory.ts             |
+              |                  |     memories.ts           |
+              |                  |   api/                    |
+              v                  |     health.ts             |
++---------------------------+    |     tts.ts (REST)         |
+|   jarvis-tts              |    +-------------|-------------+
+|   (Docker: Python:5050)   |                  |
+|   XTTS v2 + FastAPI       |        HTTP POST /synthesize
+|   CPU inference            |                  |
+|   24kHz WAV output         |                  v
++---------------------------+    +---------------------------+
+                                 |   llama-server            |
+                                 |   (systemd: port 8080)    |
+                                 |   Qwen 2.5 7B Q4_K_M      |
+                                 |   OpenAI-compatible API    |
+                                 +---------------------------+
 ```
 
-### Component: File Tools (`src/mcp/tools/files.ts`)
+### Current Voice Data Flow (Serial)
 
 ```
-Tools to register:
-
-1. list_directory (GREEN)
-   - Args: { node: string, path: string }
-   - Implementation: execOnNodeByName(node, `ls -la "${path}"`)
-   - Returns: Parsed directory listing with names, sizes, permissions, dates
-
-2. read_file (GREEN)
-   - Args: { node: string, path: string, lines?: number }
-   - Implementation: execOnNodeByName(node, `head -n ${lines} "${path}"`)
-   - Safety: Max 500 lines default, path sanitization
-   - Returns: File contents as text
-
-3. search_files (GREEN)
-   - Args: { node: string, path: string, pattern: string, type?: 'name' | 'content' }
-   - Implementation: execOnNodeByName(node, `find "${path}" -name "${pattern}"`)
-                 or: execOnNodeByName(node, `grep -rl "${pattern}" "${path}"`)
-   - Returns: List of matching file paths
-
-4. file_info (GREEN)
-   - Args: { node: string, path: string }
-   - Implementation: execOnNodeByName(node, `stat "${path}" && file "${path}"`)
-   - Returns: File metadata (size, type, permissions, modified date)
-
-5. download_file (YELLOW)
-   - Args: { node: string, path: string }
-   - Implementation: Uses node-ssh getFile to transfer to temp directory
-   - Returns: Download URL (temporary, served by Express)
-   - Note: YELLOW because it transfers data off-node
-
-6. write_file (RED)
-   - Args: { node: string, path: string, content: string, confirmed?: boolean }
-   - Implementation: Uses node-ssh putFile or echo via SSH
-   - Safety: RED tier, requires confirmation
-   - Blocklist: Cannot write to /etc/pve/*, /etc/ssh/*, system paths
+User sends message (voiceMode=true)
+    |
+    v
+[1] chat.ts: routeMessage() -> provider.chat() starts streaming
+    |
+    v
+[2] onTextDelta callback: tokens accumulate in SentenceAccumulator
+    |
+    v
+[3] SentenceAccumulator.drain(): detects sentence boundary (>20 chars + punct + whitespace)
+    |
+    v
+[4] onSentence callback: cleanTextForSpeech() -> push to ttsQueue[]
+    |
+    v
+[5] drainTtsQueue(): SERIAL processing, ONE request at a time
+    |  synthesizeSentenceToBuffer() -> LRU cache check -> synthesizeSpeech()
+    |  -> HTTP POST to jarvis-tts:5050/synthesize
+    |  -> Collect stream into Buffer (WAV, ~300KB-1.2MB per sentence)
+    |
+    v
+[6] socket.emit('chat:audio_chunk', { buffer, index, contentType })
+    |  Binary over Socket.IO (WAV data)
+    |
+    v
+[7] Frontend: useChatSocket.ts onAudioChunk -> queueAudioChunk()
+    |
+    v
+[8] progressive-queue.ts: sort by index, decodeAudioData(), play via AudioContext
+    |  SERIAL: source.onended -> playNextXttsChunk()
+    |
+    v
+[9] Audio plays through speakers
 ```
 
-### Safety Tier Assignments
-
-| Tool | Tier | Rationale |
-|------|------|-----------|
-| `list_directory` | GREEN | Read-only, equivalent to existing SSH `ls` |
-| `read_file` | GREEN | Read-only, equivalent to existing SSH `cat` |
-| `search_files` | GREEN | Read-only, equivalent to existing SSH `find/grep` |
-| `file_info` | GREEN | Read-only, equivalent to existing SSH `stat` |
-| `download_file` | YELLOW | Transfers data, creates temp file on backend |
-| `write_file` | RED | Modifies filesystem, requires confirmation |
-
-### Path Sanitization (Critical)
-
-File operations introduce **path traversal attacks** as a new threat vector. The existing `sanitizeInput()` strips control characters but does NOT validate filesystem paths.
-
-New sanitization needed in `src/safety/sanitize.ts`:
-
-```
-Path safety rules:
-1. Resolve and normalize path (collapse ../, ./, //)
-2. BLOCK paths starting with: /etc/pve/, /etc/ssh/, /etc/shadow, /proc/, /sys/
-3. BLOCK paths containing: ../ (after normalization this catches traversal)
-4. BLOCK absolute paths to sensitive locations (defined in a PROTECTED_PATHS list)
-5. MAX path length: 1024 characters
-6. Characters: alphanumeric, /, -, _, ., space only
-```
-
-The protected paths list should mirror the existing `PROTECTED_RESOURCES` pattern from `safety/protected.ts`:
-
-```
-New in protected.ts:
-  PROTECTED_PATHS = [
-    '/etc/pve/',         -- Cluster configuration
-    '/etc/ssh/',         -- SSH keys and config
-    '/etc/shadow',       -- Password hashes
-    '/etc/passwd',       -- User accounts (read OK but write blocked)
-    '/root/.ssh/',       -- SSH keys
-    '/opt/agent/.env',   -- Agent credentials
-  ]
-```
-
-### SSH Client Extension
-
-The existing `ssh.ts` exports `execOnNode()` and `execOnNodeByName()` for command execution. For file download, extend with:
-
-```
-New exports in ssh.ts:
-  getFileFromNode(nodeName: string, remotePath: string, localPath: string): Promise<void>
-  putFileToNode(nodeName: string, localPath: string, remotePath: string): Promise<void>
-```
-
-The `node-ssh` library already supports `getFile()` and `putFile()` on the SSH connection object. This is a thin wrapper.
-
-### File Download Flow
-
-```
-1. Claude calls download_file tool with { node, path }
-2. Handler validates path safety
-3. Handler calls getFileFromNode() -> saves to /tmp/jarvis-downloads/<uuid>-filename
-4. Handler returns JSON: { downloadUrl: "/api/files/download/<uuid>", filename, size }
-5. Claude presents the download link to the user
-6. User clicks link -> Express serves the file with proper Content-Disposition
-7. Cleanup: temp files deleted after 5 minutes (setTimeout or periodic cleanup)
-```
-
-New Express route needed:
-
-```
-GET /api/files/download/:id
-  - Validates id format (UUID)
-  - Serves file from temp directory with Content-Disposition: attachment
-  - Sets appropriate Content-Type based on file extension
-  - Deletes file after serving (or after TTL)
-```
-
-### Command Allowlist Updates
-
-The existing `sanitize.ts` has a COMMAND_ALLOWLIST for `execute_ssh`. File tools use `execOnNodeByName()` internally, which also goes through sanitization. The file tools should bypass the command allowlist since they construct commands internally (not from user input). Two approaches:
-
-**Option A (Recommended):** File tool handlers construct commands internally and call `execOnNode()` directly, bypassing `sanitizeCommand()`. The path validation in the tool handler itself provides safety.
-
-**Option B:** Add file-related prefixes to the allowlist (`cat`, `head`, `find`, `stat`, `file`, `grep`). But `cat` and `find` are already in the allowlist (`head`, `tail`, `stat` are present; `cat /sys` is present but generic `cat` is not).
-
-Recommendation: **Option A.** The file tools should own their own safety validation (path sanitization) rather than relying on the generic command allowlist. The command allowlist is designed for `execute_ssh` where the user provides the command. For file tools, the backend constructs the command from validated inputs.
-
-### Integration with Router
-
-Update `src/ai/router.ts` to route file-related messages to Claude:
-
-```
-New ENTITY_PATTERNS additions:
-  /\b(file|files|folder|directory|download|upload|import)\b/i
-  /\b(read|write|list|search|browse)\b/i  -- (some overlap with existing QUERY_KEYWORDS)
-
-New ACTION_KEYWORDS additions:
-  'download', 'upload', 'import'
-```
+**Current bottlenecks identified from code:**
+- Step 5: Serial TTS -- each sentence waits for the previous one to complete (8-15s per sentence on CPU)
+- Step 5: 20s timeout per sentence, no fallback engine
+- Step 6: WAV transfer over Socket.IO -- 300KB-1.2MB per sentence chunk
+- Step 8: `decodeAudioData()` runs on main thread, can cause jank during streaming
 
 ---
 
-## New Feature Architecture: Project Intelligence
+## Question 1: Where Does Piper TTS Fit?
 
-### What This Feature Does
+### Recommendation: Separate Docker Container + Backend Router
 
-Enables Jarvis to understand, browse, and analyze the 24+ projects across the cluster:
-- List all known projects with metadata
-- Read project structure (directory tree, key files)
-- Analyze project health (outdated deps, missing configs, Docker status)
-- Search across projects for code patterns
+**Confidence: HIGH** (based on Piper's HTTP API compatibility and existing architecture patterns)
 
-### Data Source: File Organizer Registry
+Piper should run as a **separate Docker container** alongside the existing XTTS container. The backend `tts.ts` module becomes a **TTS router** that chooses between engines.
 
-The existing File Organizer agent on agent1 (192.168.1.61) maintains a registry at:
-```
-/opt/cluster-agents/file-organizer/data/registry.json
-```
+#### Why Separate Container (Not Sidecar, Not Same Container)
 
-This registry contains 24 indexed projects with:
-- `id`: Unique identifier (node-path based)
-- `name`: Project name
-- `path`: Absolute path on the node
-- `node`: Which cluster node (home, pve, agent1)
-- `type`: Project type (node, python, docker-compose, docker, make)
-- `markers`: Detected marker files (package.json, Dockerfile, pyproject.toml, etc.)
-- `lastModified`: Last modification timestamp
-- `status`: active/stale
-- `version`: Package version (if detected)
+1. **Different runtimes**: XTTS requires Python 3.11 + PyTorch + CUDA/CPU libs (~4GB image). Piper is a lightweight C++ binary with ONNX runtime (~200MB image). Merging them would bloat the XTTS image and complicate builds.
 
-### Integration Strategy: Registry as Cache, SSH for Details
+2. **Independent scaling**: Piper can be resource-limited differently (needs ~1 CPU, ~256MB RAM vs XTTS at 4-14 CPUs, 4-16GB RAM).
 
-The registry provides a fast index for project discovery. For detailed operations (read files, analyze deps), use SSH to the project's node. This is a two-tier approach:
+3. **Independent health**: If XTTS OOM-crashes, Piper continues serving. If Piper has issues, XTTS is unaffected. This is the whole point of the fallback architecture.
 
-```
-Tier 1: Registry query (fast, cached)
-  - List all projects
-  - Filter by node, type, status
-  - Get project metadata
+4. **Existing pattern**: The project already uses separate containers (`jarvis-backend`, `jarvis-frontend`, `jarvis-tts`). Adding `jarvis-piper` follows the same pattern.
 
-Tier 2: SSH inspection (on-demand, slower)
-  - Read package.json, Dockerfile, etc.
-  - Run `npm outdated` or `pip list --outdated`
-  - Check Docker container status
-  - Read directory structure
-```
+#### Docker Compose Addition
 
-### New Components
+```yaml
+# New service in /root/docker-compose.yml
+jarvis-piper:
+  image: rhasspy/wyoming-piper:latest  # Official image with HTTP API on port 5000
+  container_name: jarvis-piper
+  restart: unless-stopped
+  security_opt:
+    - apparmor:unconfined
+  volumes:
+    - piper-data:/data
+  command: --voice en_US-lessac-medium
+  networks:
+    - jarvis-net
+  deploy:
+    resources:
+      limits:
+        cpus: "2"
+        memory: 512M
+      reservations:
+        cpus: "0.5"
+        memory: 128M
+  healthcheck:
+    test: ["CMD", "curl", "-sf", "http://localhost:5000/"]
+    interval: 15s
+    timeout: 3s
+    retries: 3
+    start_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: "5m"
+      max-file: "3"
 
-```
-src/mcp/tools/projects.ts     -- Project intelligence MCP tools (5-7 tools)
-src/clients/registry.ts        -- Registry client (fetch + cache from agent1)
-```
-
-### Component: Registry Client (`src/clients/registry.ts`)
-
-```
-Purpose: Fetch and cache the project registry from agent1
-
-Implementation:
-  - SSH to agent1, cat the registry.json file
-  - Parse and cache in-memory with 5-minute TTL
-  - Provide typed access to project data
-
-Interface:
-  getProjects(): Promise<Project[]>
-  getProjectById(id: string): Promise<Project | null>
-  getProjectsByNode(node: string): Promise<Project[]>
-  getProjectsByType(type: string): Promise<Project[]>
-  refreshRegistry(): Promise<void>  -- Force cache invalidation
+volumes:
+  piper-data:
+    driver: local
 ```
 
-Why a dedicated client instead of inline SSH calls:
-- Registry access is frequent (multiple tools reference it)
-- Caching avoids repeated SSH calls for the same data
-- Type safety for the registry schema
-- Single point of change if registry location moves
+**Key differences from XTTS container:**
+- `start_period: 30s` (Piper loads in <10s vs XTTS 300s)
+- `cpus: "2"`, `memory: 512M` (vs XTTS at 14 CPUs, 16GB)
+- No port exposure (internal network only)
+- The `rhasspy/wyoming-piper` image exposes HTTP on port 5000 when run with the `--voice` flag
 
-### Component: Project Tools (`src/mcp/tools/projects.ts`)
+#### Backend TTS Router Changes
 
-```
-Tools to register:
+**File: `/root/jarvis-backend/src/ai/tts.ts`**
 
-1. list_projects (GREEN)
-   - Args: { node?: string, type?: string }
-   - Implementation: Registry client query with optional filters
-   - Returns: Project list with name, node, type, path, lastModified
-
-2. get_project_details (GREEN)
-   - Args: { project: string }  -- project name or ID
-   - Implementation: Registry lookup + SSH to read key files
-   - Reads: package.json/pyproject.toml (name, version, deps count),
-            Dockerfile existence, docker-compose.yml existence,
-            .git status (branch, last commit)
-   - Returns: Rich project details
-
-3. get_project_structure (GREEN)
-   - Args: { project: string, depth?: number }
-   - Implementation: Registry lookup for path/node, then SSH `tree` or `find`
-   - Returns: Directory tree (limited depth, excludes node_modules/.git)
-
-4. read_project_file (GREEN)
-   - Args: { project: string, file: string }
-   - Implementation: Registry lookup for path/node, then SSH `cat`
-   - Safety: File path must be within project directory
-   - Returns: File contents
-
-5. analyze_project (GREEN)
-   - Args: { project: string }
-   - Implementation: Registry + SSH to gather:
-     - Package outdated status (npm outdated / pip list --outdated)
-     - Docker container running status
-     - Git status (uncommitted changes, ahead/behind)
-     - Disk usage
-   - Returns: Health report with findings
-
-6. search_project_code (GREEN)
-   - Args: { project: string, pattern: string }
-   - Implementation: Registry lookup, then SSH `grep -rn`
-   - Returns: Matching lines with file paths and line numbers
-```
-
-### Safety Tier Assignments
-
-All project tools are **GREEN** (read-only). The project tools never modify files. If the user wants to modify project files, they use the `write_file` tool from the file operations feature, which is RED tier.
-
-| Tool | Tier | Rationale |
-|------|------|-----------|
-| `list_projects` | GREEN | Read-only registry query |
-| `get_project_details` | GREEN | Read-only SSH + registry |
-| `get_project_structure` | GREEN | Read-only directory listing |
-| `read_project_file` | GREEN | Read-only file read within project bounds |
-| `analyze_project` | GREEN | Read-only health check commands |
-| `search_project_code` | GREEN | Read-only grep |
-
-### Project Path Containment
-
-The `read_project_file` tool must enforce that the requested file is within the project's directory. This prevents using project tools as a backdoor for arbitrary file access:
+The current `tts.ts` has a provider priority system (`local > elevenlabs > openai`) but only uses local XTTS in practice. The routing logic needs to become a **timeout-based fallback**:
 
 ```
-Validation:
-  1. Look up project from registry -> get project.path and project.node
-  2. Resolve requested file: path.resolve(project.path, file)
-  3. Verify resolved path starts with project.path
-  4. Block if traversal detected (resolved path escapes project root)
+synthesizeSentenceToBuffer(text)
+    |
+    [1] Check LRU sentence cache -> HIT? return cached audio
+    |
+    [2] Try XTTS (primary, best quality)
+    |   Timeout: 3 seconds (configurable via TTS_XTTS_TIMEOUT_MS)
+    |   Success? -> encode to Opus, cache result, return
+    |
+    [3] XTTS timeout/failure -> Try Piper (fallback, faster)
+    |   Timeout: 2 seconds (configurable via TTS_PIPER_TIMEOUT_MS)
+    |   Success? -> encode to Opus, cache result, return
+    |
+    [4] Both failed -> return null (skip audio for this sentence)
 ```
 
-### Integration with Existing File Tools
+**New config entries in `/root/jarvis-backend/src/config.ts`:**
 
-The project tools and file tools are complementary:
-- **Project tools** are scoped to known projects (safer, more context-aware)
-- **File tools** are general-purpose (any path on any node)
-- Claude can chain them: `list_projects` -> pick project -> `read_project_file` -> `analyze_project`
-
-### Integration with Router
-
-Update `src/ai/router.ts`:
-
-```
-New ENTITY_PATTERNS additions:
-  /\b(project|projects|repository|codebase)\b/i
-  /\b(jarvis-ui|jarvis-backend|jarvis-tts|proxmox-ui|file-organizer)\b/i
-  /\b(package\.json|dockerfile|docker-compose|requirements\.txt)\b/i
-
-New ACTION_KEYWORDS additions:
-  'analyze', 'outdated', 'dependencies'
+```typescript
+// Piper TTS fallback
+localPiperEndpoint: process.env.LOCAL_PIPER_ENDPOINT || 'http://jarvis-piper:5000',
+ttsXttsTimeoutMs: parseInt(process.env.TTS_XTTS_TIMEOUT_MS || '3000', 10),
+ttsPiperTimeoutMs: parseInt(process.env.TTS_PIPER_TIMEOUT_MS || '2000', 10),
 ```
 
----
+**New function in `tts.ts` -- `synthesizePiper()`:**
 
-## New Feature Architecture: Voice Retraining
-
-### What This Feature Does
-
-Provides tools for Jarvis to manage its own voice:
-- Extract audio clips from video files (for new training data)
-- Prepare audio in XTTS v2 format
-- Trigger speaker embedding recomputation
-- Trigger GPT fine-tuning
-- Monitor training progress
-
-### Current Voice Pipeline (Verified)
+Piper's HTTP API accepts a POST request with text in the body and returns WAV audio:
 
 ```
-Data Preparation:
-  extract-voice.sh   -- ffmpeg: video -> audio clip (22050Hz, mono, 16-bit PCM)
-  prepare-audio.sh   -- ffmpeg: any audio -> XTTS format
-
-Training Pipeline (inside Docker container):
-  1. compute_speaker_embedding.py
-     - Loads XTTS v2 model
-     - Processes all clips in /voices/jarvis/
-     - Outputs: jarvis_speaker.pth (combined GPT cond latent + speaker embedding)
-
-  2. finetune_xtts.py
-     - Loads XTTS v2 + DVAE
-     - Freezes all non-GPT parameters
-     - Trains GPT decoder on dataset (6 epochs, lr=5e-6)
-     - Outputs: gpt_finetuned/ checkpoint directory
-
-  3. extract_gpt_weights.py
-     - Loads checkpoint from finetune output
-     - Remaps keys (xtts.gpt.* -> gpt.*)
-     - Outputs: gpt_finetuned_weights.pth
-
-Runtime:
-  server.py loads:
-    1. Base XTTS v2 model
-    2. Fine-tuned GPT weights (gpt_finetuned_weights.pth)
-    3. Pre-computed speaker embedding (jarvis_speaker.pth)
-  Synthesis uses pre-computed embedding (fast) with fine-tuned GPT (better quality)
+POST http://jarvis-piper:5000/
+Content-Type: application/json
+Body: { "text": "sentence text" }
+Response: audio/wav (16-bit PCM, 22050Hz sample rate)
 ```
 
-### Integration Strategy: Backend Orchestrates, TTS Container Executes
+The function follows the same pattern as `synthesizeLocal()` (line 99 of `tts.ts`), returning a `TTSResult` with `stream`, `contentType`, and `provider`.
 
-The voice retraining tools live in the Jarvis backend but delegate execution to:
-- **Host shell** for audio extraction (ffmpeg runs on the Home node host)
-- **TTS Docker container** for training scripts (Python + PyTorch environment)
+**Integration point:** Modify `synthesizeSentenceToBuffer()` (line ~285 of `tts.ts`) to wrap the existing `synthesizeSpeech()` call in a race with the XTTS timeout, then fall back to Piper.
 
-The backend does NOT need Python or PyTorch. It orchestrates via:
-1. SSH commands to Home node for ffmpeg operations
-2. `docker exec` commands to the jarvis-tts container for training
+#### Files to Modify
+| File | Change |
+|------|--------|
+| `/root/docker-compose.yml` | Add `jarvis-piper` service, add `piper-data` volume |
+| `/root/jarvis-backend/src/config.ts` | Add Piper endpoint + timeout configs |
+| `/root/jarvis-backend/src/ai/tts.ts` | Add `synthesizePiper()`, modify `synthesizeSentenceToBuffer()` with timeout fallback, add Piper health check |
 
-### New Components
-
-```
-src/mcp/tools/voice.ts        -- Voice management MCP tools (5-6 tools)
-```
-
-No new clients needed. Uses:
-- `execOnNodeByName('Home', ...)` for host-level operations
-- `execOnNodeByName('Home', 'docker exec jarvis-tts ...')` for container operations
-
-### Component: Voice Tools (`src/mcp/tools/voice.ts`)
-
-```
-Tools to register:
-
-1. voice_status (GREEN)
-   - Args: {}
-   - Implementation: Fetch http://192.168.1.50:5050/health + list voice files
-   - Returns: Model status, mode (zero-shot/trained/finetuned),
-              reference audio count, embedding status, cache info
-
-2. list_voice_clips (GREEN)
-   - Args: {}
-   - Implementation: SSH ls /opt/jarvis-tts/voices/jarvis/
-   - Returns: Audio clips with names, sizes, durations
-
-3. extract_voice_clip (YELLOW)
-   - Args: { inputVideo: string, startTime: string, duration: number, outputName: string }
-   - Implementation: SSH to Home: ffmpeg -i ... -ss ... -t ... -vn -acodec pcm_s16le -ar 22050 -ac 1
-   - Safety: Validate paths, duration limits (3-60s), output to /opt/jarvis-tts/voices/jarvis/
-   - Returns: Extracted clip metadata
-
-4. prepare_audio_clip (YELLOW)
-   - Args: { inputFile: string, outputName: string }
-   - Implementation: SSH to Home: ffmpeg conversion to XTTS format
-   - Returns: Converted clip metadata
-
-5. retrain_voice_embedding (YELLOW)
-   - Args: { confirmed?: boolean }
-   - Implementation: docker exec jarvis-tts python3 /training/compute_speaker_embedding.py
-   - Note: Takes ~60-120s on CPU, blocks the TTS service during execution
-   - Returns: New embedding info (num clips, shapes)
-
-6. retrain_voice_model (RED)
-   - Args: { epochs?: number, confirmed: boolean }
-   - Implementation:
-     a. docker exec jarvis-tts python3 /training/finetune_xtts.py
-     b. docker exec jarvis-tts python3 /training/extract_gpt_weights.py
-     c. docker restart jarvis-tts (to reload weights)
-   - Note: Takes 30-90 minutes on CPU, heavy resource usage
-   - Returns: Training status and log tail
-
-7. get_training_log (GREEN)
-   - Args: { lines?: number }
-   - Implementation: SSH tail /opt/jarvis-tts/training/finetune.log
-   - Returns: Recent training log output
-```
-
-### Safety Tier Assignments
-
-| Tool | Tier | Rationale |
-|------|------|-----------|
-| `voice_status` | GREEN | Read-only health check |
-| `list_voice_clips` | GREEN | Read-only directory listing |
-| `extract_voice_clip` | YELLOW | Creates files, runs ffmpeg |
-| `prepare_audio_clip` | YELLOW | Creates files, runs ffmpeg |
-| `retrain_voice_embedding` | YELLOW | Compute-intensive but non-destructive, can be auto-reloaded |
-| `retrain_voice_model` | RED | Very compute-intensive (30-90 min), blocks TTS, requires restart |
-| `get_training_log` | GREEN | Read-only log access |
-
-### Command Allowlist for Voice Operations
-
-The voice tools execute commands via `execOnNodeByName('Home', ...)`. Since these commands are constructed internally (not from user input), they should bypass the generic command allowlist. However, the blocklist still applies.
-
-For voice tools specifically, the constructed commands are:
-- `ffmpeg -i ... -ss ... -t ... -vn -acodec pcm_s16le -ar 22050 -ac 1 -y /opt/jarvis-tts/voices/jarvis/...`
-- `docker exec jarvis-tts python3 /training/compute_speaker_embedding.py`
-- `docker exec jarvis-tts python3 /training/finetune_xtts.py`
-- `ls /opt/jarvis-tts/voices/jarvis/`
-- `tail /opt/jarvis-tts/training/finetune.log`
-
-These are NOT in the current allowlist and should NOT be added there (they are internal commands, not user-facing SSH commands). The voice tool handlers should call `execOnNode()` directly rather than going through the `execute_ssh` tool pipeline.
-
-### Resource Management During Training
-
-Fine-tuning XTTS v2 GPT decoder on CPU is extremely resource-intensive:
-- Current config: 14 CPU cores, 8GB memory limit for the TTS container
-- Training duration: 30-90 minutes for 6 epochs on 10 samples
-- During training, TTS synthesis is unavailable (model weights are being modified)
-
-Mitigation:
-- `retrain_voice_model` is RED tier (requires explicit user confirmation)
-- The tool description should warn about TTS downtime
-- After training completes, the container must be restarted to load new weights
-- Consider running training in a separate container to avoid TTS downtime (future enhancement)
-
-### Integration with Router
-
-Update `src/ai/router.ts`:
-
-```
-New ENTITY_PATTERNS additions:
-  /\b(voice|tts|speech|audio|training|retrain)\b/i
-  /\b(xtts|jarvis.?tts|voice.?clone)\b/i
-
-New ACTION_KEYWORDS additions:
-  'extract', 'retrain', 'train', 'clip'
-```
-
----
-
-## Component Boundaries Summary
-
-### New Files to Create
-
-| File | Purpose | Depends On |
-|------|---------|------------|
-| `src/mcp/tools/files.ts` | 6 file operation MCP tools | `clients/ssh.ts`, `safety/sanitize.ts` |
-| `src/mcp/tools/projects.ts` | 6 project intelligence MCP tools | `clients/registry.ts`, `clients/ssh.ts` |
-| `src/mcp/tools/voice.ts` | 7 voice management MCP tools | `clients/ssh.ts` |
-| `src/clients/registry.ts` | Project registry fetch + cache | `clients/ssh.ts` |
-| `src/api/files.ts` | File download REST endpoint | Express router |
-
-### Existing Files to Modify
-
-| File | Changes |
+#### Files to Create
+| File | Purpose |
 |------|---------|
-| `src/mcp/server.ts` | Import + call `registerFileTools`, `registerProjectTools`, `registerVoiceTools` |
-| `src/safety/tiers.ts` | Add ~19 new tool-to-tier mappings in `TOOL_TIERS` |
-| `src/safety/sanitize.ts` | Add path sanitization function (`sanitizePath`) |
-| `src/safety/protected.ts` | Add `PROTECTED_PATHS` list |
-| `src/ai/tools.ts` | Add ~19 new Claude tool definitions |
-| `src/ai/router.ts` | Add file/project/voice keywords to routing patterns |
-| `src/clients/ssh.ts` | Add `getFileFromNode()` and `putFileToNode()` methods |
-| `src/api/routes.ts` | Mount file download route |
+| None | Piper uses official Docker image, no custom code needed |
 
-### Files NOT Modified
+---
+
+## Question 2: How Does Parallel TTS Change chat.ts Flow?
+
+### Recommendation: Worker Pool with Concurrency Limit + Index-Based Reordering
+
+**Confidence: HIGH** (direct code analysis of current serial queue)
+
+#### Current Flow (Serial)
+
+In `/root/jarvis-backend/src/realtime/chat.ts` lines 220-249:
+
+```
+ttsQueue: { text, index }[]   <-- simple array queue
+drainTtsQueue():
+  while (ttsQueue.length > 0):
+    item = ttsQueue.shift()
+    audio = await synthesizeSentenceToBuffer(item.text)  <-- BLOCKS here 8-15s
+    socket.emit('chat:audio_chunk', { index, audio })
+```
+
+One sentence at a time. If sentence 1 takes 12s, sentence 2 waits even if it could have started.
+
+#### New Flow (Parallel with Bounded Concurrency)
+
+Replace the serial queue with a **bounded concurrent worker pool**:
+
+```
+ttsQueue: { text, index }[]
+activeWorkers: 0
+MAX_CONCURRENT_TTS: 2  (configurable via config.maxConcurrentTts)
+
+drainTtsQueue():
+  while (ttsQueue.length > 0 AND activeWorkers < MAX_CONCURRENT_TTS):
+    item = ttsQueue.shift()
+    activeWorkers++
+    // Fire-and-forget (no await), each worker completes independently
+    processTtsItem(item).finally(() => {
+      activeWorkers--
+      drainTtsQueue()  // Trigger next item when a slot frees up
+    })
+
+async processTtsItem(item):
+  audio = await synthesizeSentenceToBuffer(item.text)
+  if (audio && !abortController.signal.aborted):
+    socket.emit('chat:audio_chunk', { index: item.index, audio })
+```
+
+**Key insight:** The frontend `progressive-queue.ts` already handles out-of-order arrival via `xttsQueue.sort((a, b) => a.index - b.index)` on line 112. The `index` field is assigned at sentence detection time (line 267 of chat.ts: `audioChunkIndex++`), so chunks arriving out-of-order are automatically sorted before playback. The frontend plays them sequentially (`source.onended -> playNextXttsChunk()`).
+
+**No frontend changes needed for parallel TTS.** The backend change is entirely within the `drainTtsQueue()` function in `chat.ts`.
+
+#### Why MAX_CONCURRENT_TTS = 2
+
+The Home node has 20 threads (Intel i5-13500HX). Current allocation:
+- llama-server: 16 threads (configured in jarvis-api.service)
+- XTTS container: up to 14 CPUs (Docker resource limits)
+- These overlap and compete for the same physical cores
+
+Running 3+ concurrent XTTS requests would saturate the CPU and slow LLM token generation (which is already the first bottleneck in the pipeline). 2 concurrent requests provides ~40% speedup over serial (pipeline overlap) without starving the LLM.
+
+With Piper fallback, the dynamic is even better: if XTTS times out at 3s, Piper responds in <100ms. So in practice, the 2 worker slots cycle much faster once Piper kicks in.
+
+#### Updated Data Flow (Parallel)
+
+```
+LLM stream produces tokens
+    |
+SentenceAccumulator detects boundary
+    |
+    v
+ttsQueue: [S1, S2, S3]    <-- sentences queued as detected
+    |
+drainTtsQueue():
+    |
+    +-- Worker 1: synthesize S1 (XTTS, 8s)
+    +-- Worker 2: synthesize S2 (XTTS timeout 3s -> Piper 0.1s)
+    |
+    S2 finishes first -> emit chunk(index=1)  [out of order!]
+    S1 finishes second -> emit chunk(index=0)
+    |
+    Worker freed -> Worker 1: synthesize S3
+    |
+Frontend receives:
+    chunk(index=1) first -> queued
+    chunk(index=0) second -> sorted, plays S1 first (correct order)
+    chunk(index=2) arrives -> queued, plays after S1 finishes
+```
+
+#### Completion Detection Update
+
+The current `ttsStreamFinished` flag and `audio_done` signal need adjustment. Currently in `onDone` (line 347):
+
+```typescript
+sentenceAccumulator.flush();
+ttsStreamFinished = true;
+if (!ttsProcessing && ttsQueue.length === 0) {
+  socket.emit('chat:audio_done', { sessionId, totalChunks: audioChunkIndex });
+}
+```
+
+With parallel workers, the check should be: `activeWorkers === 0 && ttsQueue.length === 0` instead of `!ttsProcessing`. Each worker, upon completing, checks this condition.
+
+#### Files to Modify
+| File | Change |
+|------|--------|
+| `/root/jarvis-backend/src/realtime/chat.ts` | Replace serial `drainTtsQueue()` with bounded parallel pool, update completion detection |
+| `/root/jarvis-backend/src/config.ts` | Add `maxConcurrentTts: 2` config |
+
+#### Files to Create
+None. The change is localized to the existing `drainTtsQueue()` closure in `chat.ts`.
+
+---
+
+## Question 3: Where Does Opus Encoding Happen?
+
+### Recommendation: Backend-Side Encoding via ffmpeg Subprocess
+
+**Confidence: HIGH** (verified: ffmpeg supports WAV->Opus piped streaming; Chrome/Firefox `decodeAudioData()` supports Ogg/Opus natively)
+
+#### Architecture Decision
+
+Opus encoding should happen **in the backend** (`jarvis-backend`), not in the TTS container. Reasons:
+
+1. **Single encoding point**: Whether audio comes from XTTS (24kHz) or Piper (22050Hz), the encoding path is identical. Backend encodes after receiving WAV from either engine, normalizing the output format.
+
+2. **No TTS container modifications**: XTTS and Piper continue outputting WAV. The encoding is a post-processing step owned by the backend.
+
+3. **Frontend simplicity**: The frontend already calls `ctx.decodeAudioData()` (line 193 of `progressive-queue.ts`) which natively supports Ogg/Opus in Chrome and Firefox. No new decoder libraries needed.
+
+#### Encoding Flow
+
+```
+synthesizeSentenceToBuffer(text)
+    |
+    v
+  [TTS engine returns WAV Buffer]
+    |
+    v
+  encodeToOpus(wavBuffer): Promise<Buffer>
+    |
+    spawn('ffmpeg', [
+      '-i', 'pipe:0',           // WAV input from stdin
+      '-c:a', 'libopus',        // Encode to Opus
+      '-b:a', '48k',            // 48kbps (voice optimized, ~8-10x smaller than WAV)
+      '-application', 'voip',   // Optimize for speech (lower latency than 'audio')
+      '-vbr', 'on',             // Variable bitrate for better quality
+      '-f', 'ogg',              // Ogg container (required for decodeAudioData)
+      'pipe:1'                  // Output to stdout
+    ])
+    |
+    pipe wavBuffer -> ffmpeg stdin
+    collect ffmpeg stdout -> opusBuffer
+    |
+    v
+  Return { buffer: opusBuffer, contentType: 'audio/ogg; codecs=opus' }
+```
+
+**Size reduction example (verified from XTTS output characteristics):**
+- XTTS WAV: 24kHz, 16-bit mono, 1.5s sentence = ~72KB
+- Piper WAV: 22050Hz, 16-bit mono, 1.5s sentence = ~66KB
+- Opus at 48kbps: ~9KB for 1.5s
+- **~8x reduction** in Socket.IO transfer size
+
+#### ffmpeg Dependency in Backend Container
+
+ffmpeg must be available in the `jarvis-backend` Docker container. Add to the Dockerfile:
+
+```dockerfile
+# In /root/jarvis-backend/Dockerfile, add before npm install
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+```
+
+This adds ~30MB to the backend image. The alternative (native Node.js Opus via `@discordjs/opus` or `opusscript`) requires compiling native addons in the container, which is more fragile. ffmpeg is battle-tested, already installed on the host, and handles the full WAV->Ogg/Opus pipeline in one step.
+
+#### Frontend Compatibility
+
+The frontend `progressive-queue.ts` currently calls:
+```typescript
+const audioBuffer = await ctx.decodeAudioData(chunk.buffer.slice(0));  // line 193
+```
+
+This method natively decodes Ogg/Opus in:
+- **Chrome 70+**: Full Opus support in `decodeAudioData()` (tracked at chromestatus.com)
+- **Firefox**: Full Opus in Ogg support
+- **Safari 15+**: Opus support in `decodeAudioData()` via Ogg container
+
+**No frontend code changes needed for Opus decoding.** The `contentType` field in the `chat:audio_chunk` event changes from `'audio/wav'` to `'audio/ogg; codecs=opus'`, but the frontend does not branch on `contentType` -- it passes the buffer directly to `decodeAudioData()` regardless.
+
+#### Cache Implications
+
+The backend LRU cache (`sentenceCache` Map in `tts.ts`) currently stores WAV buffers. After Opus encoding, it stores Opus buffers instead. Benefits:
+- Smaller per-entry footprint (~9KB vs ~72KB)
+- More effective cache (200 entries = ~1.8MB vs ~14.4MB)
+- Cache hits skip both TTS synthesis AND encoding
+
+The encoding should happen **before** caching, so cached entries are already Opus-encoded.
+
+#### Files to Modify
+| File | Change |
+|------|--------|
+| `/root/jarvis-backend/Dockerfile` | Add `ffmpeg` package installation |
+| `/root/jarvis-backend/src/ai/tts.ts` | Add `encodeToOpus()` call in `synthesizeSentenceToBuffer()` after TTS, change `contentType` to `'audio/ogg; codecs=opus'` |
+
+#### Files to Create
+| File | Purpose |
+|------|---------|
+| `/root/jarvis-backend/src/ai/opus-encoder.ts` | Encapsulate `ffmpeg` spawn + pipe logic for WAV->Opus conversion |
+
+---
+
+## Question 4: Conversation Sliding Window Integration
+
+### Recommendation: Backend-Only Change in chat.ts History Loading + Background Summarization
+
+**Confidence: HIGH** (direct code analysis of current history management)
+
+#### Current System
+
+In `/root/jarvis-backend/src/realtime/chat.ts` lines 132-149:
+
+```typescript
+// PERF-014: Load conversation history (cached in-memory after first DB read)
+let history: Array<{ role: string; content: string }> = [];
+const cachedHistory = sessionHistoryCache.get(sessionId);
+if (cachedHistory) {
+  cachedHistory.push({ role: 'user', content: message.trim() });
+  history = cachedHistory.slice(-config.chatHistoryLimit);  // chatHistoryLimit = 20
+} else {
+  const dbMessages = memoryStore.getSessionMessages(sessionId);
+  history = dbMessages.slice(-config.chatHistoryLimit);
+  sessionHistoryCache.set(sessionId, [...history]);
+}
+```
+
+The current approach is a simple **hard truncation**: keep the last 20 messages, silently drop older ones. This loses context about what was discussed earlier in long sessions.
+
+#### New Approach: Sliding Window with Summary
+
+```
+For a session with 50 messages:
+
+CURRENT (chatHistoryLimit=20):
+  [msg 31] [msg 32] ... [msg 50]   -- older 30 messages lost entirely
+
+NEW (slidingWindow):
+  [SUMMARY of msgs 1-30] [msg 31] [msg 32] ... [msg 50]
+```
+
+#### Integration Points (4 Specific Locations)
+
+**1. Window check after message processing (chat.ts onDone callback, ~line 306):**
+
+After `onDone` fires, check if the history cache has grown beyond the threshold:
+
+```
+if (cachedHistory.length > config.slidingWindowSummarizeThreshold) {
+  // Fire-and-forget background summarization
+  summarizeOlderMessages(sessionId, cachedHistory).catch(() => {});
+}
+```
+
+This is non-blocking. The summary is ready for the NEXT message.
+
+**2. Where the summary lives (memories.ts):**
+
+Use `memoryBank.upsertMemory()` with:
+- `tier: 'conversation'` (7-day TTL)
+- `category: 'session_summary'`
+- `key: session_summary:${sessionId}`
+- `content: "Summary of conversation so far: ..."`
+
+This aligns perfectly with the existing memory system in `/root/jarvis-backend/src/db/memories.ts`.
+
+**3. Summary injection into history (chat.ts, before chatMessages construction):**
+
+When loading history for a session, check if a session summary exists:
+
+```
+const summary = memoryBank.getMemoryByKey(`session_summary:${sessionId}`);
+if (summary) {
+  // Prepend summary as first message in history
+  chatMessages.unshift({ role: 'system', content: summary.content });
+}
+```
+
+**4. Summarization engine (new module):**
+
+Use the Qwen provider (local, free, fast) to generate summaries. The summary prompt is simple: "Summarize the following conversation in 2-3 sentences, focusing on topics discussed and decisions made."
+
+#### Integration with Existing Memory System
+
+The existing `buildMemoryContext()` in `/root/jarvis-backend/src/ai/memory-context.ts` already includes recent session summaries in the system prompt under `<recent_conversations>`. The sliding window summaries naturally flow through this existing pipeline for cross-session context.
+
+#### Config Values
+
+```typescript
+// In config.ts
+slidingWindowSize: parseInt(process.env.SLIDING_WINDOW_SIZE || '30', 10),
+slidingWindowSummarizeThreshold: parseInt(process.env.SLIDING_WINDOW_THRESHOLD || '25', 10),
+// When cache exceeds 25 messages, summarize the oldest 15, keep the latest 10 in full
+```
+
+#### Files to Modify
+| File | Change |
+|------|--------|
+| `/root/jarvis-backend/src/realtime/chat.ts` | Add window management after `onDone`, inject summary at history load, trigger background summarization |
+| `/root/jarvis-backend/src/config.ts` | Add `slidingWindowSize`, `slidingWindowSummarizeThreshold` configs |
+
+#### Files to Create
+| File | Purpose |
+|------|---------|
+| `/root/jarvis-backend/src/ai/conversation-window.ts` | `summarizeOlderMessages()` function, uses Qwen to generate summary, stores via memoryBank |
+
+---
+
+## Question 5: Latency Tracing Architecture
+
+### Recommendation: Lightweight Custom Spans (NOT OpenTelemetry)
+
+**Confidence: HIGH** (OpenTelemetry is overkill for single-process monolith with 2 external services)
+
+#### Why Not OpenTelemetry
+
+OpenTelemetry is designed for distributed microservice architectures. JARVIS is a modular monolith -- everything runs in one Node.js process talking to two external services (XTTS, llama-server). Adding OTel would mean:
+- 5+ new npm packages (`@opentelemetry/sdk-node`, `@opentelemetry/api`, etc.)
+- A collector/exporter (Jaeger or console)
+- No Socket.IO auto-instrumentation exists (manual spans anyway)
+- Massive complexity for minimal additional benefit over custom timing
+
+#### Custom Trace Points Design
+
+Add lightweight timestamp tracking to the existing Socket.IO event flow:
+
+```
+t0: chat:send received (backend, chat.ts)
+t1: LLM stream first token (backend, onTextDelta callback)
+t2: First sentence detected (backend, SentenceAccumulator callback)
+t3: First TTS synthesis complete (backend, synthesizeSentenceToBuffer return)
+t4: First audio_chunk emitted (backend, socket.emit)
+t5: First audio_chunk received (frontend, useChatSocket.ts)
+t6: First audio plays (frontend, progressive-queue.ts source.start())
+```
+
+#### Backend Implementation
+
+Add a `LatencyTrace` object to the per-request scope in `chat.ts`:
+
+```typescript
+interface LatencyTrace {
+  sessionId: string;
+  t0_received: number;           // Date.now() at chat:send handler entry
+  t1_first_token?: number;       // First onTextDelta callback
+  t2_first_sentence?: number;    // First SentenceAccumulator emit
+  t3_first_tts_done?: number;    // First synthesizeSentenceToBuffer returns
+  t4_first_chunk_sent?: number;  // First socket.emit('chat:audio_chunk')
+  provider?: string;             // 'claude' | 'qwen'
+  ttsEngine?: string;            // 'xtts' | 'piper' | 'cache'
+  sentenceCount?: number;        // Total sentences synthesized
+  totalTtsMs?: number;           // Cumulative TTS time
+}
+```
+
+Trace points are recorded inside the existing callbacks:
+- `t0`: Beginning of `handleSend()` (line 94)
+- `t1`: First call to `onTextDelta` (line 274)
+- `t2`: First call to `onSentence` callback (line 253)
+- `t3`: After first `synthesizeSentenceToBuffer()` returns in `drainTtsQueue` (line 231)
+- `t4`: After first `socket.emit('chat:audio_chunk')` (line 233)
+
+At `onDone`, emit a new event:
+
+```typescript
+socket.emit('chat:latency_trace', { sessionId, trace });
+```
+
+Also log to console for backend-only monitoring:
+```
+[Latency] session=abc t0->t1: 450ms (routing+LLM start)
+          t1->t2: 1200ms (first sentence accumulation)
+          t2->t3: 3100ms (TTS synthesis, engine=xtts)
+          t3->t4: 5ms (emit overhead)
+          Total t0->t4: 4755ms
+```
+
+#### Frontend Implementation
+
+The frontend adds two more timestamps and records them in the `onAudioChunk` and `playNextXttsChunk` handlers:
+
+```
+t5: First onAudioChunk handler fires (useChatSocket.ts, line 164)
+t6: First AudioContext source.start() called (progressive-queue.ts, line ~207)
+```
+
+On receiving `chat:latency_trace`:
+- Merge backend trace with frontend timestamps
+- Log complete end-to-end latency to console
+- Optionally display in a dev overlay or pipeline progress component
+
+#### Correlation Key
+
+The `sessionId` is the natural correlation key. Every event already carries `sessionId`. The trace is built up incrementally on the backend side and enriched with client-side timestamps when `chat:latency_trace` is received.
+
+#### Files to Modify
+| File | Change |
+|------|--------|
+| `/root/jarvis-backend/src/realtime/chat.ts` | Create LatencyTrace at handleSend entry, record timestamps at each stage, emit `chat:latency_trace` at onDone |
+| `/root/jarvis-backend/src/ai/tts.ts` | Return timing metadata (engine used, synthesis duration) from `synthesizeSentenceToBuffer()` |
+| `/root/jarvis-ui/src/hooks/useChatSocket.ts` | Record t5 at first onAudioChunk, listen for `chat:latency_trace`, merge timestamps |
+| `/root/jarvis-ui/src/audio/progressive-queue.ts` | Record t6 at first `source.start()`, expose via callback or store |
+
+#### Files to Create
+| File | Purpose |
+|------|---------|
+| `/root/jarvis-backend/src/realtime/latency-trace.ts` | `LatencyTrace` type definition, `createTrace()`, `recordPoint()`, `formatTrace()` helpers |
+
+---
+
+## Question 6: Health Endpoint Aggregation
+
+### Recommendation: Expand Existing `/api/health` with Parallel Component Checks
+
+**Confidence: HIGH** (existing health endpoint is trivially simple -- 8 lines)
+
+#### Current State
+
+The existing health endpoint at `/root/jarvis-backend/src/api/health.ts` (lines 21-28) returns:
+```json
+{ "status": "ok", "timestamp": "...", "uptime": 12345, "version": "1.0.0" }
+```
+
+No component health checks. Just "I'm alive."
+
+#### New Architecture
+
+```
+GET /api/health
+    |
+    v
+  [1] Backend self-check (always passes if responding)
+    |
+  [2] Parallel component checks (Promise.allSettled, 5s overall timeout):
+    |
+    +-- TTS (XTTS): HTTP GET http://jarvis-tts:5050/health
+    |   Parse: { status: 'ready', voice_ready: true, mode: 'finetuned' }
+    |   Timeout: 3s
+    |
+    +-- TTS (Piper): HTTP GET http://jarvis-piper:5000/
+    |   Check for 200 response
+    |   Timeout: 2s
+    |
+    +-- LLM: HTTP GET http://192.168.1.50:8080/health
+    |   (llama-server health endpoint)
+    |   Timeout: 3s
+    |
+    +-- Proxmox API: HTTPS GET https://192.168.1.50:8006/api2/json/version
+    |   With PVE API token auth
+    |   Timeout: 5s
+    |
+    +-- SQLite: SELECT 1 (synchronous, via better-sqlite3)
+    |   Wrapped in try/catch
+    |
+    v
+  Aggregate results into response
+```
+
+#### Response Shape
+
+```json
+{
+  "status": "degraded",
+  "timestamp": "2026-01-27T12:00:00.000Z",
+  "uptime": 12345.67,
+  "version": "1.5.0",
+  "components": {
+    "backend":   { "status": "healthy" },
+    "tts_xtts":  { "status": "healthy", "mode": "finetuned", "latency_ms": 45 },
+    "tts_piper": { "status": "healthy", "latency_ms": 12 },
+    "llm":       { "status": "healthy", "latency_ms": 89 },
+    "proxmox":   { "status": "unhealthy", "error": "timeout", "latency_ms": 5000 },
+    "database":  { "status": "healthy", "latency_ms": 1 }
+  },
+  "tts_fallback_active": false
+}
+```
+
+**Status logic:**
+- `"healthy"`: All components pass
+- `"degraded"`: Non-critical component(s) failing (Proxmox API, one TTS engine)
+- `"unhealthy"`: Critical component(s) failing (database, both TTS engines, LLM)
+
+**Critical components**: backend, database, at least one TTS engine, LLM
+**Non-critical components**: Proxmox API (monitoring-only), individual TTS engines (fallback covers)
+
+#### Caching
+
+Health check results should be cached for 30 seconds (matches the pattern in `tts.ts` where XTTS health is cached for 60s). This prevents the health endpoint from hammering component services under frequent polling.
+
+```typescript
+let cachedHealth: HealthResponse | null = null;
+let lastHealthTime = 0;
+const HEALTH_CACHE_TTL = 30_000;
+
+healthRouter.get('/', async (_req, res) => {
+  const now = Date.now();
+  if (cachedHealth && now - lastHealthTime < HEALTH_CACHE_TTL) {
+    res.json(cachedHealth);
+    return;
+  }
+  // ... run checks
+  cachedHealth = result;
+  lastHealthTime = now;
+  res.json(result);
+});
+```
+
+#### Docker Healthcheck Compatibility
+
+The existing Docker healthcheck (`wget --spider -q http://localhost:4000/api/health`) only checks for HTTP 200. The enhanced endpoint continues returning 200 for `degraded` status so Docker does not restart the container when Proxmox is temporarily unreachable. Only an exception during the endpoint handler itself would cause a non-200 response.
+
+#### Files to Modify
+| File | Change |
+|------|--------|
+| `/root/jarvis-backend/src/api/health.ts` | Complete rewrite -- add parallel component checks, status aggregation, response caching |
+| `/root/jarvis-backend/src/config.ts` | Add health check endpoints for each component, cache TTL |
+
+#### Files to Create
+None. The health module stays in its existing file.
+
+---
+
+## Question 7: Web Worker Audio Decoding
+
+### Recommendation: Defer -- Opus Encoding Eliminates the Primary Motivation
+
+**Confidence: MEDIUM** (Opus reduces decode overhead 8x; Web Worker support in browsers is inconsistent)
+
+#### The Math
+
+Current (WAV): `decodeAudioData()` processes ~300KB-1.2MB per sentence. At 24kHz 16-bit mono, this is significant work for the main thread.
+
+After Opus (Question 3): `decodeAudioData()` processes ~9KB per sentence. The Opus codec is hardware-accelerated in browsers. Decoding 9KB of Opus is trivial -- unlikely to cause measurable jank.
+
+#### Recommendation: Build Opus First, Measure, Then Decide
+
+1. **Phase 1**: Implement Opus encoding (Question 3). Deploy.
+2. **Phase 2**: Measure main-thread impact of `decodeAudioData()` with Opus buffers. Use the latency trace (Question 5) to measure t5->t6 gap.
+3. **Phase 3**: Only if t5->t6 consistently exceeds 5ms (indicating main-thread contention), implement Web Worker decoding.
+
+#### If Workers Become Necessary
+
+The approach would use `OffscreenAudioContext` where available (Chrome 74+), with fallback to main-thread decoding:
+
+```
+Main Thread                          Web Worker
+-----------                          ----------
+queueAudioChunk(chunk)
+    |
+    +--- worker.postMessage({cmd:'decode', buffer, index, sampleRate})
+                                         |
+                                         v
+                                    OffscreenAudioContext (Chrome only)
+                                    ctx.decodeAudioData(buffer)
+                                         |
+                                    Extract Float32Array from AudioBuffer
+                                         |
+    <--- worker.postMessage({cmd:'decoded', pcm, index, sampleRate, channels})
+    |
+    v
+Create AudioBuffer from Float32Array
+Play via existing AudioContext -> GainNode -> Analyser -> destination chain
+```
+
+**Browser compatibility issue**: `OffscreenAudioContext` does not exist in Firefox or Safari. The worker path would only benefit Chrome users. Firefox and Safari would fall back to the current main-thread path.
+
+Given this limitation and the dramatic reduction from Opus encoding, **defer Web Worker implementation** to a future milestone (v1.6+) if measurements show it is needed.
+
+#### Files to Modify (if implemented)
+| File | Change |
+|------|--------|
+| `/root/jarvis-ui/src/audio/progressive-queue.ts` | Add worker dispatch + fallback, reconstruct AudioBuffer from transferred Float32Array |
+
+#### Files to Create (if implemented)
+| File | Purpose |
+|------|---------|
+| `/root/jarvis-ui/src/audio/decode-worker.ts` | Web Worker with OffscreenAudioContext for Opus decoding |
+
+---
+
+## Question 8: TTS Cache Pre-Warming
+
+### Recommendation: Non-Blocking Startup Hook with Common JARVIS Phrases
+
+**Confidence: HIGH** (straightforward implementation using existing cache infrastructure)
+
+#### When It Triggers
+
+Pre-warming runs **at backend startup**, after `server.listen()` succeeds. The existing `docker-compose.yml` already has `depends_on: jarvis-tts: condition: service_healthy`, so the TTS container is guaranteed healthy when the backend starts. The sequence:
+
+```
+Backend startup (/root/jarvis-backend/src/index.ts):
+  [1] Database migrations (await runMigrations())
+  [2] Memory cleanup service (startMemoryCleanup())
+  [3] MCP tool initialization (getToolList())
+  [4] Real-time emitter (startEmitter())
+  [5] Monitor routes + service (setupMonitorRoutes(), startMonitor())
+  [6] Terminal + Chat handlers
+  [7] server.listen()
+  [8] Startup event emitted
+  [9] ** NEW: TTS cache pre-warm (fire-and-forget, non-blocking) **
+```
+
+Step 9 does NOT block the server. It runs in the background using `setImmediate()` or a simple `setTimeout(() => prewarmTtsCache(), 5000)` delay (5s gives XTTS time to fully warm up after health check passes).
+
+#### What Gets Cached
+
+Common JARVIS phrases that appear frequently. These are generated by analyzing the system prompt and common response patterns:
+
+```typescript
+const PREWARM_PHRASES = [
+  // Greetings
+  "Good morning, sir. All systems are operational.",
+  "Good evening, sir. How may I assist you?",
+  // Acknowledgments
+  "Right away, sir.",
+  "I'm on it.",
+  "Understood.",
+  "Consider it done.",
+  // Status reports
+  "All nodes are online and healthy.",
+  "The cluster is operating normally.",
+  "Analysis complete.",
+  // Transitions
+  "Let me check that for you.",
+  "I'll run a diagnostic now.",
+  "Here's what I found.",
+  "Is there anything else you need?",
+  // Common errors
+  "I encountered an issue with that request.",
+  "The service appears to be temporarily unavailable.",
+  // Voice mode specific
+  "I'll keep this brief.",
+  "In summary.",
+];
+```
+
+~15-20 phrases, synthesized **sequentially** (one at a time) to avoid overwhelming the TTS container at startup.
+
+#### Implementation
+
+The pre-warming function calls `synthesizeSentenceToBuffer()` for each phrase. This function already handles:
+- LRU cache checking (PERF-05, line 289 of tts.ts)
+- TTS synthesis
+- Buffer collection
+- Cache storage
+
+So pre-warming simply calls the existing function for each phrase. The result is automatically cached.
+
+```typescript
+// tts-prewarm.ts
+export async function prewarmTtsCache(): Promise<void> {
+  console.log(`[TTS] Pre-warming cache with ${PREWARM_PHRASES.length} phrases...`);
+  let cached = 0;
+  for (const phrase of PREWARM_PHRASES) {
+    const result = await synthesizeSentenceToBuffer(phrase);
+    if (result) cached++;
+    // Small delay between requests to avoid CPU spike
+    await new Promise(r => setTimeout(r, 500));
+  }
+  console.log(`[TTS] Cache pre-warm complete: ${cached}/${PREWARM_PHRASES.length} cached`);
+}
+```
+
+#### Cache Size Increase
+
+The current cache maximum is 50 entries (`SENTENCE_CACHE_MAX = 50` in `tts.ts` line 240). For v1.5:
+- Increase to 200 entries
+- Pre-warm fills 15-20 slots
+- Remaining 180-185 slots fill organically during conversations
+
+With Opus encoding, each cached entry shrinks from ~300KB (WAV) to ~9KB (Opus), so 200 entries = **~1.8MB** memory (vs ~60MB with WAV at the old size). Well within limits.
+
+#### Files to Modify
+| File | Change |
+|------|--------|
+| `/root/jarvis-backend/src/ai/tts.ts` | Increase `SENTENCE_CACHE_MAX` from 50 to 200, export `synthesizeSentenceToBuffer` if not already (it is exported) |
+| `/root/jarvis-backend/src/index.ts` | Add non-blocking prewarm call after `server.listen()` |
+| `/root/jarvis-backend/src/config.ts` | Add `ttsCacheSize: 200`, `ttsPrewarmEnabled: true` configs |
+
+#### Files to Create
+| File | Purpose |
+|------|---------|
+| `/root/jarvis-backend/src/ai/tts-prewarm.ts` | `PREWARM_PHRASES` array + `prewarmTtsCache()` async function |
+
+---
+
+## Recommended Build Order (Dependency-Based)
+
+The v1.5 features have a clear dependency graph:
+
+```
+                    [Phase 1: Quick Wins]
+                   /          |          \
+          [Health EP]  [Cache Expand]  [SQLite WAL]
+             |            |              [Sentence Tune]
+             |            |
+        [Phase 2: Piper TTS Fallback]
+                   |
+        [Phase 3: Parallel TTS + Opus Encoding]
+                   |
+        [Phase 4: Pre-warm Cache]
+                   |
+        [Phase 5: Latency Tracing]
+                   |
+        [Phase 6: Conversation Window]
+                   |
+        [Phase 7: Frontend (react-window, Web Worker if needed)]
+```
+
+### Phase Details
+
+**Phase 1: Quick Wins** -- No new infrastructure, immediate measurable improvement
+- SQLite WAL mode (single config line in db/index.ts)
+- Increase TTS cache to 200 entries (one constant change in tts.ts)
+- Tune sentence detection MIN_SENTENCE_LEN from 20 to 15 (one constant change)
+- Health endpoint expansion (rewrite api/health.ts)
+- TTS health check auto-restart (enhance tts.ts health checking)
+
+**Phase 2: Piper TTS Fallback** -- New container + backend routing
+- Deploy Piper container (docker-compose.yml)
+- Add `synthesizePiper()` to tts.ts
+- Implement timeout-based fallback in `synthesizeSentenceToBuffer()`
+- Verify XTTS -> Piper failover works
+
+**Phase 3: Parallel TTS + Opus** -- The big latency wins
+- Create `opus-encoder.ts` module
+- Add ffmpeg to backend Dockerfile
+- Modify `synthesizeSentenceToBuffer()` to encode output to Opus
+- Replace serial TTS queue with bounded parallel pool in `chat.ts`
+- Update completion detection for parallel workers
+
+**Phase 4: Pre-warm Cache** -- Depends on Opus (cache Opus, not WAV)
+- Create `tts-prewarm.ts` with phrase list
+- Hook into startup sequence in `index.ts`
+- Test with Opus-encoded cache entries
+
+**Phase 5: Latency Tracing** -- Best placed after main changes are in
+- Create `latency-trace.ts` type + helpers
+- Instrument `chat.ts` with trace points
+- Add frontend timestamp recording
+- Emit `chat:latency_trace` event
+
+**Phase 6: Conversation Window** -- Independent of TTS changes
+- Create `conversation-window.ts`
+- Modify `chat.ts` history loading + onDone
+- Test summarization via Qwen
+
+**Phase 7: Frontend Optimizations** -- Depends on Opus being deployed
+- Add `react-window` for chat history virtualization
+- Measure audio decode jank post-Opus
+- Web Worker only if measurements warrant it
+
+### Ordering Rationale
+
+1. **Quick wins first**: No dependencies, provide immediate improvement, validate the measurement baseline
+2. **Piper before parallel TTS**: Fallback improves reliability. Without Piper, a stuck XTTS request blocks a worker slot for 20s. With Piper fallback at 3s, the worst case is 3s + 100ms
+3. **Opus with parallel TTS**: These two features compound -- parallel TTS produces chunks faster, Opus makes those chunks 8x smaller to transfer
+4. **Pre-warm after Opus**: Pre-warm should cache Opus-encoded audio (not WAV that would need re-encoding)
+5. **Latency tracing after main changes**: Traces should measure the actual improved pipeline, not the baseline
+6. **Conversation window late**: Independent of TTS pipeline, can be built in parallel by a different developer
+7. **Web Worker last**: Opus encoding likely eliminates the need; measure before building
+
+---
+
+## New vs Modified Components Summary
+
+### New Files (6)
+
+| File | Purpose | Phase |
+|------|---------|-------|
+| `/root/jarvis-backend/src/ai/opus-encoder.ts` | WAV->Opus encoding via ffmpeg subprocess | 3 |
+| `/root/jarvis-backend/src/ai/tts-prewarm.ts` | Cache pre-warming with common JARVIS phrases | 4 |
+| `/root/jarvis-backend/src/ai/conversation-window.ts` | Sliding window + background summarization | 6 |
+| `/root/jarvis-backend/src/realtime/latency-trace.ts` | LatencyTrace type + timing helpers | 5 |
+| `/root/jarvis-ui/src/audio/decode-worker.ts` | Web Worker audio decode (conditional, Phase 7) | 7 |
+| (none) | Piper uses official Docker image | 2 |
+
+### Modified Files (10)
+
+| File | Change | Phase |
+|------|--------|-------|
+| `/root/docker-compose.yml` | Add `jarvis-piper` service + `piper-data` volume | 2 |
+| `/root/jarvis-backend/Dockerfile` | Add `ffmpeg` package | 3 |
+| `/root/jarvis-backend/src/config.ts` | Piper endpoint, timeouts, TTS cache size, window settings, health config | 1-6 |
+| `/root/jarvis-backend/src/ai/tts.ts` | Piper fallback, Opus encoding, cache expansion to 200, timing metadata | 1-4 |
+| `/root/jarvis-backend/src/realtime/chat.ts` | Parallel TTS queue, latency trace, window management, completion detection | 3-6 |
+| `/root/jarvis-backend/src/api/health.ts` | Component health aggregation with caching | 1 |
+| `/root/jarvis-backend/src/index.ts` | Cache prewarm hook after startup | 4 |
+| `/root/jarvis-backend/src/db/index.ts` | SQLite WAL mode (if not already set) | 1 |
+| `/root/jarvis-ui/src/hooks/useChatSocket.ts` | Client-side timing for latency trace | 5 |
+| `/root/jarvis-ui/src/audio/progressive-queue.ts` | Worker delegation (conditional, Phase 7) | 7 |
+
+### Unchanged Files
 
 | File | Why Unchanged |
 |------|---------------|
-| `src/ai/loop.ts` | Agentic loop is tool-agnostic; new tools work automatically |
-| `src/ai/claude.ts` | Client singleton unchanged |
-| `src/db/schema.ts` | No new tables needed for these features |
-| `src/db/memory.ts` | Existing event logging suffices |
-| `src/config.ts` | May add TTS endpoint config but already has `localTtsEndpoint` |
-| `src/realtime/chat.ts` | Chat flow unchanged; routing handles the new tool triggers |
-
----
-
-## Data Flow Diagrams
-
-### File Download Flow
-
-```
-User: "Download the nginx config from agent1"
-  |
-  v
-router.ts: matches "download" -> Claude
-  |
-  v
-Claude: tool_use { name: "download_file", input: { node: "agent1", path: "/etc/nginx/nginx.conf" } }
-  |
-  v
-loop.ts: tier=YELLOW -> auto-execute
-  |
-  v
-files.ts handler:
-  1. sanitizePath("/etc/nginx/nginx.conf") -> allowed
-  2. getFileFromNode("agent1", "/etc/nginx/nginx.conf", "/tmp/jarvis-dl/<uuid>-nginx.conf")
-  3. return { downloadUrl: "/api/files/download/<uuid>", filename: "nginx.conf", size: 1234 }
-  |
-  v
-Claude: "Here's the nginx config: [Download link](/api/files/download/<uuid>)"
-  |
-  v
-User clicks link -> files.ts Express route serves file -> cleanup
-```
-
-### Project Analysis Flow
-
-```
-User: "Analyze the jarvis-backend project"
-  |
-  v
-router.ts: matches "project" + "analyze" -> Claude
-  |
-  v
-Claude: tool_use { name: "analyze_project", input: { project: "jarvis-backend" } }
-  |
-  v
-projects.ts handler:
-  1. registry.getProjects() -> find project by name
-  2. SSH to Home node:
-     a. cat /root/jarvis-backend/package.json (parse deps, version)
-     b. npm outdated --json (in project dir)
-     c. git -C /root/jarvis-backend status --porcelain
-     d. du -sh /root/jarvis-backend
-  3. Return structured report
-  |
-  v
-Claude: Presents analysis with findings and recommendations
-```
-
-### Voice Retraining Flow
-
-```
-User: "Extract a new voice clip from the Iron Man 2 video"
-  |
-  v
-router.ts: matches "voice" + "extract" -> Claude
-  |
-  v
-Claude: tool_use { name: "extract_voice_clip", input: {
-  inputVideo: "/path/to/ironman2.mkv",
-  startTime: "00:45:23",
-  duration: 12,
-  outputName: "jarvis-ref-33"
-} }
-  |
-  v
-voice.ts handler:
-  1. Validate inputs (duration 3-60s, output name safe)
-  2. execOnNodeByName("Home", "ffmpeg -i ... -ss 00:45:23 -t 12 ...")
-  3. execOnNodeByName("Home", "ls -la /opt/jarvis-tts/voices/jarvis/jarvis-ref-33.wav")
-  4. Return clip metadata
-
-...later...
-
-User: "Retrain the voice with the new clips"
-  |
-  v
-Claude: tool_use { name: "retrain_voice_embedding", input: {} }
-  |
-  v
-voice.ts handler:
-  1. execOnNodeByName("Home",
-     "docker exec jarvis-tts python3 /training/compute_speaker_embedding.py")
-  2. Return embedding computation results
-
-Claude: "Embedding updated with 11 clips. Shall I also retrain the GPT model?"
-  |
-  v
-User: "Yes"
-  |
-  v
-Claude: tool_use { name: "retrain_voice_model", input: { epochs: 6 } }
-  |
-  v (RED tier -> PendingConfirmation -> user confirms in UI)
-  |
-  v
-voice.ts handler:
-  1. execOnNodeByName("Home",
-     "docker exec jarvis-tts python3 /training/finetune_xtts.py")
-  2. execOnNodeByName("Home",
-     "docker exec jarvis-tts python3 /training/extract_gpt_weights.py")
-  3. execOnNodeByName("Home", "docker restart jarvis-tts")
-  4. Wait for health check to pass
-  5. Return training results
-```
-
----
-
-## Suggested Build Order
-
-The three features have clear dependency and complexity ordering:
-
-```
-Phase 1: File Operations (Foundation Layer)
-  Build: src/mcp/tools/files.ts + ssh.ts extensions + safety/sanitize path validation
-  Why first: Both project tools and voice tools need file read/list capabilities.
-             Path sanitization is foundational safety infrastructure.
-  Estimated scope: 4-5 new tools, ~300 lines new code
-  Risk: LOW (SSH commands are well-understood, safety patterns established)
-
-Phase 2: Project Intelligence (Data Layer)
-  Build: src/clients/registry.ts + src/mcp/tools/projects.ts
-  Why second: Depends on file reading capability from Phase 1.
-              The registry client is a new client pattern but straightforward.
-  Estimated scope: 1 new client + 5-6 tools, ~400 lines new code
-  Risk: LOW (Registry is a simple JSON file, SSH commands are familiar)
-
-Phase 3: Voice Retraining (Orchestration Layer)
-  Build: src/mcp/tools/voice.ts
-  Why last: Most complex (Docker exec, long-running processes, service restart).
-            Does not block other features. Requires TTS container running.
-  Estimated scope: 6-7 tools, ~350 lines new code
-  Risk: MEDIUM (long-running training, resource contention, container restart)
-```
-
-### Phase Ordering Rationale
-
-1. **File operations first** because they establish the path sanitization infrastructure that all subsequent file access depends on. The `sanitizePath()` function, `PROTECTED_PATHS` list, and SSH file transfer methods are reused by project tools. Without file ops, project tools cannot safely read files.
-
-2. **Project intelligence second** because it introduces the registry client (a new client pattern alongside proxmox.ts and ssh.ts) and depends on safe file reading from Phase 1. Project browsing and analysis are the highest user-value features -- they make Jarvis useful for daily development work, not just cluster management.
-
-3. **Voice retraining last** because it is the most complex (Docker exec orchestration, long-running processes, service lifecycle management) and the most self-contained (no other features depend on it). If it ships later, no other features are blocked. It also requires the TTS container to be running, which is a separate deployment concern.
-
-### Dependency Graph
-
-```
-Phase 1: File Operations
-    |
-    +-- sanitizePath() function
-    |     |
-    |     +-- Used by: Phase 2 project tools (path containment)
-    |     +-- Used by: Phase 3 voice tools (path validation)
-    |
-    +-- ssh.ts getFileFromNode()
-    |     |
-    |     +-- Used by: download_file tool
-    |     +-- Potentially used by: project file download (future)
-    |
-    +-- api/files.ts download endpoint
-          |
-          +-- Self-contained, no downstream deps
-
-Phase 2: Project Intelligence
-    |
-    +-- clients/registry.ts
-    |     |
-    |     +-- Used by: all project tools
-    |     +-- Potentially used by: system prompt context (future)
-    |
-    +-- Phase 1 file reading capability (read_file pattern)
-
-Phase 3: Voice Retraining
-    |
-    +-- No downstream dependents
-    +-- Phase 1 path validation (sanitizePath)
-```
-
----
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Agent-Per-Node for File Access
-
-**What:** Deploying a file access daemon/agent on each cluster node.
-
-**Why bad for this project:**
-- Adds 4 new services to maintain across the cluster
-- Each agent needs security (auth, encryption, access control)
-- The SSH infrastructure already provides authenticated, encrypted file access
-- More moving parts = more failure modes
-- The management overhead vastly exceeds the benefit
-
-**Instead:** Use existing SSH connections via `node-ssh`. The SSH pool in `clients/ssh.ts` already handles connection lifecycle, reconnection, and pooling. File transfer is a native SSH capability.
-
-### Anti-Pattern 2: Exposing Raw File Paths to Claude
-
-**What:** Letting Claude construct arbitrary filesystem paths from user descriptions.
-
-**Why bad:**
-- Path traversal attacks via prompt injection
-- Claude might construct paths to sensitive files
-- User input + LLM reasoning + filesystem = large attack surface
-
-**Instead:** All paths go through `sanitizePath()` validation. Blocked paths are defined declaratively in `PROTECTED_PATHS`. The tool handler validates before executing. For project tools, paths are additionally contained to the project directory.
-
-### Anti-Pattern 3: Synchronous Training in Tool Handler
-
-**What:** Running voice model fine-tuning synchronously in the MCP tool handler and making Claude wait 30-90 minutes for the result.
-
-**Why bad:**
-- The agentic loop has a max iteration limit (10 iterations)
-- HTTP/WebSocket timeouts will kill the connection long before training completes
-- The frontend will show a "thinking" spinner for 30+ minutes
-- Resource-intensive training blocks all other TTS requests
-
-**Instead:** For `retrain_voice_model`:
-- Start training as a background process: `docker exec -d jarvis-tts python3 /training/finetune_xtts.py`
-- Return immediately with "Training started, use get_training_log to monitor progress"
-- Claude can periodically check `get_training_log` to report status
-- When complete, a separate `apply_trained_model` tool extracts weights and restarts the container
-
-Actually, there is a simpler approach: since the `execOnNodeByName()` function has a configurable timeout (default 30s), simply set a very long timeout for training commands (e.g., 120 minutes). The SSH connection will stream stdout back. The loop.ts tool execution timeout should be extended for this specific tool. However, the agentic loop continues after receiving the tool result, so Claude will process the result when training completes.
-
-**Recommended approach:** Background process with monitoring. Start training detached, return immediately, let the user check progress via `get_training_log`.
-
-### Anti-Pattern 4: Caching Registry Forever
-
-**What:** Fetching the project registry once at startup and never refreshing.
-
-**Why bad:**
-- Projects change (new deployments, moved files, deleted projects)
-- Registry is updated by the File Organizer agent every 6 hours
-- Stale data leads to "project not found" errors when projects have moved
-
-**Instead:** Cache with 5-minute TTL. The registry is a small JSON file (~5KB for 24 projects); fetching it via SSH is fast (<100ms). Provide a `refreshRegistry()` method for explicit invalidation.
-
-### Anti-Pattern 5: Sharing Sanitization Logic Between execute_ssh and File Tools
-
-**What:** Running file tool commands through the same `sanitizeCommand()` allowlist used by `execute_ssh`.
-
-**Why bad:**
-- The allowlist is designed for user-facing SSH commands, not internally constructed commands
-- File tools would need to add generic commands like `cat`, `find`, `grep` to the allowlist
-- Adding generic `cat` to the allowlist weakens security for `execute_ssh` (users could `cat /etc/shadow`)
-- The safety models are different: execute_ssh validates user-provided commands; file tools validate user-provided paths
-
-**Instead:** Separate safety models:
-- `execute_ssh`: Command allowlist/blocklist (existing, unchanged)
-- File tools: Path sanitization + protected paths (new, orthogonal)
-- Both share: Input sanitization (`sanitizeInput()`), protected resource checks (`isProtectedResource()`)
-
----
-
-## Scalability Considerations
-
-| Concern | Current (18 tools) | After (37 tools) | Mitigation |
-|---------|---------------------|-------------------|------------|
-| Tool count in Claude context | 18 tools ~1500 tokens | 37 tools ~3000 tokens | Still well within Claude's 200K window |
-| Tool selection accuracy | Good (18 well-described tools) | May degrade (more tools to choose from) | Group tools by domain in descriptions; test accuracy |
-| SSH connection pool | 4 connections (1 per node) | Same 4 connections | Pool already handles concurrent use |
-| Registry fetch overhead | N/A | ~100ms per SSH + parse | 5-minute cache eliminates most calls |
-| File download temp storage | N/A | /tmp fills up | 5-minute TTL cleanup; max file size limit (100MB) |
-| Training resource contention | TTS runs on Home CPU | Training blocks TTS | RED tier for training; background execution |
-
-### Tool Count and Claude Selection Quality
-
-With 37 tools, Claude will receive approximately 3000 additional context tokens for tool definitions. This is well within budget. However, more tools means more opportunity for Claude to select the wrong tool.
-
-Mitigation: **Excellent tool descriptions are critical.** The existing `ai/tools.ts` already uses handcrafted descriptions optimized for Claude's tool selection. Continue this pattern. Each new tool description should:
-- Clearly state WHEN to use it (not just what it does)
-- Distinguish from similar tools (e.g., `read_file` vs `read_project_file`)
-- Include example triggers ("Use when the user asks to...")
+| `/root/jarvis-backend/src/ai/loop.ts` | Agentic loop is TTS-agnostic |
+| `/root/jarvis-backend/src/ai/providers/*.ts` | Provider interface unchanged |
+| `/root/jarvis-backend/src/ai/sentence-stream.ts` | Sentence detection constants change only (MIN_SENTENCE_LEN) |
+| `/root/jarvis-backend/src/ai/text-cleaner.ts` | Text cleaning logic unchanged |
+| `/root/jarvis-backend/src/db/schema.ts` | No new tables needed |
+| `/root/jarvis-backend/src/db/memories.ts` | Existing memory API sufficient for summaries |
+| `/root/jarvis-backend/src/realtime/socket.ts` | Socket.IO namespace setup unchanged |
+| `/root/jarvis-ui/src/stores/chat.ts` | Chat store unchanged (latency trace is read-only) |
+| `/root/jarvis-ui/src/stores/voice.ts` | Voice store unchanged |
+| `/root/jarvis-ui/src/hooks/useVoice.ts` | Monolithic playback hook unchanged |
 
 ---
 
 ## Sources
 
-### HIGH Confidence (Verified Against Codebase)
+### HIGH Confidence (Direct Codebase Analysis)
+- `/root/jarvis-backend/src/realtime/chat.ts` -- Serial TTS queue, sentence accumulator integration, voice pipeline flow
+- `/root/jarvis-backend/src/ai/tts.ts` -- TTS provider abstraction, LRU cache, synthesize pipeline
+- `/root/jarvis-backend/src/ai/sentence-stream.ts` -- Sentence boundary detection, MIN_SENTENCE_LEN constant
+- `/root/jarvis-backend/src/config.ts` -- All current configuration values
+- `/root/jarvis-backend/src/api/health.ts` -- Current trivial health endpoint
+- `/root/jarvis-backend/src/index.ts` -- Startup sequence, service initialization order
+- `/root/jarvis-backend/src/db/memories.ts` -- Memory tier system, session_summary category
+- `/root/jarvis-backend/src/ai/memory-context.ts` -- Memory context injection into prompts
+- `/root/jarvis-ui/src/audio/progressive-queue.ts` -- Frontend audio queue, decodeAudioData usage
+- `/root/jarvis-ui/src/hooks/useChatSocket.ts` -- Socket.IO event handlers, progressive session management
+- `/root/docker-compose.yml` -- Current container stack, networking, resource limits
+- `/opt/jarvis-tts/app/server.py` -- XTTS API surface, health endpoint, synthesis endpoint
+- `/opt/jarvis-tts/Dockerfile` -- XTTS container build, Python + PyTorch dependencies
 
-- All component details verified by reading every TypeScript source file in jarvis-backend/src/
-- TTS pipeline verified by reading server.py, finetune_xtts.py, compute_speaker_embedding.py, extract_gpt_weights.py
-- Docker configuration verified from /opt/jarvis-tts/docker-compose.yml and Dockerfile
-- Registry structure verified by fetching live registry.json from agent1
-- Voice training data verified from metadata.csv (10 clips, LJSpeech format)
-- Shell helper scripts verified from extract-voice.sh and prepare-audio.sh
-- SSH client capabilities verified from node-ssh library usage in clients/ssh.ts
+### HIGH Confidence (Official Documentation)
+- [Piper TTS GitHub](https://github.com/rhasspy/piper) -- HTTP server, voice models, Docker setup
+- [rhasspy/wyoming-piper Docker](https://hub.docker.com/r/rhasspy/wyoming-piper) -- Official container image, port 5000 HTTP API
+- [Piper HTTP API docs](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_HTTP.md) -- POST endpoint, JSON format, response format
+- [MDN decodeAudioData](https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext/decodeAudioData) -- Browser API for audio decoding
+- [Chrome Opus in decodeAudioData](https://chromestatus.com/feature/5649634416394240) -- Chrome feature tracking for Opus support
 
-### HIGH Confidence (Architecture Patterns)
-
-- MCP tool registration pattern: Verified from 3 existing tool files (cluster.ts, lifecycle.ts, system.ts)
-- Safety tier pipeline: Verified from server.ts executeTool() + tiers.ts checkSafety()
-- Sanitization pipeline: Verified from sanitize.ts (allowlist/blocklist/metacharacter detection)
-- Agentic loop flow: Verified from loop.ts (GREEN/YELLOW auto-exec, RED confirmation, BLACK block)
-
-### MEDIUM Confidence (Implementation Details)
-
-- node-ssh file transfer methods (getFile/putFile): Based on node-ssh library documentation
-- Docker exec for training: The commands exist in the training scripts; orchestrating via SSH + docker exec is standard
-- Path sanitization approach: Standard filesystem security pattern; specific PROTECTED_PATHS list needs validation
+### MEDIUM Confidence (Verified Research)
+- [Inferless TTS Benchmark 2025](https://www.inferless.com/learn/comparing-different-text-to-speech---tts--models-part-2) -- Piper <1s vs XTTS higher latency on CPU
+- [opus-stream-decoder npm](https://www.npmjs.com/package/opus-stream-decoder) -- WebAssembly Opus decoding option
+- [prism-media](https://github.com/amishshah/prism-media) -- Node.js Opus encoding via native bindings
+- ffmpeg WAV->Opus pipe support -- verified via ffmpeg documentation and community examples
 
 ### LOW Confidence (Needs Validation)
-
-- Training duration estimates (30-90 min): Based on single data point from existing finetune.log
-- Claude tool selection quality with 37 tools: Empirical testing needed
-- Background training process reliability: docker exec -d behavior with long-running Python scripts needs testing
-
----
-
-*Architecture research for file operations, project intelligence, and voice retraining: 2026-01-26*
+- OffscreenAudioContext browser support in Firefox/Safari -- requires runtime testing
+- Piper HTTP API latency on Home node hardware -- needs benchmarking after deployment
+- Opus encoding overhead per sentence in Node.js via ffmpeg spawn -- needs benchmarking

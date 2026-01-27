@@ -1,345 +1,506 @@
-# Feature Landscape: Milestone 3 -- File Operations, Project Intelligence, Voice Retraining
+# Feature Landscape: v1.5 Optimization & Latency Reduction
 
-**Domain:** AI-powered infrastructure management + developer assistant (Proxmox homelab)
-**Project:** Jarvis 3.1 -- Subsequent Milestone (File & Project Intelligence)
-**Researched:** 2026-01-26
-**Focus:** File import/download, project browsing/analysis, code review, voice retraining pipeline
+**Domain:** AI voice assistant latency optimization (self-hosted, single-user LAN)
+**Project:** Jarvis 3.1 -- v1.5 Optimization Milestone
+**Researched:** 2026-01-27
+**Target:** Reduce first-audio latency from 15-30s to 2-4s with 99%+ reliability
 
 ---
 
 ## Existing Foundation (Already Built)
 
-These features are live and inform what the new features build upon:
+These features are live and define what the optimization features build upon:
 
-| Component | Status | Relevant to New Features |
-|-----------|--------|--------------------------|
-| 18 MCP tools (9 cluster, 6 lifecycle, 3 system) | Working | New file/project tools follow same MCP pattern |
-| 4-tier safety framework (GREEN/YELLOW/RED/BLACK) | Working | File operations need tier classification |
-| Command sanitization (allowlist/blocklist) | Working | File path validation extends this pattern |
-| SSH execution to all 4 cluster nodes | Working | Project browsing uses cross-node SSH |
-| Project registry (24 projects indexed) | Working | Registry is the foundation for project browsing |
-| File Organizer Agent (agent1) | Working | Provides project discovery, can be queried |
-| XTTS v2 TTS server (FastAPI) | Working | Voice retraining feeds into this |
-| TTS training pipeline (finetune_xtts.py) | Working | Dataset expansion improves voice quality |
-| Training dataset (10 WAV samples, LJ Speech format) | Working | Current dataset is minimal, needs expansion |
-| Claude agentic loop with streaming | Working | File/project tools plug into existing loop |
-| Local LLM (Qwen 2.5 7B) | Working | Can handle project analysis tasks locally |
+| Component | Status | Performance Baseline |
+|-----------|--------|---------------------|
+| Streaming voice pipeline (sentence-by-sentence TTS) | Working | Sentences dispatched during LLM streaming |
+| XTTS v2 with fine-tuned JARVIS voice | Working | ~4s per short sentence (CPU), 8-15s typical |
+| LRU TTS cache (50 entries, in-memory) | Working | Cache hits return instantly |
+| Progressive audio queue on frontend | Working | Chunks play sequentially as they arrive |
+| Serial TTS queue (one-at-a-time synthesis) | Working | Guarantees order, prevents server overload |
+| SentenceAccumulator (min 20 chars) | Working | Detects sentence boundaries during streaming |
+| O(1) token append, RAF batching, React.memo | Working | Chat rendering optimized |
+| Shared Proxmox API cache (5-15s TTL) | Working | Reduces redundant API calls |
+| Health endpoint (/api/health) | Working | Returns status, uptime, version only |
+| Text cleaner (markdown stripping for TTS) | Working | Removes code blocks, formatting, etc. |
+| 20-message chat history limit | Working | Hard cutoff, no summarization |
+| AbortController for request cancellation | Working | Per-session abort on disconnect |
 
-### Key Architectural Constraints
+### Key Constraints for Optimization
 
-1. **MCP tool pattern**: All new capabilities must be registered as MCP tools through the existing `McpServer` instance, following the `registerXxxTools(server)` pattern.
-2. **Safety tiers**: Every new tool needs a tier classification. File reads are GREEN, file writes are YELLOW, file downloads from URLs are RED.
-3. **Cross-node SSH**: Projects live on different nodes. The existing `execOnNodeByName()` function handles SSH execution. File operations on remote nodes go through SSH.
-4. **Command allowlist**: The current allowlist includes `ls`, `head`, `tail`, `cat /sys`, `cat /proc/*`, `stat`, `du`, `wc`. Expanding file operations requires extending the allowlist or creating dedicated tools that bypass the generic SSH tool.
-5. **Token budget**: Qwen has 4096 token context. Project analysis with code snippets can easily exceed this. Claude with 200K context is needed for meaningful code analysis.
+1. **CPU-only inference**: No GPU. XTTS v2 runs on CPU (14 cores, 20 threads shared with llama-server). Parallelism is CPU-bound.
+2. **XTTS batch_size=1**: XTTS v2 does not support batch inference. Parallel requests cause errors even on GPU. On CPU, they compete for the same cores.
+3. **Single user on LAN**: No multi-tenant concerns. Optimizations can be aggressive (pre-warm, pre-allocate, monopolize resources).
+4. **WAV output from XTTS**: Current TTS returns uncompressed WAV. A 4-second sentence is ~350KB over LAN (negligible on gigabit), but encoding to Opus would reduce to ~10KB.
+5. **llama-server shares CPU**: TTS and LLM compete for the same 14 CPU cores. Running both simultaneously degrades both.
 
 ---
 
-## Feature Domain 1: File Import/Download
+## Feature Domain 1: TTS Fallback System
+
+### How Production Systems Handle This
+
+Production TTS pipelines use a tiered fallback strategy: primary engine (highest quality), secondary engine (acceptable quality, higher availability), and tertiary/browser fallback (last resort, always available). The key principles:
+
+- **Timeout per sentence**: 15-30s for CPU inference is too high. Production systems use 5-10s timeouts for individual TTS calls, with the understanding that if synthesis hasn't started producing audio in that window, the service is likely stuck.
+- **Mid-sentence fallback**: The hardest case. If the primary TTS fails mid-sentence, the options are: (a) skip that sentence entirely, (b) retry with fallback engine from the beginning of the sentence, or (c) emit silence and continue. Option (b) is most common.
+- **Voice consistency**: Switching voices mid-response is jarring. Production systems accept voice inconsistency on fallback as preferable to silence, but minimize it by completing the current sentence with the fallback and attempting to return to primary for the next sentence.
+- **Health-gated routing**: Check TTS health before dispatching. The existing 60s health cache is good but should reset on failure (which it already does -- `lastHealthCheck = 0` on error).
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Dependencies |
 |---------|--------------|------------|--------------|
-| Download file from URL to local path | "Download this tarball to /opt/downloads/" -- basic wget/curl equivalent. Every assistant with file access needs this. | Low | New MCP tool `download_file`, path validation, size limits |
-| Progress reporting for large downloads | Files over 10MB should report progress. Without it, user thinks JARVIS froze. Streaming progress via Socket.IO events. | Medium | Download tool with chunked transfer, progress callback to Socket.IO |
-| File type validation | Block downloads of executable binaries (.exe, .sh with execute bit), disk images, or obviously dangerous content. Prevent JARVIS from becoming a malware dropper. | Low | Extension allowlist, MIME type checking via `file` command |
-| Download destination restrictions | Only allow downloads to designated directories (e.g., `/opt/downloads/`, `/tmp/jarvis/`, shared storage paths). Never to `/etc/`, `/usr/`, system directories. | Low | Path allowlist, symlink resolution check |
-| Size limits | Cap downloads at a configurable maximum (default 500MB). Prevent filling up disk with a single operation. | Low | HEAD request for Content-Length check before download, streaming size counter |
-| Download status/history | "What did you download recently?" -- log all downloads with URL, destination, size, timestamp. | Low | New `downloads` table in SQLite or extend `events` table |
+| Automatic fallback to browser SpeechSynthesis | When XTTS is down or slow, user hears nothing. Browser TTS is always available, instant, and acceptable for a fallback. | Medium | Frontend detection of TTS failure/timeout, browser SpeechSynthesis API |
+| Per-sentence timeout with fallback trigger | Current 20s timeout returns null on failure. Should trigger fallback instead of silence. | Low | Modify `synthesizeSentenceToBuffer` to return fallback signal |
+| Health-aware routing before dispatch | Don't attempt XTTS synthesis if health check failed recently. Route directly to fallback. | Low | Already partially implemented (60s health cache). Extend to expose to chat handler. |
+| Graceful degradation notification | User should know when fallback is active ("Voice quality reduced -- TTS server recovering"). | Low | New socket event `chat:tts_fallback` |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Dependencies |
 |---------|-------------------|------------|--------------|
-| Smart archive extraction | After downloading a .tar.gz, .zip, or .deb, automatically offer to extract it. "I've downloaded the file. Would you like me to extract it?" Context-aware follow-up. | Medium | Archive detection, extraction commands (tar, unzip, dpkg), confirmation flow |
-| Cross-node file transfer | "Move this backup from Home to pve" -- SCP/rsync between cluster nodes. Leverages existing SSH infrastructure. Unique to a multi-node homelab assistant. | Medium | SCP via SSH, source/destination node validation, progress reporting |
-| Git clone integration | "Clone this repo to /opt/projects/" -- git clone as a first-class operation, not just a generic download. Sets up the project for immediate browsing/analysis. | Low | `git clone` via SSH execution, clone status reporting |
-| URL content preview | Before downloading, fetch headers and show: file name, size, type. "This is a 45MB gzipped tarball. Download to /opt/downloads/?" Informed consent. | Low | HTTP HEAD request, content-type parsing |
+| ElevenLabs cloud fallback (optional) | Higher quality than browser TTS. Already coded but not wired into fallback chain. Use when API key present. | Low | Existing `synthesizeElevenLabs` function, API key config |
+| Automatic recovery detection | When primary TTS recovers, switch back seamlessly without user action. The existing health check interval handles this. | Low | Health check polling already exists |
+| Fallback latency tracking | Log which fallback was used and why. Feeds into latency tracing pipeline. | Low | Logging, ties to Feature Domain 5 |
 
 ### Anti-Features
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Arbitrary code execution from downloads | Downloading a script and immediately executing it (`curl | bash` pattern) is explicitly blocked in the command blocklist. Must remain blocked even for JARVIS. | Download the file. Let the operator inspect it. Offer to make it executable as a separate RED-tier action if requested. |
-| Browser/web scraping | Building a web scraper or headless browser into JARVIS adds enormous complexity. JARVIS is not a web browsing agent. | Use `wget`/`curl` for direct file URLs. For web content, the operator can provide the direct link. |
-| Torrent/P2P downloads | BitTorrent support adds protocol complexity and potential legal concerns. Out of scope for a homelab assistant. | Direct HTTP/HTTPS downloads only. The operator can use separate torrent clients. |
-| Automatic virus scanning | Running ClamAV or similar on every download is infrastructure overhead for a private homelab. | Block known-dangerous file types. Log all downloads for audit. Trust the operator's judgment for content safety. |
+| Multiple TTS engine instances | XTTS v2 does not support concurrent requests (even on GPU, causes CUDA assertion errors). Running multiple instances on CPU would starve both LLM and TTS. | Single serial queue with fallback to a different engine type |
+| Voice cloning on fallback | Trying to match JARVIS voice on ElevenLabs/browser TTS adds complexity with minimal benefit. Accept voice change on fallback. | Use best available preset voice on fallback (e.g., "Daniel" on ElevenLabs, default male on browser) |
+| Retry loops on primary | Retrying failed XTTS requests when the service is unhealthy wastes time. Fail fast, fallback fast. | Circuit breaker pattern: after N failures in M seconds, route to fallback for cooldown period |
 
 ---
 
-## Feature Domain 2: Project Read/Browse
+## Feature Domain 2: Parallel TTS Synthesis
+
+### How Production Systems Handle This
+
+Production voice pipelines use multi-worker architectures to synthesize sentences in parallel:
+
+- **Worker count**: Typically 2-4 workers for GPU systems. For CPU-only XTTS v2 on shared hardware, parallelism is counterproductive. XTTS batch_size=1 is a hard constraint, and concurrent requests cause errors.
+- **Ordering**: Workers pull from a shared queue and deposit results into an ordered output buffer. Each sentence gets an index at detection time (which Jarvis already does). The output buffer waits for the next expected index before releasing to playback.
+- **Slow worker handling**: A "straggler" worker blocks playback of all subsequent sentences. Production systems use timeouts: if sentence N hasn't completed in T seconds, skip it and move to N+1.
+- **Cancellation**: On user interrupt (new message, stop button), all workers receive abort signal and discard pending work. Jarvis already has AbortController per session.
+
+### Critical Constraint: XTTS Cannot Parallelize
+
+XTTS v2 is confirmed to support only batch_size=1. Concurrent GPU requests cause CUDA assertion errors. On CPU, the same model cannot process two requests simultaneously without thread contention that makes both slower. The "parallel TTS" story for Jarvis is NOT about running multiple XTTS instances.
+
+**The real opportunity**: Parallel XTTS + LLM is counterproductive on shared CPU. But overlapping LLM streaming with sequential TTS (which Jarvis already does) IS the parallelism. The improvement path is making each sequential TTS call faster, not adding more concurrent calls.
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Dependencies |
 |---------|--------------|------------|--------------|
-| List projects from registry | "What projects are on the cluster?" -- query the existing project registry (24 indexed projects across 4 nodes). This data already exists. | Low | SSH to agent1 to read `/opt/cluster-agents/file-organizer/data/registry.json`, or cache locally |
-| Browse directory structure | "Show me the structure of jarvis-backend/" -- tree-like directory listing with depth control. Equivalent to `tree -L 2`. | Low | New MCP tool `list_directory` or `browse_project`, recursive listing via SSH |
-| Read file contents | "Show me the contents of server.ts" -- read a specific file and return contents. The most fundamental file operation. | Low | New MCP tool `read_file`, path validation, size limits (cap at ~50KB to avoid overwhelming context) |
-| Search within project files | "Find all files that import 'express'" -- grep/ripgrep equivalent across a project directory. Essential for code understanding. | Medium | New MCP tool `search_files`, regex support, result pagination |
-| File metadata | "How big is this file? When was it last modified?" -- stat information for files. | Low | `stat` command via SSH (already in allowlist) |
-| Multi-file read | "Show me server.ts, config.ts, and routes.ts" -- read multiple files in one request. Reduces round-trips for code review workflows. | Low | Batch variant of `read_file`, combined output with file separators |
+| Preserve serial queue (current design) | The current one-at-a-time TTS queue is the correct architecture for CPU-only XTTS v2. Changing to parallel would degrade performance. | None (keep current) | N/A |
+| Abort propagation to TTS queue | When user sends new message or disconnects, pending TTS sentences should be cancelled immediately. Current AbortController check exists but could be tighter. | Low | AbortController signal check before each queue item |
+| Queue depth limiting | If LLM generates 20 sentences but user interrupts after 3, don't synthesize remaining 17. Cap queue at 3-5 ahead of playback. | Low | Max queue depth constant, drop excess |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Dependencies |
 |---------|-------------------|------------|--------------|
-| Cross-node project browsing | "Show me the projects on pve node" -- browse any project on any cluster node seamlessly. The registry knows which node each project lives on. This is unique to a multi-node homelab. | Medium | Node-aware routing, SSH to correct node based on registry lookup |
-| Project summary generation | "Summarize the jarvis-backend project" -- read package.json, README, key source files and generate an architectural overview. Goes beyond file listing to understanding. | High | LLM analysis (Claude for quality), selective file reading, token budget management |
-| Code search with context | Search results include surrounding lines (like `grep -C 3`), file path, and line numbers. Not just matching lines but enough context to understand the match. | Low | Enhanced grep output parsing, context line parameter |
-| Syntax-aware file reading | When reading code files, identify the language and provide syntax-highlighted output (or at minimum, language annotation for the frontend to render). | Low | File extension to language mapping, markdown code fences with language tags |
-| Project dependency graph | "What does jarvis-backend depend on?" -- parse package.json/requirements.txt/pyproject.toml and show dependency tree. | Medium | Package manifest parsing, optional `npm ls` or `pip list` execution |
-| Recent changes view | "What changed recently in this project?" -- `git log --oneline -10` and `git diff --stat` for the project. Quick overview of recent work. | Low | Git commands via SSH, project path from registry |
+| Speculative next-sentence synthesis | Start synthesizing sentence N+1 immediately after sentence N completes (before N finishes playing). Current design already does this via the queue. Verify it works correctly. | Low | Audit existing `drainTtsQueue` logic |
+| CPU affinity separation | Pin llama-server to cores 0-7 and XTTS to cores 8-13 using `taskset` to eliminate contention. This is the single biggest performance win available. | Medium | systemd service modification, Docker `cpuset` |
+| Sentence length optimization | Shorter sentences synthesize faster on XTTS. Tune `SentenceAccumulator` MIN_SENTENCE_LEN and max length to find the sweet spot (e.g., 50-150 chars). | Low | Benchmark different sentence lengths |
 
 ### Anti-Features
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Full codebase indexing / embedding | Building a vector index of all 24 projects' source code is expensive, requires a vector DB, and would need constant re-indexing. Overkill for an assistant that handles ~50 queries/day. | Read files on-demand. Use grep for search. Claude's 200K context can hold significant portions of a project when needed for analysis. |
-| Live file watching / hot reload | Monitoring file changes in real-time across 4 nodes would require inotify watchers via persistent SSH connections. Complex, fragile, unnecessary. | The project registry already scans every 6 hours. For immediate info, read the file when asked. |
-| File editing / writing | JARVIS should NOT write to project files autonomously. The risk of corrupting a working project is too high. A homelab assistant should inform, not modify. | Present suggestions as text. Let the operator apply changes manually or use their IDE. If file writing is ever added, it must be RED-tier with explicit confirmation and backup. |
-| IDE integration (LSP) | Running Language Server Protocol servers for TypeScript, Python, etc. on the cluster is heavy infrastructure for occasional code questions. | Use LLM analysis instead of static analysis. Claude understands code structure without needing an LSP server. |
-| Git operations (commit, push, merge) | Allowing JARVIS to make commits or push code introduces version control risks. A typo in the commit message or wrong branch could cause problems. | Read-only git operations (log, diff, status, blame) are fine as GREEN tier. Write operations (commit, push) should remain manual. |
+| Multiple XTTS worker instances | XTTS v2 cannot process concurrent requests. Running two instances doubles memory (~2GB each) and causes CPU thrashing. Confirmed as "wontfix" by maintainers. | Single serial queue, optimize per-sentence latency |
+| GPU TTS offloading | No GPU in cluster. Adding one changes hardware scope of this milestone. | Future milestone if GPU added |
+| Non-autoregressive TTS model swap | Models like FastSpeech 2 are much faster but produce lower quality, no voice cloning. Would lose the JARVIS personality voice. | Keep XTTS v2, optimize around its constraints |
 
 ---
 
-## Feature Domain 3: Project Analysis & Discussion
+## Feature Domain 3: Opus Audio Codec
+
+### How This Works in Web Applications
+
+The current pipeline sends uncompressed WAV from XTTS to the browser. WAV at 22050Hz mono 16-bit is approximately 44KB/s. Opus at 32kbps would be approximately 4KB/s -- a 10x reduction. On LAN this bandwidth difference is negligible, but Opus has other benefits:
+
+- **Encoding on server (Node.js)**: Use `ffmpeg` (CLI) or a native Node.js binding to transcode WAV to Opus in a WebM container. The encoding step adds 10-50ms per sentence. `ffmpeg -i input.wav -c:a libopus -b:a 32k -f webm output.webm` is the standard approach.
+- **WebM container vs raw Opus**: WebM is the correct container for browser playback. Ogg containers are not supported by Media Source Extensions (MSE). All modern browsers support Opus in WebM. Safari added Opus support in Safari 18.4 (2025). Raw Opus frames require a custom decoder.
+- **Browser decoding**: `AudioContext.decodeAudioData()` natively handles Opus-in-WebM in all modern browsers. No WASM decoder needed. The current `decodeAudioData` call in `progressive-queue.ts` would work unchanged if the server sends WebM/Opus instead of WAV.
+- **Latency implication**: Opus encoding adds 10-50ms but reduces transfer time. On LAN (gigabit), transfer time for a 4-second WAV sentence is ~1.5ms, so Opus encoding would be a net negative. **On slower networks or WiFi, Opus becomes beneficial.** For a single user on wired LAN, this is a marginal optimization.
+- **libopus 1.6** (released December 2025): Latest version with backward-compatible bandwidth extension improvements.
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Dependencies |
 |---------|--------------|------------|--------------|
-| Code explanation | "Explain what this function does" -- given a file and function name (or line range), explain the code in plain language. The most basic code analysis feature. | Medium | File reading + LLM analysis. Must use Claude (not Qwen) for quality code understanding. |
-| Bug/issue identification | "Are there any issues in this file?" -- scan for common problems: unhandled errors, security issues, type mismatches, logic errors. | Medium | File reading + Claude analysis with structured prompt. Return categorized findings (bug, security, style, performance). |
-| Architecture overview | "How is the jarvis-backend structured?" -- read key files and explain the overall architecture, component relationships, and data flow. | High | Multi-file reading, registry data, LLM synthesis. Token-expensive for Claude but high-value output. |
-| Code question answering | "Why does the safety tier use a blocklist AND an allowlist?" -- conversational Q&A about code with file references. Like having a senior developer explain the codebase. | Medium | Context-aware: read relevant files, inject into conversation, let Claude answer. |
+| Keep WAV for LAN (current default) | On gigabit LAN, WAV transfer is instant. Opus encoding overhead (10-50ms per sentence) would increase latency, not decrease it. | None (keep current) | N/A |
+| Content-type aware playback | Frontend should handle both WAV and Opus content types from `decodeAudioData`. It already does this implicitly -- `decodeAudioData` auto-detects format. | None (already works) | N/A |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Dependencies |
 |---------|-------------------|------------|--------------|
-| Security audit | "Check this project for security issues" -- targeted security review: hardcoded secrets, injection vulnerabilities, missing input validation, insecure defaults. Particularly valuable for a homelab with SSH keys and API tokens. | High | Multi-file reading, security-focused analysis prompt, categorized output (critical/high/medium/low) |
-| Improvement suggestions | "How can I improve this code?" -- actionable suggestions with specific file/line references. Not just "use better variable names" but "extract this 50-line function into two smaller functions because X." | Medium | File reading + Claude analysis with improvement-focused prompt |
-| Cross-project consistency check | "Are all projects using the same Node.js version?" or "Which projects have outdated dependencies?" -- cluster-wide analysis leveraging the project registry. | High | Registry query + multi-node file reading + comparison logic |
-| Diff analysis | "Explain what changed in the last commit" -- `git diff` + LLM explanation. Useful when the operator returns to a project after time away. | Medium | Git diff via SSH + Claude analysis |
-| Technical debt assessment | "What's the technical debt in jarvis-backend?" -- assess code quality holistically: test coverage, error handling patterns, dependency freshness, code duplication indicators. | High | Multi-file analysis, metrics collection, LLM synthesis |
-| Documentation generation | "Generate API docs for the MCP tools" -- read source code and produce structured documentation. Saves significant manual documentation effort. | Medium | Source code reading + structured output prompt. Output as markdown. |
+| Optional Opus encoding (config flag) | For remote access (Twingate VPN, mobile on WiFi), Opus reduces audio from ~350KB to ~10KB per sentence. Add `AUDIO_CODEC=wav|opus` config option. | Medium | ffmpeg installed in backend container, transcode step in TTS pipeline |
+| Adaptive codec selection | Detect connection speed (first-packet timing or explicit header) and auto-select WAV (LAN) vs Opus (remote). | High | Network quality detection, per-client codec selection |
 
 ### Anti-Features
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Automated code fixing | JARVIS should not automatically modify code based on its analysis. LLM code generation has a 75% higher rate of logic errors (2025 data). Auto-fixing compounds risk. | Present findings and suggestions as text. Let the operator decide and implement changes. |
-| PR/commit review bot | Running as a CI/CD review bot requires webhook infrastructure, Git integration, and continuous operation. This is a conversational assistant, not a CI pipeline. | Analyze code on-demand when the operator asks. "Review the last 3 commits" works conversationally. |
-| Performance profiling | Runtime performance analysis requires instrumentation, profiling tools, and running the code. Static analysis of performance is unreliable. | Identify obvious performance anti-patterns in static analysis (N+1 queries, synchronous I/O in async code). For real profiling, recommend appropriate tools. |
-| Multi-language deep analysis | Supporting deep semantic analysis for TypeScript, Python, Go, Rust, etc. each requires language-specific knowledge. Spread thin = shallow everywhere. | Focus on TypeScript and Python (the two languages used in this cluster). Accept that analysis of other languages will be shallower. |
-| Autonomous refactoring plans | Generating multi-step refactoring plans that JARVIS could "execute" is scope creep toward an IDE. | Provide analysis and suggestions. The operator drives refactoring in their own IDE with JARVIS as a consultant. |
+| Always-on Opus encoding | Adds 10-50ms latency per sentence with zero benefit on LAN. Only useful for remote access. | Config flag, default to WAV |
+| WASM Opus decoder in browser | All modern browsers decode Opus natively via `decodeAudioData`. A WASM decoder adds bundle size and complexity for zero benefit. | Use native browser decoding |
+| Raw Opus frames (no container) | Requires custom framing protocol. WebM container is universally supported and works with existing decodeAudioData. | Use WebM container |
+| Media Source Extensions (MSE) for playback | MSE adds complexity for streaming scenarios. The current approach (decode full sentence buffer, play via AudioBufferSourceNode) is simpler and correct for sentence-sized chunks. | Keep AudioBufferSourceNode approach |
 
 ---
 
-## Feature Domain 4: Voice Retraining from Video Sources
+## Feature Domain 4: Conversation Sliding Window
+
+### How Production Chat Systems Manage Context
+
+The current system uses a hard 20-message cutoff (`chatHistoryLimit: 20`). This is functional but loses important context from earlier in long conversations. Production systems use several strategies:
+
+- **Sliding window with summarization**: Keep the last 8-10 messages verbatim, summarize older messages into a running summary. When total tokens exceed budget, the oldest messages get summarized first. This preserves recent context while retaining key decisions from earlier.
+- **Token counting**: Use tiktoken (for OpenAI models) or approximate counting (4 chars per token as rough heuristic). Monitor total context usage and trigger summarization when approaching the limit.
+- **When to trigger summarization**: After every 8-10 exchanges, OR when token count exceeds 60-70% of context window. For Qwen (4096 token context), summarization should trigger around 2500 tokens of history. For Claude (200K context), this is far less critical.
+- **Summarization reduces tokens by 60-70%**: A summary of 10 messages (~2000 tokens) typically compresses to 400-600 tokens while preserving essential information.
+- **Hierarchical memory**: Jarvis already has episodic/semantic memory tiers. The sliding window can leverage this -- key decisions extracted during summarization feed into the existing memory system.
+
+### Critical Context: Qwen vs Claude
+
+- **Qwen (4096 tokens)**: Context window is tiny. 20 messages easily exceeds it, especially with the system prompt consuming ~500-800 tokens. Summarization is essential.
+- **Claude (200K tokens)**: Context window is enormous. 20 messages is a fraction of capacity. Summarization is nice-to-have but not critical for context management; it's more about cost optimization.
+
+The sliding window is primarily a Qwen optimization. Claude benefits minimally.
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Dependencies |
 |---------|--------------|------------|--------------|
-| Download audio/video from URL | "Download the JARVIS compilation from YouTube" -- extract audio from video URLs. Foundation for the entire voice retraining pipeline. | Medium | yt-dlp or similar tool for video download, FFmpeg for audio extraction |
-| Audio extraction from video | Convert downloaded video to WAV audio at the correct sample rate (22050Hz for XTTS v2). Strip video track entirely. | Low | FFmpeg: `ffmpeg -i input.mp4 -ar 22050 -ac 1 -f wav output.wav` |
-| Vocal isolation | Separate speech from background music/sound effects. JARVIS clips from Iron Man films have significant background audio (explosions, music, ambient noise). | High | Demucs or similar source separation model. GPU recommended but CPU possible. |
-| Audio segmentation | Split long audio into individual clips (6-30 seconds each). XTTS v2 training expects individual utterances, not hour-long files. | Medium | Voice Activity Detection (VAD) or silence-based splitting. WebRTC VAD or Silero VAD. |
-| Transcription | Generate text transcripts for each audio segment. The existing dataset has transcription errors ("Mr. Stalin" instead of "Mr. Stark"). Whisper provides much better accuracy. | Medium | OpenAI Whisper (can run locally on CPU). Output paired with audio segments. |
-| LJ Speech format output | Output dataset in the format the existing training pipeline expects: `metadata.csv` with pipe-delimited fields, `wavs/` directory with numbered WAV files. | Low | Script to format output matching existing `/training/dataset/` structure |
-| Merge with existing dataset | New samples should be added to the existing 10-sample dataset, not replace it. Cumulative improvement. | Low | Append to metadata.csv, add WAVs to wavs/ directory |
+| Token-aware message truncation | Current 20-message limit doesn't account for message length. One long tool output could consume the entire Qwen context window. Count tokens, not messages. | Medium | Token counting utility (tiktoken or heuristic), modify history loading |
+| Sliding window with summary prefix | When history exceeds token budget, summarize oldest messages and prepend summary to context. "Previous context: [summary]. Recent messages: [verbatim]." | Medium | LLM call for summarization (use Qwen itself), summary caching |
+| System prompt token budget | Reserve fixed token budget for system prompt (800 tokens for Qwen) and allocate remainder to history. Current config doesn't account for system prompt size. | Low | Token counting of system prompt, reduce available history budget |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Dependencies |
 |---------|-------------------|------------|--------------|
-| End-to-end pipeline automation | "Retrain my voice from this video" -- single command that downloads, extracts, isolates, segments, transcribes, formats, and triggers retraining. The full pipeline, not manual steps. | High | All table stakes features chained together, pipeline orchestration |
-| Audio quality scoring | Automatically score each extracted clip for quality (noise level, clarity, speech-to-noise ratio). Reject low-quality clips before they enter the training set. | Medium | Signal-to-noise ratio analysis, spectral analysis for noise detection |
-| Speaker diarization | When a video has multiple speakers (Tony Stark + JARVIS dialogue), identify and extract only JARVIS's lines. Critical for Iron Man compilation videos. | High | Speaker diarization model (pyannote-audio), speaker clustering |
-| Transcript correction UI | Show extracted transcripts and let operator correct errors before they enter the training set. Poor transcriptions degrade voice quality. | Medium | REST API for transcript review/edit, simple web form or chat-based correction |
-| Training monitoring | Show training progress: epoch, loss, samples processed. "Training is 60% complete, loss has decreased from 0.85 to 0.32." | Medium | Parse trainer output, expose via Socket.IO events |
-| A/B voice comparison | After retraining, synthesize the same text with old and new voice model. Let operator compare and choose which to deploy. | Medium | Dual synthesis, audio playback in UI or via TTS endpoint |
-| Incremental fine-tuning | Add new samples and fine-tune from the last checkpoint rather than from scratch. Saves significant training time (hours to minutes). | Medium | Checkpoint management, resume-from-checkpoint in training script |
+| Automatic summarization trigger | Monitor token count per exchange. When cumulative history exceeds threshold (e.g., 2500 tokens for Qwen), auto-summarize oldest half. | Medium | Background summarization call, cache invalidation |
+| Summary persistence across sessions | Store conversation summaries in SQLite alongside messages. When session resumes, load summary instead of full history replay. | Medium | New `session_summaries` table, session resume logic |
+| Memory extraction during summarization | When summarizing old messages, extract key facts into the existing memory system (episodic/semantic). Two birds, one stone. | Low | Already have `extractMemoriesFromSession`, call during summarization |
 
 ### Anti-Features
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Real-time voice cloning from live audio | Cloning a voice from a live microphone stream adds latency, requires continuous processing, and has privacy implications. | Use pre-recorded audio files or video downloads. Process offline, deploy when ready. |
-| Multi-voice training | Training multiple voice profiles (JARVIS, FRIDAY, etc.) multiplies training time and storage. One voice is the core feature. | Perfect one voice first. The architecture supports multiple voices (the TTS server already has a `voice` parameter), but training each one is a separate manual decision. |
-| Automatic voice deployment | Automatically swapping the production voice after training without operator review could result in a degraded voice being deployed. | Train, compare, and let the operator explicitly deploy the new voice. A/B comparison before deployment. |
-| Copyright-aware source filtering | Building a system to determine whether audio sources are legally usable for voice training is a legal question, not a technical one. | Log all source URLs for the operator's records. The operator is responsible for ensuring they have appropriate rights to use the source material. |
-| Emotion/style transfer | Training the voice model to express different emotions (happy JARVIS, concerned JARVIS) requires labeled emotion datasets and specialized training. | Focus on a consistent, high-quality neutral voice. Emotion comes through word choice in the text, not vocal variation. |
+| RAG-based context retrieval | For a single user on a homelab, the overhead of vector stores and embedding models is unjustified. Simple summarization covers the use case. | Sliding window + summarization |
+| Per-message importance scoring | Scoring each message's importance before deciding what to keep adds LLM calls and complexity. Simple FIFO with summarization works fine. | FIFO sliding window |
+| Infinite context via external memory | The memory system already handles long-term recall. The sliding window manages short-term conversation flow. Don't conflate them. | Keep memory and sliding window as separate systems |
 
 ---
 
-## Feature Dependencies (Cross-Domain)
+## Feature Domain 5: Latency Tracing Pipeline
+
+### How Production Systems Trace End-to-End Latency
+
+For an AI voice pipeline, the critical path is: User input -> LLM routing -> LLM first token -> LLM sentence complete -> TTS synthesis -> Audio delivery -> Playback start. Each segment needs timing.
+
+- **Span IDs**: OpenTelemetry uses trace IDs (for the full request) and span IDs (for each segment). For Jarvis, a single "trace" is one user message through to audio playback. Each pipeline stage is a "span."
+- **Timing events**: Record `performance.now()` (or `Date.now()`) at each transition. Events within spans capture sub-steps (e.g., within TTS span: "health check", "synthesis start", "first byte", "complete").
+- **Aggregation**: For a single-user system, per-request traces are more useful than percentile aggregation. But over time, tracking p50/p95/p99 across sessions reveals trends. Store timing data in SQLite for analysis.
+- **What percentiles matter**: p50 (typical experience), p95 (occasional slowdown), p99 (worst case excluding outliers). For single-user, max is also relevant since there's no averaging across concurrent users.
+
+### Lightweight vs Full OpenTelemetry
+
+For a single-service, single-user system, full OpenTelemetry with a collector and Jaeger is overkill. The right approach is:
+
+1. **Structured timing logs**: `console.log(JSON.stringify({ traceId, spanName, startMs, endMs, durationMs }))` with a unique traceId per user message.
+2. **SQLite storage**: Write timing records to a `latency_traces` table for trend analysis.
+3. **Dashboard display**: Expose timing breakdown in the UI (routing: 5ms, thinking: 200ms, synthesis: 4000ms, playback: 50ms).
+
+If the system grows to multiple services or users, OpenTelemetry can be added later without changing the trace format.
+
+### Table Stakes
+
+| Feature | Why Expected | Complexity | Dependencies |
+|---------|--------------|------------|--------------|
+| Per-request timing breakdown | For every voice response, log: total time, LLM time, TTS time per sentence, audio delivery time. Without this, optimization is guesswork. | Medium | Timing instrumentation in chat handler, TTS functions |
+| Trace ID per request | Unique ID that links all timing events for a single user message. Essential for correlating logs. | Low | `crypto.randomUUID()` (already used for session IDs) |
+| Pipeline stage timing in UI | Show user the timing breakdown: "Routing: 5ms, Thinking: 1.2s, Synthesis: 3.8s, Total: 5.0s". The `pipelineStage` system already exists; add timing to it. | Medium | Extend `chat:stage` events with timestamps, frontend timing display |
+
+### Differentiators
+
+| Feature | Value Proposition | Complexity | Dependencies |
+|---------|-------------------|------------|--------------|
+| Historical latency trends | Store timing data in SQLite. Show a chart of latency over time on the dashboard. Detect regressions after config changes. | Medium | New `latency_traces` SQLite table, chart component |
+| Performance budget alerts | Define target latencies (e.g., first audio < 5s, total < 15s). Log warnings when exceeded. Surface in dashboard. | Low | Threshold constants, conditional logging |
+| TTS queue depth tracking | Log how many sentences are queued vs. playing at any given time. Identifies if LLM is producing sentences faster than TTS can consume. | Low | Counter in `drainTtsQueue`, emit with trace data |
+
+### Anti-Features
+
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Full OpenTelemetry + Collector + Jaeger | Massive infrastructure overhead for a single-service, single-user system. Three additional containers (collector, Jaeger, storage) for questionable benefit. | Structured timing logs + SQLite storage |
+| Distributed tracing across services | Jarvis is one backend service. There is no distributed system to trace across (TTS is called via HTTP, but from the same container network). | Single-service timing instrumentation |
+| Real-time monitoring dashboards (Grafana/Prometheus) | Another set of infrastructure to maintain. The Jarvis dashboard itself should show timing data. | Build timing display into existing Jarvis UI |
+
+---
+
+## Feature Domain 6: Health Check Endpoints
+
+### Production Patterns: Liveness vs Readiness
+
+The existing `/api/health` endpoint returns `{ status: "ok", timestamp, uptime, version }`. This is a liveness check only -- it confirms the Node.js process is running but says nothing about whether the system can actually serve requests.
+
+Production systems separate concerns:
+
+- **`/livez` (Liveness)**: Is the process alive? Should be lightweight, never check external dependencies. A failing liveness probe causes container restart, so dependency failures would create restart loops.
+- **`/readyz` (Readiness)**: Can the system serve requests? Check all dependencies: TTS container health, LLM server reachability, database connectivity, Proxmox API access. A failing readiness probe removes from load balancer (or in Jarvis's case, shows degraded status in UI).
+- **Startup probe**: Gives extra time for slow starts. XTTS container takes 300s to start (configured in Docker healthcheck).
+
+### What Should Jarvis Health Return
+
+For a single-user self-hosted system, the distinction between liveness and readiness is less critical (no load balancer), but structured health data is valuable for the dashboard:
+
+```json
+{
+  "status": "healthy|degraded|unhealthy",
+  "timestamp": "2026-01-27T...",
+  "uptime": 12345,
+  "version": "1.5.0",
+  "services": {
+    "tts": { "status": "healthy", "latencyMs": 45, "lastCheck": "..." },
+    "llm": { "status": "healthy", "latencyMs": 120, "lastCheck": "..." },
+    "proxmox": { "status": "healthy", "nodesReachable": 4, "lastCheck": "..." },
+    "database": { "status": "healthy", "sizeBytes": 1234567 }
+  }
+}
+```
+
+### Table Stakes
+
+| Feature | Why Expected | Complexity | Dependencies |
+|---------|--------------|------------|--------------|
+| Dependent service health checks | Check TTS, LLM, Proxmox, and DB. Return per-service status. Currently health endpoint ignores all dependencies. | Medium | HTTP health checks to TTS (`:5050/health`) and LLM (`:8080/health`), DB ping, Proxmox client ping |
+| Overall status aggregation | `healthy` if all services up, `degraded` if some down, `unhealthy` if critical services down (LLM or DB). | Low | Status aggregation logic |
+| `/livez` and `/readyz` split | Separate lightweight liveness from dependency-checking readiness. Docker healthcheck should use `/livez` (fast), dashboard should use `/readyz` (comprehensive). | Low | Two new routes, move current health to `/livez`, add checks to `/readyz` |
+
+### Differentiators
+
+| Feature | Value Proposition | Complexity | Dependencies |
+|---------|-------------------|------------|--------------|
+| Health check latency measurement | Each dependency check records response time. Surfaces in dashboard. "TTS health: 45ms, LLM: 120ms". | Low | `performance.now()` around each check |
+| Background health polling | Run health checks every 30s in background, cache results. Endpoint returns cached data instantly instead of blocking on live checks. | Medium | `setInterval` polling, in-memory cache |
+| Health history | Store health snapshots in SQLite. Show uptime/availability trends on dashboard. "TTS was down for 5 minutes yesterday." | Medium | New `health_snapshots` table, trend chart |
+
+### Anti-Features
+
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Checking dependencies in Docker HEALTHCHECK | Docker healthcheck uses `/livez`. If it checks TTS and TTS is restarting, Docker restarts the backend too -- cascade failure. | Docker checks `/livez` (process only), dashboard checks `/readyz` (with deps) |
+| Health check authentication | Health endpoints should be unauthenticated. They're used by Docker, monitoring, and the frontend pre-login. Adding auth breaks all of these. | No auth on health endpoints |
+| Aggressive health check intervals | Checking every 5s adds unnecessary load. TTS and LLM health don't change that fast. | 30s interval for background polling |
+
+---
+
+## Feature Domain 7: TTS Cache Pre-warming
+
+### How This Works in Practice
+
+The existing LRU cache (50 entries, in-memory) caches sentences after first synthesis. Pre-warming means synthesizing common phrases at startup so the first request for them is instant.
+
+- **What to pre-warm**: Greeting phrases ("Good evening, sir", "At your service", "How may I assist you?"), error messages ("I apologize, but I'm unable to..."), common responses ("Certainly", "Right away", "Of course"). For Jarvis specifically, JARVIS-personality phrases that appear in many responses.
+- **How many**: 10-30 phrases is the sweet spot. Each takes 4-10s on CPU, so pre-warming 20 phrases takes 80-200s at startup. This must happen in background, not blocking service readiness.
+- **When to refresh**: On service restart (re-warm from disk cache). Periodically (e.g., every 24h) to update if voice model changes. Never during active conversation (CPU contention with live TTS).
+- **Disk persistence**: Write cached audio buffers to disk (e.g., `/cache/prewarm/`) keyed by text hash. On startup, load from disk instead of re-synthesizing. This survives container restarts.
+
+### Table Stakes
+
+| Feature | Why Expected | Complexity | Dependencies |
+|---------|--------------|------------|--------------|
+| Disk-persistent TTS cache | Current cache is in-memory only. Container restart loses all 50 cached entries. Write to `/cache/` volume (already mounted for XTTS). | Medium | File I/O for cache read/write, hash-based filenames, cache manifest |
+| Startup cache loading from disk | On backend start, load previously cached audio from disk into the LRU cache. Instant cache hydration. | Medium | Read disk cache dir, populate `sentenceCache` Map |
+| Background pre-warm on startup | After service is ready, synthesize common JARVIS phrases in background. Don't block readiness. | Medium | Async startup task, list of phrases, sequential synthesis |
+
+### Differentiators
+
+| Feature | Value Proposition | Complexity | Dependencies |
+|---------|-------------------|------------|--------------|
+| Usage-based pre-warm list | Track which phrases are actually spoken most. On next startup, pre-warm the top-N most frequent. | Medium | Frequency counter in cache, persist to disk/DB |
+| Warm-through pattern | On cache miss, serve the live-synthesized result AND write to disk for next time. Combines cache miss handling with disk persistence. | Low | Write-behind to disk after synthesis completes |
+| Cache size management | Current 50-entry limit is arbitrary. With disk persistence, can cache hundreds of entries. In-memory LRU stays at 50, disk cache grows larger with LRU eviction at a higher threshold. | Medium | Two-tier cache: hot (memory, 50) and warm (disk, 500) |
+
+### Anti-Features
+
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Pre-warming during active conversation | CPU contention with live TTS requests. Pre-warming should only happen when idle. | Pre-warm at startup or during detected idle periods |
+| Pre-warming hundreds of phrases | 100 phrases x 5s each = 500s (8+ minutes). Blocks TTS for active requests during that time. | Cap at 20-30 highest-value phrases |
+| Voice-model-versioned cache | Adding voice model version to cache keys adds complexity. If the voice model changes, just clear the cache directory. | Clear cache on model update, simple hash keys |
+| Network-shared cache | The TTS container and backend are on the same machine. No need for Redis or shared cache infrastructure. | Local disk cache in Docker volume |
+
+---
+
+## Feature Domain 8: Web Worker Audio Decoding
+
+### How This Works in Browsers
+
+The current frontend decodes audio using `AudioContext.decodeAudioData()` on the main thread. For WAV sentences (~350KB), this is fast (~5ms) and doesn't block the UI. The question is whether moving this to a Web Worker improves anything.
+
+- **AudioContext limitation**: `AudioContext` (the live rendering context) is NOT available in Web Workers. Only `OfflineAudioContext` is available in workers, which can decode audio but cannot play it.
+- **The transfer pattern**: Main thread receives audio ArrayBuffer -> transfer to Worker via `postMessage(buffer, [buffer])` (zero-copy) -> Worker decodes with OfflineAudioContext -> transfers AudioBuffer data back to main thread -> main thread creates AudioBufferSourceNode and plays.
+- **The overhead problem**: The transfer back requires copying Float32Array channel data (AudioBuffer cannot be transferred). For a 4-second mono 22050Hz sentence, that's ~88KB of float data per transfer. The round-trip overhead likely exceeds the 5ms decoding time saved.
+- **When workers help**: Large audio files (minutes of audio), complex processing (FFT, filtering), or when the main thread is genuinely blocked. For small sentence-sized chunks, workers add latency.
+
+### Table Stakes
+
+| Feature | Why Expected | Complexity | Dependencies |
+|---------|--------------|------------|--------------|
+| Keep main-thread decoding (current approach) | For sentence-sized audio chunks (~350KB WAV or ~10KB Opus), `decodeAudioData` on the main thread takes <10ms. Worker overhead would be greater than the savings. | None (keep current) | N/A |
+| Ensure `decodeAudioData` uses the latest API | The current code uses `ctx.decodeAudioData(chunk.buffer.slice(0))` which is correct. The `.slice(0)` creates a copy because the ArrayBuffer may have been transferred. | None (already correct) | N/A |
+
+### Differentiators
+
+| Feature | Value Proposition | Complexity | Dependencies |
+|---------|-------------------|------------|--------------|
+| AudioWorklet for playback smoothing | Instead of Web Workers for decoding, use AudioWorklet for gapless playback between sentences. The current approach has a gap when `onended` fires and the next source starts. AudioWorklet could crossfade. | High | AudioWorklet processor, SharedArrayBuffer (requires COOP/COEP headers) |
+| Pre-decode next chunk | While current chunk is playing, pre-decode the next queued chunk so it's ready instantly when `onended` fires. | Low | Decode in parallel with playback, store decoded AudioBuffer |
+
+### Anti-Features
+
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Web Worker for audio decoding | Round-trip overhead exceeds decoding time for sentence-sized chunks. Worker creation, message passing, and data copy back all add latency. | Keep main-thread `decodeAudioData` |
+| WASM audio decoder | Browsers natively decode WAV and Opus. A WASM decoder adds bundle size (~200KB) with no benefit. Only useful for exotic codecs. | Use native `decodeAudioData` |
+| SharedArrayBuffer for audio transfer | Requires Cross-Origin-Isolation headers (COOP/COEP), which break many third-party integrations and make deployment harder. Overkill for this use case. | Transferable ArrayBuffer if needed, but prefer main thread |
+
+---
+
+## Feature Dependencies
 
 ```
-Existing Foundation:
-  MCP tools + Safety framework + SSH + Project Registry + TTS Pipeline
+Feature Domain 1 (TTS Fallback)
     |
-    v
-Domain 1: File Operations (foundation for everything else)
-  download_file tool (RED tier -- downloads from internet)
-  Path validation + size limits + type restrictions
-  Download history logging
+    +--> Feature Domain 5 (Latency Tracing) -- fallback events feed into traces
     |
-    +---> Domain 2: Project Browsing (requires file reading)
-    |       list_projects tool (GREEN tier -- reads registry)
-    |       browse_directory tool (GREEN tier -- reads filesystem)
-    |       read_file tool (GREEN tier -- reads file contents)
-    |       search_files tool (GREEN tier -- searches content)
-    |       |
-    |       +---> Domain 3: Project Analysis (requires browsing)
-    |               analyze_code tool (GREEN tier -- LLM analysis)
-    |               security_audit tool (GREEN tier -- LLM analysis)
-    |               explain_code tool (GREEN tier -- LLM analysis)
+    +--> Feature Domain 6 (Health Checks) -- health status gates fallback routing
+
+Feature Domain 2 (Parallel TTS / CPU Affinity)
     |
-    +---> Domain 4: Voice Retraining (requires file download)
-            Audio extraction (FFmpeg)
-            Vocal isolation (Demucs)
-            Segmentation + Transcription (Whisper)
-            Dataset formatting (LJ Speech)
-            Training trigger (existing pipeline)
+    +--> Feature Domain 7 (Cache Pre-warming) -- pre-warmed cache reduces TTS calls
+    |
+    +--> Feature Domain 3 (Opus Codec) -- smaller payloads if sent over network
+
+Feature Domain 4 (Sliding Window)
+    |
+    +--> Independent (no dependencies on other domains)
+
+Feature Domain 5 (Latency Tracing)
+    |
+    +--> Feature Domain 6 (Health Checks) -- health data feeds into traces
+
+Feature Domain 6 (Health Checks)
+    |
+    +--> Independent (foundational, others depend on it)
+
+Feature Domain 7 (Cache Pre-warming)
+    |
+    +--> Feature Domain 6 (Health Checks) -- pre-warm only when TTS healthy
+
+Feature Domain 8 (Web Worker Decoding)
+    |
+    +--> Feature Domain 3 (Opus Codec) -- codec choice affects decode approach
 ```
 
-### Critical Path Dependencies
-
-| New Feature | Hard Dependencies | Soft Dependencies |
-|-------------|-------------------|-------------------|
-| File download from URL | Path validation, size limits, safety tier | Download history table |
-| Cross-node file transfer | SSH execution (exists), SCP command | Progress reporting |
-| Project listing | Project registry access (exists on agent1) | Registry cache on Home node |
-| Directory browsing | SSH execution (exists), path validation | Cross-node routing from registry |
-| File reading | SSH execution (exists), path validation, size cap | Syntax detection |
-| File search | SSH execution (exists), grep/rg on target node | Context lines, pagination |
-| Code explanation | File reading, Claude API | None |
-| Security audit | Multi-file reading, Claude API | Structured output format |
-| Architecture overview | Multi-file reading, registry data, Claude API | None |
-| Video download | yt-dlp installation, storage path | URL validation |
-| Audio extraction | FFmpeg (likely already installed), video file | None |
-| Vocal isolation | Demucs installation, GPU access (optional) | Quality scoring |
-| Audio segmentation | VAD model, extracted audio | Speaker diarization |
-| Transcription | Whisper installation, audio segments | Transcript correction UI |
-| Dataset formatting | All audio pipeline steps, LJ Speech format | Merge with existing dataset |
-| Training trigger | Formatted dataset, existing training pipeline | Training monitoring |
-
 ---
 
-## Safety Tier Recommendations for New Tools
+## MVP Recommendation: Maximum Latency Reduction Per Effort
 
-| Tool | Recommended Tier | Rationale |
-|------|-----------------|-----------|
-| `list_projects` | GREEN | Read-only, queries existing registry |
-| `browse_directory` | GREEN | Read-only directory listing |
-| `read_file` | GREEN | Read-only file access with size limits |
-| `search_files` | GREEN | Read-only grep/search |
-| `analyze_code` | GREEN | Read-only analysis (LLM interprets, no execution) |
-| `explain_code` | GREEN | Read-only explanation |
-| `download_file` | RED | Downloads from internet -- requires confirmation. Source URLs could be malicious, files could fill disk. |
-| `transfer_file` | YELLOW | Moves files between known cluster nodes. Controlled environment, but has write side effects. |
-| `trigger_voice_training` | RED | Starts GPU-intensive training process that affects system resources. Requires confirmation. |
-| `extract_audio` | YELLOW | Processes files locally, writes output to designated directory. Side effects but controlled. |
+Prioritize by impact-to-effort ratio for reducing the 15-30s first-audio latency:
 
----
+### Phase 1: Immediate Wins (Days 1-3)
 
-## MVP Recommendation
+1. **CPU affinity separation** (Domain 2) -- Pin llama-server and XTTS to separate CPU core sets. Single biggest performance win. No code changes, just systemd/Docker config.
+2. **Disk-persistent TTS cache** (Domain 7) -- Survive container restarts. Frequent phrases become instant.
+3. **Health check expansion** (Domain 6) -- Foundation for everything else. Know what's healthy.
 
-For the first iteration of this milestone, prioritize in this order:
+### Phase 2: Core Pipeline Improvements (Days 4-7)
 
-### Must Have (Phase 1: File & Project Browsing)
-1. `list_projects` -- Query registry, return project list (GREEN)
-2. `browse_directory` -- List directory contents with depth control (GREEN)
-3. `read_file` -- Read file contents with size limits (GREEN)
-4. `search_files` -- Search file contents in a project (GREEN)
-5. `download_file` -- Download from URL with restrictions (RED)
+4. **TTS fallback system** (Domain 1) -- 99%+ reliability. When XTTS is slow, browser TTS fills in.
+5. **Latency tracing** (Domain 5) -- Measure before optimizing further. Know where time goes.
+6. **Pre-warm startup** (Domain 7) -- Common phrases ready at boot.
 
-**Rationale:** These 5 tools enable the entire "JARVIS can see and understand your code" experience. They are low-complexity, follow existing MCP patterns, and have clear safety boundaries.
+### Phase 3: Context & Polish (Days 8-10)
 
-### Should Have (Phase 2: Analysis & Intelligence)
-6. Code explanation via Claude analysis
-7. Bug/issue identification
-8. Architecture overview generation
-9. Cross-node project browsing (route to correct node from registry)
-10. Git history integration (log, diff, blame)
+7. **Sliding window with summarization** (Domain 4) -- Better Qwen context management.
+8. **Pre-decode next chunk** (Domain 8) -- Eliminate inter-sentence gap.
 
-**Rationale:** These build on Phase 1 tools and add the "intelligence" layer. They require Claude API (cost implications) but provide the most operator value.
+### Defer to Future
 
-### Nice to Have (Phase 3: Voice Retraining Pipeline)
-11. Video/audio download pipeline (yt-dlp + FFmpeg)
-12. Vocal isolation (Demucs)
-13. Audio segmentation + transcription (Whisper)
-14. Dataset formatting and merge
-15. Training trigger and monitoring
-
-**Rationale:** Voice retraining is self-contained and has the heaviest infrastructure requirements (yt-dlp, Demucs, Whisper installations). The existing 10-sample voice works. Improvement is desirable but not blocking.
-
-### Defer (Post-Milestone)
-- File editing/writing (too risky for now)
-- Full codebase indexing/embeddings (overkill for scale)
-- Automated refactoring (scope creep)
-- Multi-voice training (perfect one voice first)
-- Speaker diarization (nice to have, complex)
-
----
-
-## Complexity Estimates
-
-| Feature Group | Tool Count | Est. Implementation | Risk |
-|---------------|-----------|-------------------|------|
-| File operations (download, transfer) | 2 tools | 2-3 days | Low -- well-understood patterns |
-| Project browsing (list, browse, read, search) | 4 tools | 2-3 days | Low -- extends existing SSH infrastructure |
-| Code analysis (explain, audit, overview) | 3 tools (or LLM prompting layer) | 3-4 days | Medium -- quality depends on prompt engineering |
-| Voice pipeline (download, extract, isolate, segment, transcribe, format) | 5-6 tools or 1 orchestrated pipeline | 5-7 days | High -- multiple tool installations, GPU considerations |
-| Training integration (trigger, monitor, compare) | 2-3 tools | 2-3 days | Medium -- integrates with existing training code |
-
-**Total estimated effort:** 14-20 days for full milestone.
-
----
-
-## Sources
-
-### File Operations & MCP Patterns
-- [Filesystem MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) -- Anthropic's reference implementation for file operations via MCP (HIGH confidence)
-- [MCP File System Server](https://github.com/MarcusJellinghaus/mcp_server_filesystem) -- Community implementation with path validation and security controls (MEDIUM confidence)
-- [AI Agent Architecture Best Practices](https://techbytes.app/posts/ai-agent-architecture-mcp-sandboxing-skills/) -- Sandboxing and security for AI file operations (MEDIUM confidence)
-- [OpenSSF Security Guide for AI Code Assistants](https://best.openssf.org/Security-Focused-Guide-for-AI-Code-Assistant-Instructions) -- Security best practices for AI-generated file operations (HIGH confidence)
-
-### Code Analysis & Review
-- [Code Review in the Age of AI](https://addyo.substack.com/p/code-review-in-the-age-of-ai) -- Addy Osmani's survey of AI code review patterns (MEDIUM confidence)
-- [AI Code Review Tools 2026](https://www.qodo.ai/blog/best-ai-code-review-tools-2026/) -- Enterprise patterns for AI code review (MEDIUM confidence)
-- [State of AI Code Quality 2025](https://www.qodo.ai/reports/state-of-ai-code-quality/) -- 41% of commits AI-assisted, 75% more logic errors (MEDIUM confidence)
-- [Codebase Digest](https://github.com/kamilstanuch/codebase-digest) -- Tool for packing codebases for LLM analysis (MEDIUM confidence)
-- [Repomix](https://repomix.com/) -- Codebase packing with token counting and security checks (MEDIUM confidence)
-
-### Voice Retraining Pipeline
-- [Building Voice Cloning Datasets](https://medium.com/@prakashshanbhag/building-high-quality-voice-cloning-datasets-for-ai-applications-1ef174c2b34e) -- End-to-end dataset building guide (MEDIUM confidence)
-- [XTTS v2 on HuggingFace](https://huggingface.co/coqui/XTTS-v2) -- Model card with training data requirements (HIGH confidence)
-- [Voice-Pro](https://github.com/abus-aikorea/voice-pro) -- Open-source pipeline: YouTube download + Demucs + Whisper + voice cloning (MEDIUM confidence)
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) -- Feature-rich audio/video downloader (HIGH confidence)
-- [VocalForge Dataset Toolkit](https://sep.com/blog/helpful-tools-to-make-your-first-voice-clone-dataset-easy-to-build/) -- Tools for voice dataset creation (LOW confidence)
-
-### Project Browsing & Codebase Intelligence
-- [AnythingLLM](https://anythingllm.com/) -- Self-hosted AI with document and codebase analysis (MEDIUM confidence)
-- [Structuring Codebases for AI Tools](https://www.propelcode.ai/blog/structuring-codebases-for-ai-tools-2025-guide) -- Context engineering for AI code understanding (MEDIUM confidence)
+- **Opus codec** (Domain 3) -- Only valuable for remote access. Not a latency win on LAN.
+- **AudioWorklet crossfade** (Domain 8) -- Perceptual polish, not latency.
+- **Full OpenTelemetry** (Domain 5) -- Only if system grows to multiple services.
 
 ---
 
 ## Confidence Assessment
 
-| Area | Confidence | Reason |
-|------|------------|--------|
-| File operation tools | HIGH | Well-established MCP patterns (Anthropic's own filesystem server). Existing SSH infrastructure handles cross-node execution. |
-| Project browsing | HIGH | Direct extension of existing tools. Project registry already indexes everything. |
-| Code analysis quality | MEDIUM | Depends heavily on Claude prompt engineering. No existing JARVIS-specific code analysis has been tested. Quality will need iteration. |
-| Voice pipeline feasibility | MEDIUM | Individual tools (yt-dlp, FFmpeg, Demucs, Whisper) are all proven. Integration into a single automated pipeline on this specific hardware (CPU-only for most nodes) is untested. |
-| Voice training improvement | LOW | Current 10-sample dataset with transcription errors is a weak baseline. Adding more samples should improve quality, but the magnitude of improvement is unpredictable. XTTS v2 fine-tuning with small datasets (<100 samples) is an area with limited documented results. |
-| Safety tier assignments | HIGH | Follows established patterns from existing 18 tools. Read operations are GREEN, write operations are YELLOW/RED. |
+| Domain | Confidence | Rationale |
+|--------|------------|-----------|
+| TTS Fallback | HIGH | Well-understood pattern, existing code already has fallback providers |
+| Parallel TTS | HIGH | XTTS v2 batch_size=1 constraint confirmed via GitHub issues and Coqui docs |
+| Opus Codec | HIGH | Opus codec well-documented, browser support verified via MDN and caniuse |
+| Sliding Window | MEDIUM | Patterns well-documented, but Qwen-specific token counting needs testing |
+| Latency Tracing | HIGH | OpenTelemetry patterns well-documented, lightweight approach clear |
+| Health Checks | HIGH | Kubernetes liveness/readiness pattern is industry standard, well-documented |
+| Cache Pre-warming | MEDIUM | Pattern is straightforward, but optimal phrase list needs empirical data |
+| Web Worker Decoding | HIGH | AudioContext limitations in workers well-documented by W3C spec and MDN |
 
 ---
 
-*Feature landscape research (Milestone 3: File & Project Intelligence): 2026-01-26*
+## Sources
+
+### TTS Fallback & Caching
+- [Coqui TTS XTTS Documentation](https://docs.coqui.ai/en/latest/models/xtts.html)
+- [XTTS v2 batch inference discussion (GitHub #3713)](https://github.com/coqui-ai/TTS/discussions/3713)
+- [XTTS v2 batch processing feature request (GitHub #3776)](https://github.com/coqui-ai/TTS/issues/3776)
+- [XTTS v2 concurrent request CUDA errors (HuggingFace)](https://huggingface.co/coqui/XTTS-v2/discussions/107)
+- [Pipecat TTS Caching Issue (GitHub #2629)](https://github.com/pipecat-ai/pipecat/issues/2629)
+- [Best practices for scaling TTS services (Milvus)](https://milvus.io/ai-quick-reference/what-are-best-practices-for-scaling-tts-services-in-an-application)
+- [TTS cache project (GitHub)](https://github.com/bebora/tts-cache)
+
+### Opus Audio Codec
+- [Opus codec official site](https://opus-codec.org/)
+- [Web audio codec guide (MDN)](https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Audio_codecs)
+- [Opus browser support (caniuse)](https://caniuse.com/opus)
+- [WebM Opus interop issue (GitHub)](https://github.com/web-platform-tests/interop/issues/484)
+- [Opus format explained (Wowza)](https://www.wowza.com/blog/opus-codec-the-audio-format-explained)
+
+### Context Management
+- [Context Window Management Strategies (APXML)](https://apxml.com/courses/langchain-production-llm/chapter-3-advanced-memory-management/context-window-management)
+- [Top techniques to manage context length (Agenta)](https://agenta.ai/blog/top-6-techniques-to-manage-context-length-in-llms)
+- [Context window management strategies (GetMaxim)](https://www.getmaxim.ai/articles/context-window-management-strategies-for-long-context-ai-agents-and-chatbots/)
+- [Context Rot research (Chroma)](https://research.trychroma.com/context-rot)
+
+### Latency Tracing
+- [Traces and Spans in OpenTelemetry (OneUptime)](https://oneuptime.com/blog/post/2025-08-27-traces-and-spans-in-opentelemetry/view)
+- [Distributed Tracing primer (Better Stack)](https://betterstack.com/community/guides/observability/distributed-tracing/)
+- [Generate Custom Metrics from Spans (Datadog)](https://docs.datadoghq.com/tracing/trace_pipeline/generate_metrics/)
+- [Critical Path Tracing (ACM Queue)](https://queue.acm.org/detail.cfm?id=3526967)
+- [OpenTelemetry Node.js getting started](https://opentelemetry.io/docs/languages/js/getting-started/nodejs/)
+
+### Health Checks
+- [Node.js Reference Architecture - Health Checks (nodeshift)](https://nodeshift.dev/nodejs-reference-architecture/operations/healthchecks/)
+- [Kubernetes Liveness vs Readiness Probes (DEV)](https://dev.to/sagarmaheshwary/kubernetes-liveness-vs-readiness-probes-what-they-actually-mean-3b3l)
+- [Effective Docker Healthchecks for Node.js (Medium)](https://patrickleet.medium.com/effective-docker-healthchecks-for-node-js-b11577c3e595)
+
+### Web Audio / Workers
+- [Web Audio API spec (W3C)](https://www.w3.org/TR/webaudio-1.1/)
+- [AudioWorklet (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet)
+- [AudioWorklet + SharedArrayBuffer + Worker (Chrome Labs)](https://googlechromelabs.github.io/web-audio-samples/audio-worklet/design-pattern/shared-buffer/)
+- [SharedArrayBuffer for getChannelData (WebAudio issue #2446)](https://github.com/WebAudio/web-audio-api/issues/2446)
+
+### Parallel TTS Pipelines
+- [Text-to-Speech Architecture: Production Trade-Offs (Deepgram)](https://deepgram.com/learn/text-to-speech-architecture-production-tradeoffs)
+- [Streaming real-time TTS with XTTS V2 (Baseten)](https://www.baseten.co/blog/streaming-real-time-text-to-speech-with-xtts-v2/)
+- [Low-Latency End-to-End Voice Agents (arXiv)](https://arxiv.org/html/2508.04721v1)
