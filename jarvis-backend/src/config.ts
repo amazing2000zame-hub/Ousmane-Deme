@@ -66,6 +66,13 @@ export const config = {
   // TTS -- Piper CPU fallback (fast, <200ms)
   piperTtsEndpoint: process.env.PIPER_TTS_ENDPOINT || 'http://jarvis-piper:5000',
 
+  // Phase 23: Parallel TTS, disk cache, Opus encoding
+  opusEnabled: process.env.OPUS_ENABLED === 'true',
+  opusBitrate: parseInt(process.env.OPUS_BITRATE || '32', 10),
+  ttsCacheDir: process.env.TTS_CACHE_DIR || '/data/tts-cache',
+  ttsCacheMaxEntries: parseInt(process.env.TTS_CACHE_MAX || '500', 10),
+  ttsMaxParallel: parseInt(process.env.TTS_MAX_PARALLEL || '2', 10),
+
   // TTS (Text-to-Speech) — OpenAI fallback
   ttsVoice: process.env.TTS_VOICE || 'onyx',
   ttsSpeed: parseFloat(process.env.TTS_SPEED || '1.0'),
