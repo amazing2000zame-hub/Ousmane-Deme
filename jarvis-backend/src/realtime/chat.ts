@@ -44,7 +44,7 @@ import { extractMemoriesFromSession, detectPreferences } from '../ai/memory-extr
 import { detectRecallQuery, buildRecallBlock } from '../ai/memory-recall.js';
 import { memoryBank } from '../db/memories.js';
 import { SentenceAccumulator } from '../ai/sentence-stream.js';
-import { synthesizeSentenceToBuffer, ttsAvailable } from '../ai/tts.js';
+import { synthesizeSentenceWithFallback, ttsAvailable, type TTSEngine } from '../ai/tts.js';
 import { cleanTextForSpeech } from '../ai/text-cleaner.js';
 
 // Provider lookup map
@@ -169,11 +169,17 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           console.log(`[Chat] Override passkey detected in message from ${socket.id}`);
         }
 
+        // Emit routing stage
+        socket.emit('chat:stage', { sessionId, stage: 'routing', detail: '' });
+
         // Route message to appropriate provider
         const lastProvider = sessionLastProvider.get(sessionId);
         const decision = routeMessage(message, overrideActive, lastProvider);
         const provider = providers[decision.provider];
         console.log(`[Chat] Routing to ${decision.provider}: ${decision.reason}`);
+
+        // Emit thinking stage with provider name
+        socket.emit('chat:stage', { sessionId, stage: 'thinking', detail: decision.provider });
 
         // Detect recall queries and build enriched context
         let recallBlock: string | undefined;
@@ -198,41 +204,77 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         let accumulatedText = '';
 
         // ---------------------------------------------------------------
-        // PERF-01/02/03: Streaming voice pipeline — sentence-by-sentence TTS
+        // PERF-01/02/03: Streaming voice pipeline — serial TTS queue
+        //
+        // Sentences are synthesized ONE AT A TIME to:
+        //  - Guarantee correct playback order (index assigned at detection)
+        //  - Prevent XTTS server overload (single concurrent request)
+        //  - Reduce CPU contention with llama-server
+        //  - Enable clean abort between sentences
         // ---------------------------------------------------------------
         const voicePipeline = voiceMode && ttsAvailable();
         let sentenceAccumulator: SentenceAccumulator | null = null;
-        /** Track in-flight TTS promises so we can await them before signalling done */
-        const ttsPending: Promise<void>[] = [];
         let audioChunkIndex = 0;
 
+        // Serial TTS queue — shared across sentence callbacks and onDone
+        const ttsQueue: { text: string; index: number }[] = [];
+        let ttsProcessing = false;
+        let ttsStreamFinished = false;
+        let engineLock: TTSEngine | null = null;
+
+        async function drainTtsQueue(): Promise<void> {
+          if (ttsProcessing) return;
+          ttsProcessing = true;
+          while (ttsQueue.length > 0) {
+            if (abortController.signal.aborted) break;
+            const item = ttsQueue.shift()!;
+            try {
+              const audio = await synthesizeSentenceWithFallback(item.text, { engineLock });
+              if (audio && !abortController.signal.aborted) {
+                // TTS-04: Update engine lock for voice consistency
+                if (engineLock === null) {
+                  engineLock = audio.engine;
+                }
+                if (audio.engine === 'piper') {
+                  engineLock = 'piper'; // Once piper, always piper for this response
+                }
+
+                socket.emit('chat:audio_chunk', {
+                  sessionId,
+                  index: item.index,
+                  contentType: audio.contentType,
+                  audio: audio.buffer,
+                });
+              }
+            } catch (err) {
+              console.warn(`[Chat] TTS error sentence ${item.index}: ${err instanceof Error ? err.message : err}`);
+            }
+          }
+          ttsProcessing = false;
+          // When stream is done and queue fully drained, signal audio complete
+          if (ttsStreamFinished && ttsQueue.length === 0) {
+            socket.emit('chat:audio_done', { sessionId, totalChunks: audioChunkIndex });
+          }
+        }
+
         if (voicePipeline) {
+          let firstSentenceEmitted = false;
           sentenceAccumulator = new SentenceAccumulator((sentence, sentenceIdx) => {
-            // Clean markdown/special characters before speech
             const cleaned = cleanTextForSpeech(sentence);
             if (!cleaned) return;
 
-            // Emit cleaned sentence text immediately so frontend can use browser
-            // SpeechSynthesis while waiting for XTTS audio
+            // Signal synthesizing stage on first sentence
+            if (!firstSentenceEmitted) {
+              firstSentenceEmitted = true;
+              socket.emit('chat:stage', { sessionId, stage: 'synthesizing', detail: '' });
+            }
+
+            // Emit sentence text immediately (frontend uses for display)
             socket.emit('chat:sentence', { sessionId, index: sentenceIdx, text: cleaned });
 
-            // Fire-and-forget TTS synthesis per sentence (may take 15-30s on CPU)
-            const promise = (async () => {
-              try {
-                const audio = await synthesizeSentenceToBuffer(cleaned);
-                if (audio && !abortController.signal.aborted) {
-                  socket.emit('chat:audio_chunk', {
-                    sessionId,
-                    index: audioChunkIndex++,
-                    contentType: audio.contentType,
-                    audio: audio.buffer,
-                  });
-                }
-              } catch (err) {
-                console.warn(`[Chat] Streaming TTS error: ${err instanceof Error ? err.message : err}`);
-              }
-            })();
-            ttsPending.push(promise);
+            // Assign chunk index NOW (deterministic sentence order, not TTS completion order)
+            ttsQueue.push({ text: cleaned, index: audioChunkIndex++ });
+            drainTtsQueue();
           });
         }
 
@@ -310,15 +352,20 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
               if (cached) cached.push({ role: 'assistant', content: accumulatedText });
             }
 
-            // PERF-01/03: Flush remaining sentence + wait for all TTS to finish
+            // Flush remaining sentence text and mark TTS stream as done
             if (sentenceAccumulator) {
               sentenceAccumulator.flush();
-              // Wait for all pending TTS, then signal audio complete
-              Promise.allSettled(ttsPending).then(() => {
+              ttsStreamFinished = true;
+              // If queue already empty (all synthesized), signal immediately
+              if (!ttsProcessing && ttsQueue.length === 0) {
                 socket.emit('chat:audio_done', { sessionId, totalChunks: audioChunkIndex });
-              });
+              }
+              // Otherwise drainTtsQueue() signals when it finishes
             }
 
+            // Emit chat:done immediately (text stream complete).
+            // Audio may still be arriving via progressive pipeline;
+            // frontend uses _progressiveWasUsed flag to avoid double-play.
             socket.emit('chat:done', { sessionId, usage, provider: decision.provider, cost });
             abortControllers.delete(sessionId);
           },
