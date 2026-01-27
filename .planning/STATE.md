@@ -11,17 +11,17 @@ See: .planning/PROJECT.md (updated 2026-01-26)
 
 Milestone: v1.3 File Operations & Project Intelligence
 Phase: 12 of 15 (File Operations Foundation)
-Plan: 1 of 3 complete (12-01 done, 12-02 and 12-03 remaining)
+Plan: 2 of 3 complete (12-01 and 12-02 done, 12-03 remaining)
 Status: In progress
-Last activity: 2026-01-27 -- Completed 12-01-PLAN.md (safety modules)
+Last activity: 2026-01-27 -- Completed 12-02-PLAN.md (file listing and info tools)
 
-Progress: [█████████████████░░░] 83% (v1.0-v1.2 complete, 12-01 shipped)
+Progress: [██████████████████░░] 87% (v1.0-v1.2 complete, 12-01 and 12-02 shipped)
 
 ## Performance Metrics
 
 **Velocity (from v1.0-v1.2):**
-- Total plans completed: 29
-- Average duration: 5.3 min
+- Total plans completed: 31
+- Average duration: 5.0 min
 - Phases shipped: 11
 
 ## Accumulated Context
@@ -37,6 +37,9 @@ Progress: [█████████████████░░░] 83% (v1
 - Safety audit logs use existing events table (type: action, severity: warning)
 - URL validation resolves DNS before checking IP to catch hostname-based SSRF
 - Protected path matching: trailing slash = directory subtree, no slash = exact file
+- Tree-view output as plain text (not JSON) so Claude presents directory listings naturally
+- Noise file filtering: .DS_Store, Thumbs.db, AppleDouble files always excluded from listings
+- Remote directory item counts batched in single SSH command (max 30 dirs)
 
 Previous milestones:
 - v1.0 MVP (Phases 1-6): Full dashboard + AI + monitoring + safety
@@ -58,10 +61,9 @@ Previous milestones:
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Completed 12-01-PLAN.md (safety modules -- paths, urls, disk, context)
+Stopped at: Completed 12-02-PLAN.md (file listing and info tools -- list_directory, get_file_info)
 Resume file: None
 
 **Next steps:**
-1. Execute 12-02-PLAN.md (file operation tools)
-2. Execute 12-03-PLAN.md (directory listing tools)
-3. Verify Phase 12 success criteria
+1. Execute 12-03-PLAN.md (file transfer/download tools)
+2. Verify Phase 12 success criteria
