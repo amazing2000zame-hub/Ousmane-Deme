@@ -77,25 +77,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TTS-01 | — | Pending |
-| TTS-02 | — | Pending |
-| TTS-03 | — | Pending |
-| TTS-04 | — | Pending |
-| PERF-01 | — | Pending |
-| PERF-02 | — | Pending |
-| PERF-03 | — | Pending |
-| PERF-04 | — | Pending |
-| AUDIO-01 | — | Pending |
-| BACK-01 | — | Pending |
-| BACK-02 | — | Pending |
-| OBS-01 | — | Pending |
-| OBS-02 | — | Pending |
-| UI-01 | — | Pending |
+| BACK-01 | Phase 21 | Pending |
+| PERF-01 | Phase 21 | Pending |
+| PERF-04 | Phase 21 | Pending |
+| OBS-02 | Phase 21 | Pending |
+| TTS-01 | Phase 22 | Pending |
+| TTS-02 | Phase 22 | Pending |
+| TTS-03 | Phase 22 | Pending |
+| TTS-04 | Phase 22 | Pending |
+| PERF-02 | Phase 23 | Pending |
+| PERF-03 | Phase 23 | Pending |
+| AUDIO-01 | Phase 23 | Pending |
+| OBS-01 | Phase 24 | Pending |
+| BACK-02 | Phase 24 | Pending |
+| UI-01 | Phase 25 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14
+- Mapped to phases: 14
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-27*
+*Traceability updated: 2026-01-27*
