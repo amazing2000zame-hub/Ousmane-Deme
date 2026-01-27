@@ -148,11 +148,27 @@ Responses will be spoken aloud. Keep answers under 60 words. Use natural spoken 
 }
 
 /**
+ * PERF-013: Cached cluster summary with 30s TTL.
+ * Consecutive chat messages within 30s reuse the same summary
+ * instead of re-fetching from Proxmox API (~1-2s → <10ms).
+ */
+let cachedSummary: string | null = null;
+let cachedSummaryTimestamp = 0;
+const SUMMARY_CACHE_TTL = 30_000; // 30 seconds
+
+/**
  * Build a concise text summary of the current cluster state.
  * Called before each chat interaction to provide Claude with live context.
- * Fetches live data via executeTool to embed fresh cluster state.
+ * Uses a 30s cache to avoid redundant API calls during rapid messages.
+ *
+ * PERF-016: VM and container queries run in parallel.
  */
 export async function buildClusterSummary(): Promise<string> {
+  // Return cached summary if fresh
+  if (cachedSummary && Date.now() - cachedSummaryTimestamp < SUMMARY_CACHE_TTL) {
+    return cachedSummary;
+  }
+
   const lines: string[] = [
     'HomeCluster: 4-node Proxmox cluster (quorum: 3)',
     'Nodes: Home (master, 192.168.1.50), pve (compute+NAS, 192.168.1.74), agent1 (compute/PROTECTED, 192.168.1.61), agent (utility, 192.168.1.62)',
@@ -170,28 +186,26 @@ export async function buildClusterSummary(): Promise<string> {
     lines.push('Cluster status: unavailable (API error)');
   }
 
-  // Fetch VM/container list
-  try {
-    const vmResult = await executeTool('get_vms', {}, 'llm');
-    if (!vmResult.isError && vmResult.content?.[0]?.text) {
-      lines.push('');
-      lines.push('--- Virtual Machines ---');
-      lines.push(vmResult.content[0].text);
-    }
-  } catch {
-    // Non-critical, skip
+  // PERF-016: Fetch VMs and containers in parallel
+  const [vmResult, ctResult] = await Promise.allSettled([
+    executeTool('get_vms', {}, 'llm'),
+    executeTool('get_containers', {}, 'llm'),
+  ]);
+
+  if (vmResult.status === 'fulfilled' && !vmResult.value.isError && vmResult.value.content?.[0]?.text) {
+    lines.push('');
+    lines.push('--- Virtual Machines ---');
+    lines.push(vmResult.value.content[0].text);
   }
 
-  try {
-    const ctResult = await executeTool('get_containers', {}, 'llm');
-    if (!ctResult.isError && ctResult.content?.[0]?.text) {
-      lines.push('');
-      lines.push('--- Containers ---');
-      lines.push(ctResult.content[0].text);
-    }
-  } catch {
-    // Non-critical, skip
+  if (ctResult.status === 'fulfilled' && !ctResult.value.isError && ctResult.value.content?.[0]?.text) {
+    lines.push('');
+    lines.push('--- Containers ---');
+    lines.push(ctResult.value.content[0].text);
   }
 
-  return lines.join('\n');
+  const summary = lines.join('\n');
+  cachedSummary = summary;
+  cachedSummaryTimestamp = Date.now();
+  return summary;
 }

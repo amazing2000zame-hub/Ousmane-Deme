@@ -85,7 +85,9 @@ export class ProxmoxClient {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: this.headers,
+        headers: body
+          ? this.headers
+          : { Authorization: this.headers.Authorization },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
@@ -97,8 +99,14 @@ export class ProxmoxClient {
         );
       }
 
-      const json = (await res.json()) as { data: T };
-      return json.data;
+      const text = await res.text();
+      if (!text) return undefined as T;
+      try {
+        const json = JSON.parse(text) as { data: T };
+        return json.data;
+      } catch {
+        return text as T;
+      }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw new Error(`PVE POST ${this.host}${path} timed out after ${this.timeoutMs}ms`);
@@ -183,6 +191,93 @@ export class ProxmoxClient {
   async rebootCT(node: string, vmid: number): Promise<string> {
     return this.post<string>(`/nodes/${encodeURIComponent(node)}/lxc/${vmid}/status/reboot`);
   }
+}
+
+// -------------------------------------------------------------------- Cache
+/**
+ * Shared API response cache with configurable TTL per resource type.
+ * Prevents duplicate API calls from emitter, monitor, and MCP tools
+ * that all request the same data within seconds of each other.
+ *
+ * PERF-011: 5s TTL for nodes/VMs, 15s TTL for storage
+ */
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const apiCache = new Map<string, CacheEntry<unknown>>();
+
+/** TTL in ms per cache key prefix */
+const CACHE_TTL: Record<string, number> = {
+  'cluster:resources:node': 5_000,
+  'cluster:resources:vm': 5_000,
+  'cluster:resources:storage': 15_000,
+  'cluster:resources': 5_000,
+  'cluster:status': 5_000,
+  'node:storage': 15_000,
+  'cluster:tasks': 10_000,
+};
+
+function getCacheTTL(key: string): number {
+  for (const [prefix, ttl] of Object.entries(CACHE_TTL)) {
+    if (key.startsWith(prefix)) return ttl;
+  }
+  return 5_000; // default 5s
+}
+
+function getCached<T>(key: string): T | undefined {
+  const entry = apiCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.timestamp > getCacheTTL(key)) {
+    apiCache.delete(key);
+    return undefined;
+  }
+  return entry.data as T;
+}
+
+function setCache<T>(key: string, data: T): void {
+  apiCache.set(key, { data, timestamp: Date.now() });
+}
+
+/** Clear all cached entries (e.g. after a write operation). */
+export function invalidateCache(prefix?: string): void {
+  if (!prefix) {
+    apiCache.clear();
+    return;
+  }
+  for (const key of apiCache.keys()) {
+    if (key.startsWith(prefix)) apiCache.delete(key);
+  }
+}
+
+// -------------------------------------------------------------------- Cached domain methods
+
+/**
+ * Get cluster resources with caching.
+ * Used by emitter, monitor, and MCP tools -- deduplicates concurrent calls.
+ */
+export async function getCachedClusterResources(type?: string): Promise<unknown[]> {
+  const key = type ? `cluster:resources:${type}` : 'cluster:resources';
+  const cached = getCached<unknown[]>(key);
+  if (cached) return cached;
+
+  const client = getAnyClient();
+  const data = await client.getClusterResources(type);
+  setCache(key, data);
+  return data;
+}
+
+/** Get cluster status with caching. */
+export async function getCachedClusterStatus(): Promise<unknown[]> {
+  const cached = getCached<unknown[]>('cluster:status');
+  if (cached) return cached;
+
+  const client = getAnyClient();
+  const data = await client.getClusterStatus();
+  setCache('cluster:status', data);
+  return data;
 }
 
 // -------------------------------------------------------------------- Instances

@@ -62,9 +62,9 @@ export function CenterDisplay() {
                 className={`px-2 py-0.5 text-[9px] font-display tracking-wider rounded transition-all duration-200 flex items-center gap-1 ${
                   voiceEnabled
                     ? isPlaying
-                      ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 animate-pulse'
+                      ? 'bg-jarvis-cyan/15 text-jarvis-cyan border border-jarvis-cyan/30 animate-pulse'
                       : isRecording
-                        ? 'bg-red-500/15 text-red-400 border border-red-500/30 animate-pulse'
+                        ? 'bg-jarvis-red/15 text-jarvis-red border border-jarvis-red/30 animate-pulse'
                         : 'bg-jarvis-amber/15 text-jarvis-amber border border-jarvis-amber/30'
                     : 'text-jarvis-text-dim hover:text-jarvis-amber-dim border border-transparent'
                 }`}

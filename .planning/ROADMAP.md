@@ -10,6 +10,7 @@ Jarvis 3.1 v1.1 transforms the working v1.0 prototype into a production-ready AI
 - ✅ **v1.1 Hybrid Intelligence & Deployment** - Phases 7-10 (shipped 2026-01-26)
 - ✅ **v1.2 JARVIS Voice & Personality** - Phase 11 (shipped 2026-01-26)
 - 🚧 **v1.3 File Operations & Project Intelligence** - Phases 12-15 (in progress)
+- 📋 **v1.4 Performance & Reliability** - Phases 16-20 (planned)
 
 ## Phases
 
@@ -173,6 +174,125 @@ Plans:
 
 ---
 
+### 📋 v1.4 Performance & Reliability (Planned)
+
+**Milestone Goal:** Optimize Jarvis for real-time responsiveness and visual polish -- reduce voice latency from 15-30s to <4s via streaming sentence-by-sentence TTS, eliminate chat UI jank during streaming, cut duplicate Proxmox API calls by 50%+, fix dashboard render performance with granular updates, and unify theme/color consistency across all components.
+
+**Measurable Targets:**
+
+| Metric | Current | v1.4 Target |
+|--------|---------|-------------|
+| Voice first-audio latency | 15-30s | <4s |
+| Chat state updates/sec during streaming | ~10 | ~2 |
+| Proxmox API calls/min | ~30+ (duplicated) | ~15 (cached) |
+| Temperature poll duration | 4-8s sequential | 1-2s parallel |
+| NodeCard re-renders per poll | 4 (all) | 1 (changed only) |
+| AudioVisualizer idle CPU | >0% (rAF loop) | 0% |
+| System prompt build (cached) | ~1-2s | <10ms |
+| Initial bundle savings | — | ~40KB gzipped |
+
+#### Phase 16: Streaming Voice Pipeline
+**Goal**: Reduce voice latency from 15-30s to <4s by streaming TTS sentence-by-sentence while the LLM is still generating
+**Depends on**: Phase 15 (v1.3 complete)
+**Requirements**: PERF-001, PERF-002, PERF-003, PERF-004, PERF-005, PERF-006
+**Success Criteria** (what must be TRUE):
+  1. First audio plays within 4 seconds of user sending a message (vs current 15-30s)
+  2. Text and voice arrive concurrently -- user hears speech while text is still streaming
+  3. Gaps between sentence audio chunks are under 200ms
+  4. AudioVisualizer works correctly throughout progressive playback
+**Status**: Not started
+
+Plans:
+- [ ] 16-01: Sentence-boundary text accumulator in chat handler
+- [ ] 16-02: Per-sentence TTS synthesis + Socket.IO audio delivery
+- [ ] 16-03: Frontend progressive audio queue (replace monolithic speak)
+- [ ] 16-04: XTTS sentence cache + TTS timeout fallback
+
+#### Phase 17: Chat Rendering Performance
+**Goal**: Eliminate UI jank during chat streaming by reducing renders from ~10/sec to ~2/sec
+**Depends on**: None (independent of Phase 16)
+**Requirements**: PERF-007, PERF-008, PERF-009, PERF-010
+**Success Criteria** (what must be TRUE):
+  1. State updates during streaming drop from ~10/sec to ~2/sec
+  2. Only the streaming message re-renders during streaming (not all N messages)
+  3. No visible jank, dropped characters, or layout thrashing during streaming
+**Status**: Not started
+
+Plans:
+- [ ] 17-01: Separate streaming content from messages array (O(1) token append)
+- [ ] 17-02: RAF-batched token accumulation (batch 5-15 tokens per frame)
+- [ ] 17-03: React.memo ChatMessage + throttled auto-scroll
+
+#### Phase 18: Backend Data Caching & API Efficiency
+**Goal**: Reduce redundant Proxmox API calls by 50%+, cut Home node load
+**Depends on**: None (independent of Phases 16-17)
+**Requirements**: PERF-011, PERF-012, PERF-013, PERF-014, PERF-015, PERF-016
+**Success Criteria** (what must be TRUE):
+  1. Proxmox API call volume drops by 50%+
+  2. Temperature poll completes in max(node_latencies) not sum -- typical 1-2s vs 4-8s
+  3. Consecutive chat messages within 30s skip system prompt tool calls
+  4. Memory writes per message drop from ~30 individual to 1 transaction
+**Status**: Not started
+
+Plans:
+- [ ] 18-01: Shared Proxmox API cache (5-15s TTL per resource type)
+- [ ] 18-02: Parallel temperature polling (Promise.allSettled)
+- [ ] 18-03: Cache system prompt cluster summary (30s TTL)
+- [ ] 18-04: Cache session history + batch memory touch writes
+- [ ] 18-05: Parallel VM+CT queries in system prompt builder
+
+#### Phase 19: Dashboard Rendering Performance
+**Goal**: Fix choppy animations by eliminating unnecessary re-renders through granular store updates and component memoization
+**Depends on**: None (independent, but 19-02 depends on 19-01 internally)
+**Requirements**: PERF-017, PERF-018, PERF-019, PERF-020, PERF-021, PERF-022, PERF-023
+**Success Criteria** (what must be TRUE):
+  1. When 1 node's CPU changes, only that NodeCard re-renders (not all 4)
+  2. AudioVisualizer uses 0% CPU when not playing
+  3. Initial bundle size decreases by ~40KB gzipped
+  4. Dashboard runs smoothly on low-end hardware with reduced-motion enabled
+**Status**: Not started
+
+Plans:
+- [ ] 19-01: Granular cluster store updates (diff-based, stable references)
+- [ ] 19-02: React.memo NodeCard + VMCard
+- [ ] 19-03: SVG filter hoisting + AudioVisualizer 30fps throttle
+- [ ] 19-04: Lazy-load motion library + prefers-reduced-motion support
+
+#### Phase 20: Theme Consistency & Visual Polish
+**Goal**: Fix color/theme mismatches and layout bugs for cohesive visual experience
+**Depends on**: Phase 19 (all components stable before polishing)
+**Requirements**: PERF-024, PERF-025, PERF-026, PERF-027
+**Success Criteria** (what must be TRUE):
+  1. Theme changes propagate uniformly to all components
+  2. No visual overflow or z-index conflicts in center display
+  3. Adding a new event renders 1 new EventRow, not all existing rows
+**Status**: Not started
+
+Plans:
+- [ ] 20-01: Audit and unify color tokens (replace all hardcoded rgba/hex/tailwind colors)
+- [ ] 20-02: Fix layout bugs (QuorumIndicator overflow, z-index conflicts)
+- [ ] 20-03: Standardize glow intensities + memoize EventRow
+
+**Phase Dependencies:**
+```
+Phase 16 (Voice) ← no deps, highest impact, do first
+Phase 17 (Chat Rendering) ← independent, second highest impact
+Phase 18 (Backend Caching) ← independent, reduces Home node load
+Phase 19 (Dashboard Rendering) ← 19-02 (memo) depends on 19-01 (granular store)
+Phase 20 (Theme/Polish) ← last, lowest urgency, all components stable
+```
+
+Phases 16, 17, 18, 19 are largely independent and could run in parallel if needed.
+
+**Deferred to v1.5+:**
+- GPU-accelerated TTS (needs hardware changes)
+- WebSocket compression (unnecessary at LAN speeds)
+- Full virtual scrolling library (only if conversations exceed 50+ messages)
+- Runbook concurrency limiter (low priority for 4-node cluster)
+- Worker thread TTS (streaming approach handles this)
+
+---
+
 ## Requirements Mapping
 
 **Phase 7 (Hybrid LLM Router + Cost Tracking):** ROUTE-01 through ROUTE-10
@@ -184,8 +304,13 @@ Plans:
 **Phase 13 (Project Intelligence):** PROJ-01, PROJ-02, PROJ-03, PROJ-05, PROJ-06
 **Phase 14 (Code Analysis & Discussion):** PROJ-04, PROJ-07
 **Phase 15 (Voice Retraining Pipeline):** VOICE-13, VOICE-14, VOICE-15, VOICE-16
+**Phase 16 (Streaming Voice Pipeline):** PERF-001 through PERF-006
+**Phase 17 (Chat Rendering Performance):** PERF-007 through PERF-010
+**Phase 18 (Backend Data Caching):** PERF-011 through PERF-016
+**Phase 19 (Dashboard Rendering Performance):** PERF-017 through PERF-023
+**Phase 20 (Theme Consistency & Visual Polish):** PERF-024 through PERF-027
 
-Total requirements: 73 (55 v1.0-v1.2 + 18 v1.3)
+Total requirements: 100 (55 v1.0-v1.2 + 18 v1.3 + 27 v1.4)
 
 ---
 
@@ -240,7 +365,12 @@ Phases 12 through 15 execute sequentially. Phase 15 depends on Phase 12 (file do
 | 13. Project Intelligence | v1.3 | 3/3 | Complete | 2026-01-27 |
 | 14. Code Analysis | v1.3 | 2/2 | Complete | 2026-01-27 |
 | 15. Voice Retraining | v1.3 | 0/3 | Not started | - |
+| 16. Streaming Voice Pipeline | v1.4 | 0/4 | Not started | - |
+| 17. Chat Rendering Performance | v1.4 | 0/3 | Not started | - |
+| 18. Backend Data Caching | v1.4 | 0/5 | Not started | - |
+| 19. Dashboard Rendering | v1.4 | 0/4 | Not started | - |
+| 20. Theme Consistency | v1.4 | 0/3 | Not started | - |
 
 ---
 
-Last updated: 2026-01-27 (Phase 13 complete)
+Last updated: 2026-01-27 (v1.4 milestone planned -- Phases 16-20)

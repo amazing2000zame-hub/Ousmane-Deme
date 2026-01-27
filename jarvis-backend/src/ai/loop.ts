@@ -59,6 +59,7 @@ export async function runAgenticLoop(
   systemPrompt: string,
   callbacks: StreamCallbacks,
   abortSignal?: AbortSignal,
+  overrideActive: boolean = false,
 ): Promise<PendingConfirmation | null> {
   const currentMessages = [...messages];
   const tools = getClaudeTools();
@@ -134,9 +135,9 @@ export async function runAgenticLoop(
         const tier = getToolTier(block.name);
         const tierStr = tier as string;
 
-        // BLACK tier -- always blocked
-        if (tier === ActionTier.BLACK) {
-          const reason = `Tool "${block.name}" is classified as BLACK tier and is always blocked. Suggest safer alternatives to the operator.`;
+        // BLACK tier -- blocked unless override active
+        if (tier === ActionTier.BLACK && !overrideActive) {
+          const reason = `Tool "${block.name}" is classified as BLACK tier and is always blocked. The operator can use the override passkey to elevate.`;
           callbacks.onBlocked(block.name, reason, tierStr);
           toolResults.push({
             type: 'tool_result',
@@ -147,8 +148,8 @@ export async function runAgenticLoop(
           continue;
         }
 
-        // RED tier -- needs confirmation
-        if (tier === ActionTier.RED) {
+        // RED tier -- needs confirmation unless override active
+        if (tier === ActionTier.RED && !overrideActive) {
           callbacks.onConfirmationNeeded(
             block.name,
             block.input as Record<string, unknown>,
@@ -166,7 +167,7 @@ export async function runAgenticLoop(
           };
         }
 
-        // GREEN/YELLOW tier -- auto-execute
+        // Auto-execute (GREEN/YELLOW, or elevated RED/BLACK with override)
         callbacks.onToolUse(block.name, block.input as Record<string, unknown>, block.id, tierStr);
 
         try {
@@ -174,6 +175,7 @@ export async function runAgenticLoop(
             block.name,
             block.input as Record<string, unknown>,
             'llm',
+            overrideActive,
           );
 
           const resultText = toolResult.content

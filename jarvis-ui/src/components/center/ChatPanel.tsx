@@ -3,6 +3,7 @@ import { useChatSocket } from '../../hooks/useChatSocket';
 import { useChatStore } from '../../stores/chat';
 import { useVoiceStore } from '../../stores/voice';
 import { useVoice } from '../../hooks/useVoice';
+import { isProgressiveActive } from '../../audio/progressive-queue';
 import { ChatInput } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
 import { AudioVisualizer } from './AudioVisualizer';
@@ -11,12 +12,18 @@ import { AudioVisualizer } from './AudioVisualizer';
  * Main chat interface -- message list with auto-scroll and text input.
  * Connects to the backend /chat namespace via useChatSocket hook.
  * Integrates TTS voice playback with auto-play on response completion.
+ *
+ * PERF-09/10: Uses streamingContent for O(1) streaming display,
+ * React.memo ChatMessage for selective re-renders, and throttled auto-scroll.
  */
 export function ChatPanel() {
   const { sendMessage, confirmTool } = useChatSocket();
   const messages = useChatStore((s) => s.messages);
   const isStreaming = useChatStore((s) => s.isStreaming);
+  const streamingMessageId = useChatStore((s) => s.streamingMessageId);
+  const streamingContent = useChatStore((s) => s.streamingContent);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevStreamingRef = useRef(false);
 
   const voiceEnabled = useVoiceStore((s) => s.enabled);
@@ -46,18 +53,36 @@ export function ChatPanel() {
     [speak, stop],
   );
 
-  // Auto-scroll to bottom when messages change or tokens stream in
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  // PERF-10: Track if user has scrolled up manually
+  const userScrolledUpRef = useRef(false);
 
-  // Auto-play TTS when streaming stops (response complete)
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    userScrolledUpRef.current = !atBottom;
+  }, []);
+
+  // PERF-10: Auto-scroll — fires on new messages and streaming content updates (~2/sec via RAF),
+  // but respects manual scroll-up
+  useEffect(() => {
+    if (!userScrolledUpRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length, streamingContent]);
+
+  // Auto-play TTS when streaming stops (response complete).
+  // PERF-04: Skip monolithic speak if the streaming voice pipeline already
+  // delivered audio chunks progressively during this response.
   useEffect(() => {
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isStreaming;
 
     if (wasStreaming && !isStreaming && voiceEnabled && autoPlay) {
-      // Find the last assistant message
+      // If progressive audio handled playback, don't also do monolithic speak
+      if (isProgressiveActive()) return;
+
+      // Fallback: monolithic speak for the complete response
       const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
       if (lastAssistant?.content) {
         speak(lastAssistant.content, lastAssistant.id);
@@ -73,7 +98,11 @@ export function ChatPanel() {
       )}
 
       {/* Messages area */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto px-3 py-3"
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <span className="font-display text-jarvis-text-dim text-sm tracking-wider">
@@ -86,6 +115,7 @@ export function ChatPanel() {
               <ChatMessage
                 key={msg.id}
                 message={msg}
+                displayContent={msg.id === streamingMessageId ? streamingContent : undefined}
                 onConfirm={handleConfirm}
                 onDeny={handleDeny}
                 onSpeak={handleSpeak}

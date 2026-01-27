@@ -32,6 +32,8 @@ interface ChatState {
   sessionId: string;
   isStreaming: boolean;
   streamingMessageId: string | null;
+  /** PERF-07: Streaming text held separately — O(1) token append, no messages.map */
+  streamingContent: string;
 
   // Actions
   sendMessage: (content: string) => void;
@@ -52,6 +54,7 @@ export const useChatStore = create<ChatState>()(
       sessionId: uid(),
       isStreaming: false,
       streamingMessageId: null,
+      streamingContent: '',
 
       sendMessage: (content) => {
         const message: ChatMessage = {
@@ -80,34 +83,55 @@ export const useChatStore = create<ChatState>()(
             messages: [...state.messages, assistantMessage],
             isStreaming: true,
             streamingMessageId: messageId,
+            streamingContent: '',
           }),
           false,
           'chat/startStreaming',
         );
       },
 
+      /**
+       * PERF-07: O(1) token append — updates only the streamingContent string.
+       * No messages.map traversal during streaming. Content is written to the
+       * message array once when stopStreaming is called.
+       */
       appendStreamToken: (text) => {
-        const { streamingMessageId } = get();
-        if (!streamingMessageId) return;
         set(
-          (state) => ({
-            messages: state.messages.map((m) =>
-              m.id === streamingMessageId
-                ? { ...m, content: m.content + text }
-                : m,
-            ),
-          }),
+          (state) => ({ streamingContent: state.streamingContent + text }),
           false,
           'chat/appendStreamToken',
         );
       },
 
-      stopStreaming: () =>
-        set(
-          { isStreaming: false, streamingMessageId: null },
-          false,
-          'chat/stopStreaming',
-        ),
+      /**
+       * Finalize streaming: copy accumulated streamingContent into the message
+       * array (one-time O(n)), then clear streaming state.
+       */
+      stopStreaming: () => {
+        const { streamingMessageId, streamingContent } = get();
+        if (streamingMessageId && streamingContent) {
+          set(
+            (state) => ({
+              messages: state.messages.map((m) =>
+                m.id === streamingMessageId
+                  ? { ...m, content: streamingContent }
+                  : m,
+              ),
+              isStreaming: false,
+              streamingMessageId: null,
+              streamingContent: '',
+            }),
+            false,
+            'chat/stopStreaming',
+          );
+        } else {
+          set(
+            { isStreaming: false, streamingMessageId: null, streamingContent: '' },
+            false,
+            'chat/stopStreaming',
+          );
+        }
+      },
 
       addToolCall: (toolCall) => {
         const { streamingMessageId } = get();
@@ -164,11 +188,11 @@ export const useChatStore = create<ChatState>()(
       },
 
       clearChat: () =>
-        set({ messages: [] }, false, 'chat/clearChat'),
+        set({ messages: [], streamingContent: '' }, false, 'chat/clearChat'),
 
       newSession: () =>
         set(
-          { messages: [], sessionId: uid(), isStreaming: false, streamingMessageId: null },
+          { messages: [], sessionId: uid(), isStreaming: false, streamingMessageId: null, streamingContent: '' },
           false,
           'chat/newSession',
         ),

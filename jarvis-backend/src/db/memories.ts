@@ -183,6 +183,19 @@ function touchMemory(id: number): void {
   getStmts().touch.run(id);
 }
 
+/**
+ * PERF-015: Batch-touch multiple memories in a single SQLite transaction.
+ * Reduces ~30 individual writes per chat message to 1 transaction.
+ */
+function touchMemories(ids: number[]): void {
+  if (ids.length === 0) return;
+  if (ids.length === 1) { touchMemory(ids[0]); return; }
+  const s = getStmts();
+  sqlite.transaction(() => {
+    for (const id of ids) s.touch.run(id);
+  })();
+}
+
 function deleteMemory(id: number): void {
   getStmts().deleteById.run(id);
 }
@@ -225,6 +238,7 @@ export const memoryBank = {
   getRecentMemories,
   searchMemories,
   touchMemory,
+  touchMemories,
   deleteMemory,
   deleteExpired,
   deleteByTier,

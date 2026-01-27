@@ -163,14 +163,14 @@ export interface CommandSafetyResult {
  *  3. Command starts with allowlisted prefix -> allowed
  *  4. Default: DENY (not in allowlist)
  */
-export function sanitizeCommand(command: string): CommandSafetyResult {
+export function sanitizeCommand(command: string, overrideActive: boolean = false): CommandSafetyResult {
   const trimmed = command.trim();
 
   if (!trimmed) {
     return { safe: false, reason: 'Empty command' };
   }
 
-  // Check blocklist (case-insensitive substring match)
+  // Blocklist always enforced -- even with override
   const lower = trimmed.toLowerCase();
   for (const blocked of COMMAND_BLOCKLIST) {
     if (lower.includes(blocked.toLowerCase())) {
@@ -181,13 +181,14 @@ export function sanitizeCommand(command: string): CommandSafetyResult {
     }
   }
 
+  // Override active: skip allowlist and metacharacter checks (blocklist still applies above)
+  if (overrideActive) {
+    return { safe: true };
+  }
+
   // Check for common injection patterns
   if (/[;&|`$]/.test(trimmed) && !trimmed.startsWith('journalctl')) {
-    // Allow pipes in journalctl (e.g., journalctl -p err | head)
-    // But block shell metacharacters in general
-    // Allow | in specific safe contexts
     if (trimmed.includes('|')) {
-      // Allow pipe only if both sides are allowlisted
       const parts = trimmed.split('|').map(p => p.trim());
       const allSafe = parts.every(part =>
         COMMAND_ALLOWLIST.some(prefix => part.startsWith(prefix)),
@@ -198,7 +199,6 @@ export function sanitizeCommand(command: string): CommandSafetyResult {
           reason: 'Command contains shell metacharacters (pipe to non-allowlisted command)',
         };
       }
-      // Fall through to allowlist check for the main command
     } else {
       return {
         safe: false,

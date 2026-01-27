@@ -3,35 +3,19 @@
  * and plays it via Web Audio API. Falls back to browser SpeechSynthesis
  * when backend TTS is unavailable.
  *
+ * For progressive streaming playback (PERF-03/04), see progressive-queue.ts.
+ * This hook handles on-demand "click to speak" and post-completion auto-play
+ * when the streaming pipeline didn't produce audio.
+ *
  * Exposes an AnalyserNode on the voice store for the audio visualizer.
  */
 
 import { useCallback, useRef } from 'react';
 import { useVoiceStore } from '../stores/voice';
 import { useAuthStore } from '../stores/auth';
+import { getSharedAudioContext, stopProgressive } from '../audio/progressive-queue';
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://192.168.1.50:4000';
-
-/** Singleton AudioContext (created on first user interaction) */
-let audioCtx: AudioContext | null = null;
-let analyser: AnalyserNode | null = null;
-let gainNode: GainNode | null = null;
-
-function getAudioContext(): AudioContext {
-  if (!audioCtx || audioCtx.state === 'closed') {
-    audioCtx = new AudioContext();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.8;
-    gainNode = audioCtx.createGain();
-    gainNode.connect(analyser);
-    analyser.connect(audioCtx.destination);
-  }
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
-  return audioCtx;
-}
 
 interface UseVoiceReturn {
   speak: (text: string, messageId: string) => Promise<void>;
@@ -44,7 +28,9 @@ export function useVoice(): UseVoiceReturn {
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const stop = useCallback(() => {
-    // Stop Web Audio API playback
+    // Stop progressive streaming playback
+    stopProgressive();
+    // Stop Web Audio API playback (monolithic)
     if (sourceRef.current) {
       try { sourceRef.current.stop(); } catch { /* already stopped */ }
       sourceRef.current = null;
@@ -81,22 +67,20 @@ export function useVoice(): UseVoiceReturn {
       }
 
       const arrayBuffer = await res.arrayBuffer();
-      const ctx = getAudioContext();
+      const { ctx, analyser: sharedAnalyser, gainNode: sharedGain } = getSharedAudioContext();
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
       // Set volume
-      if (gainNode) {
-        gainNode.gain.value = state.volume;
-      }
+      sharedGain.gain.value = state.volume;
 
       // Create and play source
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(gainNode!);
+      source.connect(sharedGain);
       sourceRef.current = source;
 
       useVoiceStore.getState().setPlaying(true, messageId);
-      useVoiceStore.getState().setAnalyserNode(analyser);
+      useVoiceStore.getState().setAnalyserNode(sharedAnalyser);
 
       source.onended = () => {
         sourceRef.current = null;

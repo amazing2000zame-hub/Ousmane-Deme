@@ -15,6 +15,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { execOnNodeByName } from '../../clients/ssh.js';
 import { sanitizeCommand, sanitizeNodeName, sanitizeInput } from '../../safety/sanitize.js';
+import { isOverrideActive } from '../../safety/context.js';
 
 /** WOL API base URL on the management VM */
 const WOL_API_BASE = 'http://192.168.1.65:3005';
@@ -43,7 +44,7 @@ export function registerSystemTools(server: McpServer): void {
 
         // Sanitize and validate command against allowlist/blocklist
         const sanitized = sanitizeInput(command);
-        const commandCheck = sanitizeCommand(sanitized);
+        const commandCheck = sanitizeCommand(sanitized, isOverrideActive());
 
         if (!commandCheck.safe) {
           return {

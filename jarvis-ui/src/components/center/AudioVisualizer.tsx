@@ -24,7 +24,21 @@ export function AudioVisualizer() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const draw = () => {
+    /**
+     * PERF-20: Throttle to 30fps during playback (33ms frame budget).
+     * When not playing, draw idle state once and stop the rAF loop entirely.
+     */
+    let lastFrameTime = 0;
+    const FRAME_INTERVAL = 33; // ~30fps
+
+    const draw = (timestamp: number) => {
+      // Throttle: skip frame if too soon
+      if (timestamp - lastFrameTime < FRAME_INTERVAL) {
+        animationRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastFrameTime = timestamp;
+
       const width = canvas.width;
       const height = canvas.height;
       ctx.clearRect(0, 0, width, height);
@@ -38,7 +52,6 @@ export function AudioVisualizer() {
         const step = Math.floor(bufferLength / BAR_COUNT);
 
         for (let i = 0; i < BAR_COUNT; i++) {
-          // Average a range of frequency bins for each bar
           let sum = 0;
           for (let j = 0; j < step; j++) {
             sum += dataArray[i * step + j] ?? 0;
@@ -49,13 +62,11 @@ export function AudioVisualizer() {
           const x = i * (barWidth + BAR_GAP);
           const y = height - barHeight;
 
-          // Amber gradient with intensity-based opacity
           const intensity = avg / 255;
           ctx.fillStyle = `rgba(255, 176, 0, ${0.3 + intensity * 0.7})`;
           ctx.shadowColor = 'rgba(255, 176, 0, 0.5)';
           ctx.shadowBlur = intensity > 0.5 ? 4 : 0;
 
-          // Rounded top
           const radius = Math.min(barWidth / 2, 2);
           ctx.beginPath();
           ctx.moveTo(x + radius, y);
@@ -68,20 +79,22 @@ export function AudioVisualizer() {
           ctx.fill();
         }
         ctx.shadowBlur = 0;
+
+        // Continue loop only while playing
+        animationRef.current = requestAnimationFrame(draw);
       } else {
-        // Idle state: flat amber line
+        // PERF-20: Idle state — draw once, do NOT continue rAF loop (0% CPU)
         ctx.strokeStyle = 'rgba(255, 176, 0, 0.2)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, height / 2);
         ctx.lineTo(width, height / 2);
         ctx.stroke();
+        // No requestAnimationFrame — loop stops
       }
-
-      animationRef.current = requestAnimationFrame(draw);
     };
 
-    draw();
+    animationRef.current = requestAnimationFrame(draw);
 
     return () => {
       cancelAnimationFrame(animationRef.current);

@@ -43,13 +43,8 @@ export interface StorageData {
 /** Cluster quorum data */
 export interface QuorumData {
   quorate: boolean;
-  totalVotes: number;
-  expectedVotes: number;
-  nodelist: Array<{
-    name: string;
-    online: boolean;
-    votes: number;
-  }>;
+  nodes: number;
+  expected: number;
 }
 
 /** Cluster node configuration (matches backend config) */

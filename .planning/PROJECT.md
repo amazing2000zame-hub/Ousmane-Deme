@@ -29,6 +29,11 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - [ ] File import/download -- JARVIS can import and download files to the server -- v1.3
 - [ ] Project read/browse access -- JARVIS can pull, read, and browse projects on the server -- v1.3
 - [ ] Project discussion & improvements -- JARVIS can analyze projects and suggest improvements -- v1.3
+- [ ] Streaming voice pipeline -- text and voice arrive simultaneously (<4s first audio) -- v1.4
+- [ ] Chat rendering performance -- eliminate UI jank during streaming (~2 updates/sec) -- v1.4
+- [ ] Backend data caching -- reduce duplicate Proxmox API calls by 50%+ -- v1.4
+- [ ] Dashboard rendering performance -- granular updates, memoization, idle optimization -- v1.4
+- [ ] Theme consistency & visual polish -- unified color tokens, layout fixes, glow standardization -- v1.4
 
 ### Validated
 
@@ -59,15 +64,18 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - Smart home integration -- Proxmox cluster focus only for v1
 - Mobile native app -- responsive web handles mobile
 
-## Current Milestone: v1.3 File Operations & Project Intelligence
+## Current Milestone: v1.4 Performance & Reliability
 
-**Goal:** Give JARVIS the ability to interact with files and projects on the server -- importing/downloading files, reading and browsing project codebases, and analyzing projects to discuss improvements. Also redo voice training with proper JARVIS video sources for better voice quality.
+**Goal:** Optimize Jarvis for real-time responsiveness -- reduce voice latency from 15-30s to <4s via streaming TTS, eliminate chat UI jank, cut duplicate Proxmox API calls by 50%+, fix dashboard render performance, and unify theme/color consistency.
 
 **Target features:**
-- Voice retraining -- extract clean JARVIS audio from provided video sources, build larger training dataset, retrain XTTS v2 for improved voice quality
-- File import/download -- MCP tools for JARVIS to download files from URLs, import files to server directories, manage file transfers
-- Project read access -- MCP tools for JARVIS to browse project directories, read source files, list project structures (read-only)
-- Project discussion -- JARVIS can analyze project code, discuss architecture, suggest improvements, and provide code reviews via chat
+- Streaming voice pipeline -- sentence-by-sentence TTS synthesis during LLM streaming for <4s first audio
+- Chat rendering performance -- O(1) token append, RAF-batched updates, React.memo message components
+- Backend data caching -- shared Proxmox API cache, parallel temperature polling, system prompt caching
+- Dashboard rendering -- granular store updates, component memoization, idle animation optimization
+- Theme consistency -- unified color tokens, layout overflow fixes, standardized glow intensities
+
+**Previous milestone (v1.3):** File Operations & Project Intelligence -- Phases 12-14 complete, Phase 15 (Voice Retraining) pending
 
 ## Current State (v1.0 shipped 2026-01-26)
 
@@ -138,4 +146,4 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 | Safety-first Phase 1 | CRITICAL pitfalls must be architectural, not retrofitted | Confirmed -- dependency DAG + command allowlist |
 
 ---
-*Last updated: 2026-01-26 after v1.3 milestone started*
+*Last updated: 2026-01-27 after v1.4 milestone planned*

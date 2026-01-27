@@ -12,7 +12,7 @@ export function QuorumIndicator() {
   const modeConfig = VISUAL_MODES[visualMode];
 
   const quorate = quorum?.quorate ?? false;
-  const votes = quorum ? `${quorum.totalVotes}/${quorum.expectedVotes}` : '---';
+  const votes = quorum ? `${quorum.nodes}/${quorum.expected}` : '---';
   const statusText = quorum ? (quorate ? 'QUORATE' : 'LOST') : 'OFFLINE';
 
   const glowColor = quorate

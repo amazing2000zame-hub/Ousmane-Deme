@@ -7,17 +7,11 @@
  */
 
 export const PROTECTED_RESOURCES = {
-  /** Nodes that host Jarvis infrastructure */
-  nodes: ['agent1'] as const,
-
   /** VMIDs running Jarvis services (management VM) */
   vmids: [103] as const,
 
   /** Services whose restart would kill Jarvis itself */
   services: ['docker.service', 'docker'] as const,
-
-  /** IPs that map to protected infrastructure */
-  ips: ['192.168.1.61', '192.168.1.65'] as const,
 } as const;
 
 /**
@@ -31,21 +25,6 @@ export function isProtectedResource(args: Record<string, unknown>): {
   resource?: string;
   reason?: string;
 } {
-  // Check node name
-  const node = args.node ?? args.target;
-  if (typeof node === 'string') {
-    const lower = node.toLowerCase();
-    for (const pn of PROTECTED_RESOURCES.nodes) {
-      if (lower === pn.toLowerCase()) {
-        return {
-          protected: true,
-          resource: `node:${node}`,
-          reason: `Node "${node}" hosts Jarvis infrastructure and cannot be targeted by automated actions`,
-        };
-      }
-    }
-  }
-
   // Check VMID
   const vmid = args.vmid ?? args.id;
   if (vmid !== undefined) {
@@ -69,20 +48,6 @@ export function isProtectedResource(args: Record<string, unknown>): {
           protected: true,
           resource: `service:${service}`,
           reason: `Service "${service}" is critical to Jarvis operation and cannot be restarted by automated actions`,
-        };
-      }
-    }
-  }
-
-  // Check IP address
-  const ip = args.host ?? args.ip;
-  if (typeof ip === 'string') {
-    for (const pip of PROTECTED_RESOURCES.ips) {
-      if (ip === pip) {
-        return {
-          protected: true,
-          resource: `ip:${ip}`,
-          reason: `IP ${ip} belongs to protected Jarvis infrastructure`,
         };
       }
     }

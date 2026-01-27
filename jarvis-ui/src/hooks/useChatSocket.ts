@@ -4,6 +4,12 @@ import { createChatSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useChatStore } from '../stores/chat';
 import { useVoiceStore } from '../stores/voice';
+import {
+  startProgressiveSession,
+  queueAudioChunk,
+  markStreamDone,
+  stopProgressive,
+} from '../audio/progressive-queue';
 
 /** crypto.randomUUID() requires secure context (HTTPS). Fallback for HTTP. */
 const uid = (): string =>
@@ -20,6 +26,9 @@ interface ChatSocketActions {
  * Hook that manages the Socket.IO /chat namespace connection.
  * Connects when authenticated, bridges chat events to the Zustand chat store.
  * Returns sendMessage and confirmTool actions for the UI.
+ *
+ * PERF-08: Tokens are buffered and flushed via requestAnimationFrame
+ * to batch ~10 events/sec into ~2 state updates/sec.
  */
 export function useChatSocket(): ChatSocketActions {
   const token = useAuthStore((s) => s.token);
@@ -32,11 +41,26 @@ export function useChatSocket(): ChatSocketActions {
     const socket = createChatSocket(token);
     socketRef.current = socket;
 
+    // PERF-08: RAF-batched token buffer
+    let tokenBuffer = '';
+    let rafId: number | null = null;
+
+    function flushTokens() {
+      rafId = null;
+      if (tokenBuffer) {
+        useChatStore.getState().appendStreamToken(tokenBuffer);
+        tokenBuffer = '';
+      }
+    }
+
     // --- Named handlers for all /chat events ---
 
     function onToken(data: { sessionId: string; text: string }) {
       void data.sessionId;
-      useChatStore.getState().appendStreamToken(data.text);
+      tokenBuffer += data.text;
+      if (rafId === null) {
+        rafId = requestAnimationFrame(flushTokens);
+      }
     }
 
     function onToolUse(data: {
@@ -47,6 +71,8 @@ export function useChatSocket(): ChatSocketActions {
       tier: string;
     }) {
       void data.sessionId;
+      // Flush pending tokens before tool call so text order is preserved
+      if (tokenBuffer) flushTokens();
       useChatStore.getState().addToolCall({
         name: data.toolName,
         input: data.toolInput,
@@ -104,21 +130,69 @@ export function useChatSocket(): ChatSocketActions {
       });
     }
 
+    // PERF-03/04: Progressive audio chunk handling
+    let progressiveSessionStarted = false;
+
+    function onAudioChunk(data: {
+      sessionId: string;
+      index: number;
+      contentType: string;
+      audio: ArrayBuffer;
+    }) {
+      const voiceState = useVoiceStore.getState();
+      if (!voiceState.enabled || !voiceState.autoPlay) return;
+
+      // Start progressive session on first chunk
+      if (!progressiveSessionStarted) {
+        progressiveSessionStarted = true;
+        const messageId = useChatStore.getState().streamingMessageId;
+        if (messageId) {
+          startProgressiveSession(data.sessionId, messageId);
+        }
+      }
+
+      queueAudioChunk(data.sessionId, data.audio, data.contentType, data.index);
+    }
+
+    function onAudioDone(data: { sessionId: string; totalChunks: number }) {
+      markStreamDone(data.sessionId);
+    }
+
     function onDone(data: { sessionId: string; usage?: unknown; provider?: string; cost?: number }) {
+      // Flush any remaining buffered tokens before finalizing
+      if (tokenBuffer) flushTokens();
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+
       const store = useChatStore.getState();
       if (data.provider === 'claude' || data.provider === 'qwen') {
         store.updateLastMessageProvider(data.provider);
       }
       store.stopStreaming();
+
+      // Reset progressive flag for next message
+      progressiveSessionStarted = false;
     }
 
     function onChatError(data: { sessionId: string; error: string }) {
+      // Flush any remaining buffered tokens
+      if (tokenBuffer) flushTokens();
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+
       const store = useChatStore.getState();
-      // Append error text to the streaming message before stopping
       if (store.streamingMessageId) {
         store.appendStreamToken(`\n\n[Error: ${data.error}]`);
       }
       store.stopStreaming();
+
+      // Reset progressive state on error
+      progressiveSessionStarted = false;
+      stopProgressive();
     }
 
     function onConnectError(err: Error) {
@@ -135,11 +209,26 @@ export function useChatSocket(): ChatSocketActions {
     socket.on('chat:blocked', onBlocked);
     socket.on('chat:done', onDone);
     socket.on('chat:error', onChatError);
+    socket.on('chat:audio_chunk', onAudioChunk);
+    socket.on('chat:audio_done', onAudioDone);
     socket.on('connect_error', onConnectError);
 
     socket.connect();
 
     return () => {
+      // PERF-08: Flush remaining tokens on cleanup
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (tokenBuffer) {
+        useChatStore.getState().appendStreamToken(tokenBuffer);
+        tokenBuffer = '';
+      }
+
+      // Stop progressive playback on cleanup
+      stopProgressive();
+
       socket.off('chat:token', onToken);
       socket.off('chat:tool_use', onToolUse);
       socket.off('chat:tool_result', onToolResult);
@@ -147,6 +236,8 @@ export function useChatSocket(): ChatSocketActions {
       socket.off('chat:blocked', onBlocked);
       socket.off('chat:done', onDone);
       socket.off('chat:error', onChatError);
+      socket.off('chat:audio_chunk', onAudioChunk);
+      socket.off('chat:audio_done', onAudioDone);
       socket.off('connect_error', onConnectError);
       socket.disconnect();
       socketRef.current = null;

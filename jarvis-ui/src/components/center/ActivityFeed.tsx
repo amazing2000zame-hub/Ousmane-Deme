@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { memo, useRef, useEffect, useState, useMemo } from 'react';
 import { useClusterStore } from '../../stores/cluster';
 import { GlowBorder } from '../shared/GlowBorder';
 import type { JarvisEvent } from '../../types/events';
@@ -50,7 +50,8 @@ function getRemediationBorderClass(title: string): string {
 /** Feed filter mode */
 type FilterMode = 'ALL' | 'AUTO' | 'ALERTS';
 
-function EventRow({ event }: { event: JarvisEvent }) {
+/** PERF-27: Memoized — new events render only new rows, not all existing ones. */
+const EventRow = memo(function EventRow({ event }: { event: JarvisEvent }) {
   const isHighSeverity = event.severity === 'error' || event.severity === 'critical';
   const colorClass = SEVERITY_COLORS[event.severity];
   const icon = SEVERITY_ICONS[event.severity];
@@ -98,7 +99,7 @@ function EventRow({ event }: { event: JarvisEvent }) {
   }
 
   return content;
-}
+});
 
 const FILTERS: { key: FilterMode; label: string }[] = [
   { key: 'ALL', label: 'ALL' },

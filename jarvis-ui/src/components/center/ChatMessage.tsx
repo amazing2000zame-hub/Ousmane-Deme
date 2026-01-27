@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { ChatMessage as ChatMessageType, ToolCall } from '../../stores/chat';
 import { useVoiceStore } from '../../stores/voice';
 import { BlockedCard } from './BlockedCard';
@@ -8,6 +9,8 @@ import { VoicePlayButton } from './VoicePlayButton';
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  /** PERF-07: Override content for the streaming message (from streamingContent store). */
+  displayContent?: string;
   onConfirm?: (toolUseId: string) => void;
   onDeny?: (toolUseId: string) => void;
   onSpeak?: (text: string, messageId: string) => void;
@@ -55,10 +58,21 @@ function ToolCallRenderer({
   );
 }
 
-export function ChatMessage({ message, onConfirm, onDeny, onSpeak }: ChatMessageProps) {
+/**
+ * PERF-09: Wrapped in React.memo — non-streaming messages skip re-render
+ * when the parent ChatPanel updates due to streamingContent changes.
+ */
+export const ChatMessage = memo(function ChatMessage({
+  message,
+  displayContent,
+  onConfirm,
+  onDeny,
+  onSpeak,
+}: ChatMessageProps) {
   const isUser = message.role === 'user';
+  const text = displayContent ?? message.content;
   const isEmptyAssistant =
-    !isUser && message.content === '' && (!message.toolCalls || message.toolCalls.length === 0);
+    !isUser && text === '' && (!message.toolCalls || message.toolCalls.length === 0);
   const voiceEnabled = useVoiceStore((s) => s.enabled);
   const isPlaying = useVoiceStore((s) => s.isPlaying);
   const playingMessageId = useVoiceStore((s) => s.playingMessageId);
@@ -78,10 +92,10 @@ export function ChatMessage({ message, onConfirm, onDeny, onSpeak }: ChatMessage
         {!isUser && message.provider && (
           <ProviderBadge provider={message.provider} />
         )}
-        {!isUser && voiceEnabled && message.content && (
+        {!isUser && voiceEnabled && text && (
           <VoicePlayButton
             isPlaying={isThisPlaying}
-            onPlay={() => onSpeak?.(message.content, message.id)}
+            onPlay={() => onSpeak?.(text, message.id)}
           />
         )}
       </div>
@@ -95,11 +109,11 @@ export function ChatMessage({ message, onConfirm, onDeny, onSpeak }: ChatMessage
         }`}
       >
         {/* Text content */}
-        {message.content ? (
+        {text ? (
           <p
             className={`text-sm text-jarvis-text whitespace-pre-wrap break-words ${!isUser ? 'font-mono' : ''}`}
           >
-            {message.content}
+            {text}
           </p>
         ) : isEmptyAssistant ? (
           <span className="text-sm font-mono text-jarvis-text animate-pulse">_</span>
@@ -107,7 +121,7 @@ export function ChatMessage({ message, onConfirm, onDeny, onSpeak }: ChatMessage
 
         {/* Tool calls */}
         {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className={message.content ? 'mt-2' : ''}>
+          <div className={text ? 'mt-2' : ''}>
             {message.toolCalls.map((tc) => (
               <ToolCallRenderer
                 key={tc.toolUseId}
@@ -121,4 +135,4 @@ export function ChatMessage({ message, onConfirm, onDeny, onSpeak }: ChatMessage
       </div>
     </div>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { NodeData } from '../../types/cluster';
 import { StatusDot } from '../shared/StatusDot';
 import { UsageBar } from '../shared/UsageBar';
@@ -9,7 +9,8 @@ interface NodeCardProps {
   node: NodeData;
 }
 
-function getPrimaryTemp(temps: Record<string, number>): number | null {
+function getPrimaryTemp(temps: Record<string, number> | undefined | null): number | null {
+  if (!temps) return null;
   const entries = Object.values(temps);
   if (entries.length === 0) return null;
   return entries[0];
@@ -21,7 +22,12 @@ function getTempColor(temp: number): string {
   return 'text-jarvis-green';
 }
 
-export function NodeCard({ node }: NodeCardProps) {
+/**
+ * PERF-18: Wrapped in React.memo — re-renders only when its own node data changes.
+ * Combined with granular cluster store updates (PERF-17), only the NodeCard
+ * for a changed node re-renders, not all 4.
+ */
+export const NodeCard = memo(function NodeCard({ node }: NodeCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const cpuPercent = formatPercent(node.cpu);
@@ -87,4 +93,4 @@ export function NodeCard({ node }: NodeCardProps) {
       {expanded && <NodeDetail node={node} />}
     </div>
   );
-}
+});

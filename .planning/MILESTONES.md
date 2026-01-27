@@ -69,3 +69,29 @@
 **What's next:** v1.3 File Operations & Project Intelligence
 
 ---
+
+## v1.3 File Operations & Project Intelligence (In Progress)
+
+**Delivered (so far):** File download/transfer/listing tools across cluster nodes, project browsing/reading/searching/analysis from 24-project registry, code analysis with multi-turn discussion.
+
+**Phases completed:** 12-14 (8 plans total), Phase 15 pending
+
+**Key accomplishments:**
+- File operations: download from URL with SSRF protection, copy between directories, SSH transfer between nodes
+- Path sanitization infrastructure: traversal prevention, symlink resolution, disk space checks
+- Project intelligence: browse, read, search across 24 indexed projects via registry on agent1
+- Secret blocking: 28 filenames + 13 patterns + 8 path segments blocked from reads
+- Code analysis: 6-section context gathering with prompt injection defense
+- Multi-turn project discussion via system prompt guidance
+- Total MCP tools: 28 (23 existing + 4 project + 1 analysis)
+- Zero new npm dependencies -- Node.js 22 built-ins only
+
+**Stats:**
+- Phases 12-14 (8 plans)
+- 18 requirements (FILE-01 to FILE-07, PROJ-01 to PROJ-07, VOICE-13 to VOICE-16)
+- Phase 15 (Voice Retraining Pipeline) not yet started
+- Git commits: 07139ca → 4a24f95
+
+**What's next:** v1.4 Performance & Reliability
+
+---

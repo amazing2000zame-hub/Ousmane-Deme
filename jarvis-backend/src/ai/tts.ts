@@ -232,6 +232,102 @@ export async function synthesizeSpeech(options: TTSOptions): Promise<TTSResult> 
   throw new Error('TTS unavailable: no provider configured');
 }
 
+// ---------------------------------------------------------------------------
+// PERF-05: LRU sentence cache — common JARVIS phrases served instantly
+// ---------------------------------------------------------------------------
+
+interface CachedAudio {
+  buffer: Buffer;
+  contentType: string;
+  provider: TTSProvider;
+}
+
+const SENTENCE_CACHE_MAX = 50;
+const sentenceCache = new Map<string, CachedAudio>();
+
+/** Normalize text for cache key (lowercase, trimmed, collapsed whitespace). */
+function cacheKey(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function cachePut(text: string, audio: CachedAudio): void {
+  const key = cacheKey(text);
+  // LRU eviction
+  if (sentenceCache.size >= SENTENCE_CACHE_MAX) {
+    const oldest = sentenceCache.keys().next().value!;
+    sentenceCache.delete(oldest);
+  }
+  sentenceCache.set(key, audio);
+}
+
+function cacheGet(text: string): CachedAudio | undefined {
+  const key = cacheKey(text);
+  const entry = sentenceCache.get(key);
+  if (entry) {
+    // Move to end (most recently used)
+    sentenceCache.delete(key);
+    sentenceCache.set(key, entry);
+  }
+  return entry;
+}
+
+// ---------------------------------------------------------------------------
+// PERF-02: Synthesize to Buffer — used by streaming voice pipeline
+// ---------------------------------------------------------------------------
+
+/** Per-sentence TTS timeout (8 seconds). */
+const SENTENCE_TTS_TIMEOUT = 8_000;
+
+/**
+ * Synthesize a single sentence to a Buffer. Returns null on timeout or error.
+ * Checks the LRU cache first (PERF-05).
+ */
+export async function synthesizeSentenceToBuffer(
+  text: string,
+  options?: { voice?: string; speed?: number },
+): Promise<CachedAudio | null> {
+  // PERF-05: Check cache
+  const cached = cacheGet(text);
+  if (cached) return cached;
+
+  try {
+    const result = await Promise.race([
+      synthesizeSpeech({ text, voice: options?.voice, speed: options?.speed }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), SENTENCE_TTS_TIMEOUT)),
+    ]);
+
+    if (!result) {
+      console.warn(`[TTS] Sentence synthesis timed out (${SENTENCE_TTS_TIMEOUT}ms): "${text.slice(0, 40)}..."`);
+      return null;
+    }
+
+    // Collect stream into Buffer
+    const chunks: Buffer[] = [];
+    for await (const chunk of result.stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const buffer = Buffer.concat(chunks);
+
+    const audio: CachedAudio = {
+      buffer,
+      contentType: result.contentType,
+      provider: result.provider,
+    };
+
+    // PERF-05: Cache for future use
+    cachePut(text, audio);
+
+    return audio;
+  } catch (err) {
+    console.warn(`[TTS] Sentence synthesis failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cost estimation
+// ---------------------------------------------------------------------------
+
 /**
  * Estimate TTS cost for a given text.
  * - Local XTTS: $0.00 (runs on cluster hardware)

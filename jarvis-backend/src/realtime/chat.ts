@@ -15,6 +15,8 @@
  *  - chat:tool_result     { sessionId, toolUseId, result, isError }
  *  - chat:confirm_needed  { sessionId, toolName, toolInput, toolUseId, tier }
  *  - chat:blocked         { sessionId, toolName, reason, tier }
+ *  - chat:audio_chunk     { sessionId, index, contentType, audio }  -- PERF-03: Binary TTS audio chunk
+ *  - chat:audio_done      { sessionId, totalChunks }                -- PERF-03: All TTS chunks sent
  *  - chat:done            { sessionId, usage, provider }
  *  - chat:error           { sessionId, error }
  */
@@ -41,6 +43,8 @@ import { config } from '../config.js';
 import { extractMemoriesFromSession, detectPreferences } from '../ai/memory-extractor.js';
 import { detectRecallQuery, buildRecallBlock } from '../ai/memory-recall.js';
 import { memoryBank } from '../db/memories.js';
+import { SentenceAccumulator } from '../ai/sentence-stream.js';
+import { synthesizeSentenceToBuffer, ttsAvailable } from '../ai/tts.js';
 
 // Provider lookup map
 const providers: Record<string, LLMProvider> = {
@@ -80,6 +84,8 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
     const abortControllers = new Map<string, AbortController>();
     /** Track last provider used per session for follow-up routing */
     const sessionLastProvider = new Map<string, string>();
+    /** PERF-014: Cache session history in-memory per socket (DB read once per session) */
+    const sessionHistoryCache = new Map<string, Array<{ role: string; content: string }>>();
 
     // ------------------------------------------------------------------
     // chat:send -- user sends a message
@@ -122,14 +128,23 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           // Non-critical
         }
 
-        // Load conversation history
+        // PERF-014: Load conversation history (cached in-memory after first DB read)
         let history: Array<{ role: string; content: string }> = [];
-        try {
-          const dbMessages = memoryStore.getSessionMessages(sessionId);
-          history = dbMessages.slice(-config.chatHistoryLimit);
-        } catch {
-          // If DB fails, start with just the current message
-          history = [{ role: 'user', content: message.trim() }];
+        const cachedHistory = sessionHistoryCache.get(sessionId);
+        if (cachedHistory) {
+          // Use cached history, add current message
+          cachedHistory.push({ role: 'user', content: message.trim() });
+          history = cachedHistory.slice(-config.chatHistoryLimit);
+        } else {
+          try {
+            const dbMessages = memoryStore.getSessionMessages(sessionId);
+            history = dbMessages.slice(-config.chatHistoryLimit);
+            // Initialize cache with DB history
+            sessionHistoryCache.set(sessionId, [...history]);
+          } catch {
+            history = [{ role: 'user', content: message.trim() }];
+            sessionHistoryCache.set(sessionId, [...history]);
+          }
         }
 
         // Convert DB messages to simple format (works for both providers)
@@ -181,11 +196,44 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         // Accumulate text for DB persistence
         let accumulatedText = '';
 
+        // ---------------------------------------------------------------
+        // PERF-01/02/03: Streaming voice pipeline — sentence-by-sentence TTS
+        // ---------------------------------------------------------------
+        const voicePipeline = voiceMode && ttsAvailable();
+        let sentenceAccumulator: SentenceAccumulator | null = null;
+        /** Track in-flight TTS promises so we can await them before signalling done */
+        const ttsPending: Promise<void>[] = [];
+        let audioChunkIndex = 0;
+
+        if (voicePipeline) {
+          sentenceAccumulator = new SentenceAccumulator((sentence, _index) => {
+            // Fire-and-forget TTS synthesis per sentence
+            const promise = (async () => {
+              try {
+                const audio = await synthesizeSentenceToBuffer(sentence);
+                if (audio && !abortController.signal.aborted) {
+                  socket.emit('chat:audio_chunk', {
+                    sessionId,
+                    index: audioChunkIndex++,
+                    contentType: audio.contentType,
+                    audio: audio.buffer,
+                  });
+                }
+              } catch (err) {
+                console.warn(`[Chat] Streaming TTS error: ${err instanceof Error ? err.message : err}`);
+              }
+            })();
+            ttsPending.push(promise);
+          });
+        }
+
         // Build streaming callbacks
         const callbacks: StreamCallbacks = {
           onTextDelta: (text: string) => {
             accumulatedText += text;
             socket.emit('chat:token', { sessionId, text });
+            // PERF-01: Feed sentence accumulator during streaming
+            sentenceAccumulator?.push(text);
           },
 
           onToolUse: (toolName, toolInput, toolUseId, tier) => {
@@ -246,6 +294,21 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
 
             // Track provider for follow-up routing
             sessionLastProvider.set(sessionId, decision.provider);
+
+            // PERF-014: Update session history cache with assistant response
+            if (accumulatedText.length > 0) {
+              const cached = sessionHistoryCache.get(sessionId);
+              if (cached) cached.push({ role: 'assistant', content: accumulatedText });
+            }
+
+            // PERF-01/03: Flush remaining sentence + wait for all TTS to finish
+            if (sentenceAccumulator) {
+              sentenceAccumulator.flush();
+              // Wait for all pending TTS, then signal audio complete
+              Promise.allSettled(ttsPending).then(() => {
+                socket.emit('chat:audio_done', { sessionId, totalChunks: audioChunkIndex });
+              });
+            }
 
             socket.emit('chat:done', { sessionId, usage, provider: decision.provider, cost });
             abortControllers.delete(sessionId);
@@ -415,6 +478,7 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
       abortControllers.clear();
       pendingConfirmations.clear();
       sessionLastProvider.clear();
+      sessionHistoryCache.clear();
     });
   });
 

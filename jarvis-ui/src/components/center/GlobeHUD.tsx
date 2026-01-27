@@ -20,7 +20,7 @@ export function GlobeHUD() {
 
   return (
     <div
-      className="relative flex items-center justify-center select-none"
+      className="relative flex items-center justify-center select-none overflow-hidden"
       style={{
         minHeight: ringSize + 40,
         perspective: '800px',

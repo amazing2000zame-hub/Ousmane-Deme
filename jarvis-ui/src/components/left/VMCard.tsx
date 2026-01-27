@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { memo, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import type { VMData } from '../../types/cluster';
 import { executeToolApi } from '../../services/api';
@@ -28,7 +28,10 @@ function toStatusDotStatus(vmStatus: VMData['status']): 'online' | 'offline' | '
   }
 }
 
-export function VMCard({ vm }: { vm: VMData }) {
+/**
+ * PERF-18: Wrapped in React.memo — re-renders only when its own VM data changes.
+ */
+export const VMCard = memo(function VMCard({ vm }: { vm: VMData }) {
   const token = useAuthStore((s) => s.token);
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>({ open: false, action: null });
@@ -175,4 +178,4 @@ export function VMCard({ vm }: { vm: VMData }) {
       />
     </>
   );
-}
+});

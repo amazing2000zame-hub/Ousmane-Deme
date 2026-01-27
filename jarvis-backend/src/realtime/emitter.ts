@@ -13,7 +13,7 @@
  */
 
 import type { Namespace } from 'socket.io';
-import { getAnyClient } from '../clients/proxmox.js';
+import { getCachedClusterResources, getCachedClusterStatus } from '../clients/proxmox.js';
 import { execOnNodeByName } from '../clients/ssh.js';
 import { config, type ClusterNode } from '../config.js';
 
@@ -83,8 +83,7 @@ const intervals: ReturnType<typeof setInterval>[] = [];
 // ---------------------------------------------------------------------------
 
 async function pollNodes(): Promise<NodeData[]> {
-  const pve = getAnyClient();
-  const raw = (await pve.getClusterResources('node')) as Array<Record<string, unknown>>;
+  const raw = (await getCachedClusterResources('node')) as Array<Record<string, unknown>>;
 
   return raw.map((r) => ({
     name: (r.node as string) ?? '',
@@ -101,8 +100,7 @@ async function pollNodes(): Promise<NodeData[]> {
 }
 
 async function pollVMs(): Promise<VMData[]> {
-  const pve = getAnyClient();
-  const raw = (await pve.getClusterResources('vm')) as Array<Record<string, unknown>>;
+  const raw = (await getCachedClusterResources('vm')) as Array<Record<string, unknown>>;
 
   return raw.map((r) => ({
     vmid: (r.vmid as number) ?? 0,
@@ -121,8 +119,7 @@ async function pollVMs(): Promise<VMData[]> {
 }
 
 async function pollStorage(): Promise<StorageData[]> {
-  const pve = getAnyClient();
-  const raw = (await pve.getClusterResources('storage')) as Array<Record<string, unknown>>;
+  const raw = (await getCachedClusterResources('storage')) as Array<Record<string, unknown>>;
 
   return raw.map((r) => ({
     storage: (r.storage as string) ?? '',
@@ -137,8 +134,7 @@ async function pollStorage(): Promise<StorageData[]> {
 }
 
 async function pollQuorum(): Promise<QuorumData> {
-  const pve = getAnyClient();
-  const raw = (await pve.getClusterStatus()) as Array<Record<string, unknown>>;
+  const raw = (await getCachedClusterStatus()) as Array<Record<string, unknown>>;
 
   // Cluster status returns an array with a "cluster" type entry and node entries
   const clusterEntry = raw.find((r) => r.type === 'cluster');
@@ -162,40 +158,44 @@ async function pollQuorum(): Promise<QuorumData> {
   };
 }
 
+/**
+ * PERF-012: Poll temperature from all 4 nodes concurrently using
+ * Promise.allSettled. Completes in max(node_latencies) instead of sum.
+ */
 async function pollTemperature(): Promise<TemperatureData[]> {
-  const results: TemperatureData[] = [];
+  const cmd = 'paste <(cat /sys/class/thermal/thermal_zone*/type) <(cat /sys/class/thermal/thermal_zone*/temp)';
 
-  for (const node of config.clusterNodes) {
-    try {
-      const cmd = 'paste <(cat /sys/class/thermal/thermal_zone*/type) <(cat /sys/class/thermal/thermal_zone*/temp)';
-      const result = await execOnNodeByName(node.name, cmd, 10_000);
+  const results = await Promise.allSettled(
+    config.clusterNodes.map(async (node: ClusterNode): Promise<TemperatureData | null> => {
+      try {
+        const result = await execOnNodeByName(node.name, cmd, 10_000);
+        if (result.code !== 0 && result.code !== null) return null;
 
-      if (result.code !== 0 && result.code !== null) {
-        continue;
-      }
+        const zones: Record<string, number> = {};
+        const lines = result.stdout.trim().split('\n').filter(Boolean);
 
-      const zones: Record<string, number> = {};
-      const lines = result.stdout.trim().split('\n').filter(Boolean);
-
-      for (const line of lines) {
-        const parts = line.split('\t');
-        if (parts.length >= 2) {
-          const zoneType = parts[0].trim();
-          const tempRaw = parseInt(parts[1].trim(), 10);
-          if (!isNaN(tempRaw)) {
-            // Convert millidegrees to Celsius
-            zones[zoneType] = tempRaw / 1000;
+        for (const line of lines) {
+          const parts = line.split('\t');
+          if (parts.length >= 2) {
+            const zoneType = parts[0].trim();
+            const tempRaw = parseInt(parts[1].trim(), 10);
+            if (!isNaN(tempRaw)) {
+              zones[zoneType] = tempRaw / 1000;
+            }
           }
         }
+
+        return { node: node.name, zones };
+      } catch {
+        return null;
       }
+    }),
+  );
 
-      results.push({ node: node.name, zones });
-    } catch {
-      // Skip nodes where SSH fails -- this is expected for offline nodes
-    }
-  }
-
-  return results;
+  return results
+    .filter((r): r is PromiseFulfilledResult<TemperatureData | null> => r.status === 'fulfilled')
+    .map((r) => r.value)
+    .filter((v): v is TemperatureData => v !== null);
 }
 
 // ---------------------------------------------------------------------------

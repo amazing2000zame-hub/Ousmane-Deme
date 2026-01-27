@@ -33,6 +33,9 @@ export function buildMemoryContext(
   const sections: string[] = [];
   let usedTokens = 0;
 
+  // PERF-015: Collect all accessed memory IDs, batch-touch at end
+  const touchedIds: number[] = [];
+
   // 1. User preferences (semantic tier) — always included first
   const preferences = memoryBank.getMemoriesByCategory('user_preference', 20);
   if (preferences.length > 0) {
@@ -42,8 +45,7 @@ export function buildMemoryContext(
     if (usedTokens + prefTokens <= budget) {
       sections.push(prefBlock);
       usedTokens += prefTokens;
-      // Touch accessed memories
-      for (const m of preferences) memoryBank.touchMemory(m.id);
+      for (const m of preferences) touchedIds.push(m.id);
     }
   }
 
@@ -57,7 +59,7 @@ export function buildMemoryContext(
       if (usedTokens + lineTokens + 30 > budget) break; // 30 = overhead for tags
       eventLines.push(line);
       usedTokens += lineTokens;
-      memoryBank.touchMemory(m.id);
+      touchedIds.push(m.id);
     }
     if (eventLines.length > 0) {
       sections.push(`<recent_events>\n${eventLines.join('\n')}\n</recent_events>`);
@@ -75,11 +77,16 @@ export function buildMemoryContext(
       if (usedTokens + lineTokens + 40 > budget) break;
       convoLines.push(line);
       usedTokens += lineTokens;
-      memoryBank.touchMemory(m.id);
+      touchedIds.push(m.id);
     }
     if (convoLines.length > 0) {
       sections.push(`<recent_conversations>\n${convoLines.join('\n')}\n</recent_conversations>`);
     }
+  }
+
+  // PERF-015: Single transaction for all touch writes
+  if (touchedIds.length > 0) {
+    memoryBank.touchMemories(touchedIds);
   }
 
   if (sections.length === 0) return '';
@@ -111,12 +118,14 @@ export function recallMemories(query: string, limit = 10): string {
       if (!seen.has(m.id)) {
         seen.add(m.id);
         results.push(m);
-        memoryBank.touchMemory(m.id);
       }
     }
   }
 
   if (results.length === 0) return '';
+
+  // PERF-015: Batch-touch all accessed memories
+  memoryBank.touchMemories(results.map((m) => m.id));
 
   // Sort by recency
   results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

@@ -1,6 +1,22 @@
+import { memo } from 'react';
 import { useClusterStore } from '../../stores/cluster';
 import { useUIStore } from '../../stores/ui';
 import { VISUAL_MODES } from '../../theme/modes';
+
+/**
+ * PERF-19: SVG filter definition hoisted outside render — created once, reused.
+ */
+const ARC_GLOW_FILTER = (
+  <defs>
+    <filter id="arc-glow">
+      <feGaussianBlur stdDeviation="2" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+);
 
 /** Fixed node order matching cluster layout */
 const NODE_POSITIONS = [
@@ -33,7 +49,7 @@ function cpuColor(cpu: number): string {
  * SVG radial data ring showing node CPU/status arcs around the globe.
  * Each of 4 cluster nodes occupies a 90deg arc segment with a gap.
  */
-export function RadialDataRing({ radius = 130, size = 300 }: { radius?: number; size?: number }) {
+export const RadialDataRing = memo(function RadialDataRing({ radius = 130, size = 300 }: { radius?: number; size?: number }) {
   const nodes = useClusterStore((s) => s.nodes);
   const visualMode = useUIStore((s) => s.visualMode);
   const modeConfig = VISUAL_MODES[visualMode];
@@ -56,22 +72,12 @@ export function RadialDataRing({ radius = 130, size = 300 }: { radius?: number; 
         transform: 'translate(-50%, -50%)',
       }}
     >
-      {/* Glow filter */}
-      {modeConfig.glowEffects && (
-        <defs>
-          <filter id="arc-glow">
-            <feGaussianBlur stdDeviation="2" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-      )}
+      {/* PERF-19: Glow filter hoisted — static defs never recreated */}
+      {modeConfig.glowEffects && ARC_GLOW_FILTER}
 
       {NODE_POSITIONS.map(({ name, startAngle, endAngle }) => {
         const nodeData = nodes.find(
-          (n) => n.node.toLowerCase() === name.toLowerCase(),
+          (n) => n.node?.toLowerCase() === name.toLowerCase(),
         );
         const isOnline = nodeData?.status === 'online';
         const cpu = nodeData?.cpu ?? 0;
@@ -151,4 +157,4 @@ export function RadialDataRing({ radius = 130, size = 300 }: { radius?: number; 
       })}
     </svg>
   );
-}
+});
