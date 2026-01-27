@@ -1,7 +1,6 @@
 /**
  * TTS playback hook — fetches audio from backend /api/tts endpoint
- * and plays it via Web Audio API. Falls back to browser SpeechSynthesis
- * when backend TTS is unavailable.
+ * and plays it via Web Audio API using the local XTTS JARVIS voice.
  *
  * For progressive streaming playback (PERF-03/04), see progressive-queue.ts.
  * This hook handles on-demand "click to speak" and post-completion auto-play
@@ -26,7 +25,6 @@ interface UseVoiceReturn {
 export function useVoice(): UseVoiceReturn {
   const token = useAuthStore((s) => s.token);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const stop = useCallback(() => {
     // Stop progressive streaming playback
@@ -36,16 +34,18 @@ export function useVoice(): UseVoiceReturn {
       try { sourceRef.current.stop(); } catch { /* already stopped */ }
       sourceRef.current = null;
     }
-    // Stop browser SpeechSynthesis
-    if (utteranceRef.current) {
-      window.speechSynthesis.cancel();
-      utteranceRef.current = null;
-    }
     useVoiceStore.getState().setPlaying(false, null);
     useVoiceStore.getState().setAnalyserNode(null);
   }, []);
 
-  const speakWithBackend = useCallback(async (text: string, messageId: string): Promise<boolean> => {
+  const speak = useCallback(async (text: string, messageId: string) => {
+    // Stop any current playback
+    stop();
+
+    // Clean markdown and special characters before speaking
+    const cleaned = cleanTextForSpeech(text);
+    if (!cleaned) return;
+
     try {
       const state = useVoiceStore.getState();
       const res = await fetch(`${BASE_URL}/api/tts`, {
@@ -55,7 +55,7 @@ export function useVoice(): UseVoiceReturn {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          text,
+          text: cleaned,
           voice: state.voice,
           speed: state.speed,
         }),
@@ -63,8 +63,8 @@ export function useVoice(): UseVoiceReturn {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        if (data.fallback === 'browser') return false;
-        throw new Error(data.error || `TTS API error: ${res.status}`);
+        console.warn('[Voice] Backend TTS error:', data.error || res.status);
+        return;
       }
 
       const arrayBuffer = await res.arrayBuffer();
@@ -90,71 +90,10 @@ export function useVoice(): UseVoiceReturn {
       };
 
       source.start();
-      return true;
     } catch (err) {
-      console.warn('[Voice] Backend TTS failed, falling back to browser:', err);
-      return false;
+      console.warn('[Voice] Backend TTS failed:', err);
     }
-  }, [token]);
-
-  const speakWithBrowser = useCallback((text: string, messageId: string) => {
-    if (!window.speechSynthesis) {
-      console.warn('[Voice] SpeechSynthesis not available');
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-    const state = useVoiceStore.getState();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = state.speed;
-    utterance.volume = state.volume;
-    utterance.lang = 'en-GB';
-
-    // Try to find a British male voice
-    const voices = window.speechSynthesis.getVoices();
-    const british = voices.find(
-      (v) => v.lang.startsWith('en-GB') && v.name.toLowerCase().includes('male'),
-    ) ?? voices.find(
-      (v) => v.lang.startsWith('en-GB'),
-    ) ?? voices.find(
-      (v) => v.lang.startsWith('en'),
-    );
-    if (british) utterance.voice = british;
-
-    utteranceRef.current = utterance;
-    useVoiceStore.getState().setPlaying(true, messageId);
-
-    utterance.onend = () => {
-      utteranceRef.current = null;
-      useVoiceStore.getState().setPlaying(false, null);
-    };
-    utterance.onerror = () => {
-      utteranceRef.current = null;
-      useVoiceStore.getState().setPlaying(false, null);
-    };
-
-    window.speechSynthesis.speak(utterance);
-  }, []);
-
-  const speak = useCallback(async (text: string, messageId: string) => {
-    // Stop any current playback
-    stop();
-
-    // Clean markdown and special characters before speaking
-    const cleaned = cleanTextForSpeech(text);
-    if (!cleaned) return;
-
-    const state = useVoiceStore.getState();
-
-    // All non-browser providers use the backend /api/tts endpoint
-    if (state.provider === 'local' || state.provider === 'elevenlabs' || state.provider === 'openai') {
-      const success = await speakWithBackend(cleaned, messageId);
-      if (success) return;
-    }
-
-    // Browser fallback (also used when backend fails)
-    speakWithBrowser(cleaned, messageId);
-  }, [stop, speakWithBackend, speakWithBrowser]);
+  }, [stop, token]);
 
   return { speak, stop };
 }

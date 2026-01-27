@@ -6,8 +6,6 @@ import { useChatStore } from '../stores/chat';
 import { useVoiceStore } from '../stores/voice';
 import {
   startProgressiveSession,
-  speakSentenceBrowser,
-  markBrowserStreamDone,
   queueAudioChunk,
   markStreamDone,
   stopProgressive,
@@ -132,15 +130,14 @@ export function useChatSocket(): ChatSocketActions {
       });
     }
 
-    // PERF-03/04/06: Dual-track progressive voice pipeline
+    // PERF-03/04: Progressive XTTS voice pipeline (local JARVIS voice only)
     let progressiveSessionStarted = false;
 
-    // Track 1: Browser SpeechSynthesis — instant sentence playback
+    // chat:sentence — start the session so we're ready for audio chunks
     function onSentence(data: { sessionId: string; index: number; text: string }) {
       const voiceState = useVoiceStore.getState();
       if (!voiceState.enabled || !voiceState.autoPlay) return;
 
-      // Start progressive session on first sentence (instant voice)
       if (!progressiveSessionStarted) {
         progressiveSessionStarted = true;
         const messageId = useChatStore.getState().streamingMessageId;
@@ -148,11 +145,9 @@ export function useChatSocket(): ChatSocketActions {
           startProgressiveSession(data.sessionId, messageId);
         }
       }
-
-      speakSentenceBrowser(data.sessionId, data.text);
     }
 
-    // Track 2: XTTS audio chunks — cached for replay with custom JARVIS voice
+    // chat:audio_chunk — XTTS audio plays progressively as chunks arrive
     function onAudioChunk(data: {
       sessionId: string;
       index: number;
@@ -191,11 +186,6 @@ export function useChatSocket(): ChatSocketActions {
         store.updateLastMessageProvider(data.provider);
       }
       store.stopStreaming();
-
-      // Signal browser speech track that all sentences have been emitted
-      if (progressiveSessionStarted) {
-        markBrowserStreamDone();
-      }
 
       // Reset progressive flag for next message
       progressiveSessionStarted = false;
