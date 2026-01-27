@@ -1,5 +1,5 @@
 /**
- * LLM-optimized Claude tool definitions for all 20 MCP tools.
+ * LLM-optimized Claude tool definitions for all 23 MCP tools.
  *
  * These are hardcoded (not auto-converted from Zod schemas) to give Claude
  * the best possible descriptions for tool selection. Each description guides
@@ -363,6 +363,83 @@ export function getClaudeTools(): Anthropic.Tool[] {
           },
         },
         required: ['node'],
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // YELLOW tier -- file transfer operations
+    // -----------------------------------------------------------------------
+    {
+      name: 'download_file',
+      description:
+        'Download a file from a public URL to a cluster node. Validates the URL is not internal (SSRF protection), checks disk space, and streams the download. Use when the user asks to download a file from the internet, fetch a URL, or save a remote file. Files over 500MB will ask for confirmation. Only supports http/https URLs.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          url: {
+            type: 'string',
+            description: 'Public URL to download (http or https)',
+          },
+          destNode: {
+            type: 'string',
+            description: 'Destination node (default: "Home"). Options: "Home", "pve", "agent1", "agent"',
+          },
+          destPath: {
+            type: 'string',
+            description: 'Absolute destination file path (e.g., "/root/downloads/archive.tar.gz")',
+          },
+        },
+        required: ['url', 'destPath'],
+      },
+    },
+    {
+      name: 'copy_file',
+      description:
+        'Copy a file between directories on the same cluster node. Checks disk space, auto-renames if destination exists. Use when the user asks to copy, duplicate, or back up a file on the same server.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          node: {
+            type: 'string',
+            description: 'Cluster node name (e.g., "Home", "pve", "agent1", "agent")',
+          },
+          sourcePath: {
+            type: 'string',
+            description: 'Absolute source file path',
+          },
+          destPath: {
+            type: 'string',
+            description: 'Absolute destination file path',
+          },
+        },
+        required: ['node', 'sourcePath', 'destPath'],
+      },
+    },
+    {
+      name: 'transfer_file',
+      description:
+        'Transfer a file between different cluster nodes via SSH/SFTP. Use when the user asks to move, transfer, or copy a file from one node to another (e.g., "copy the config from Home to agent1"). If source and destination are the same node, this acts as a copy.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          sourceNode: {
+            type: 'string',
+            description: 'Source cluster node name',
+          },
+          sourcePath: {
+            type: 'string',
+            description: 'Absolute source file path on source node',
+          },
+          destNode: {
+            type: 'string',
+            description: 'Destination cluster node name',
+          },
+          destPath: {
+            type: 'string',
+            description: 'Absolute destination file path on destination node',
+          },
+        },
+        required: ['sourceNode', 'sourcePath', 'destNode', 'destPath'],
       },
     },
   ];

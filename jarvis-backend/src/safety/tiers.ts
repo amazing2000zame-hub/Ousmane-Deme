@@ -54,6 +54,11 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   restart_service: ActionTier.YELLOW,
   wake_node: ActionTier.YELLOW,
 
+  // YELLOW -- file transfer operations (write side effects)
+  download_file: ActionTier.YELLOW,
+  copy_file: ActionTier.YELLOW,
+  transfer_file: ActionTier.YELLOW,
+
   // YELLOW -- starting VMs/CTs (non-destructive, no confirmation needed)
   start_vm: ActionTier.YELLOW,
   start_container: ActionTier.YELLOW,
