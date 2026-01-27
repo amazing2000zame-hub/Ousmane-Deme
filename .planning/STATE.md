@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Milestone: v1.5 Optimization & Latency Reduction
-Phase: 21 -- Quick Wins & Measurement Baseline (COMPLETE)
-Plan: --
-Status: Phase 21 verified and shipped. Ready for Phase 22.
-Last activity: 2026-01-27 -- Phase 21 shipped (SQLite PRAGMAs, sentence threshold, TTS cache/health/restart, component health endpoint)
+Phase: 22 -- TTS Reliability -- Piper Fallback (IN PROGRESS)
+Plan: 01 of 02 complete
+Status: Plan 22-01 shipped (Piper container + config). Plan 22-02 next (fallback routing logic).
+Last activity: 2026-01-27 -- Completed 22-01-PLAN.md (Piper TTS container deployment + backend config wiring)
 
-Progress: [████░░░░░░░░░░░░░░░░] 20% v1.5 (1/5 phases)
+Progress: [█████░░░░░░░░░░░░░░░] 25% v1.5 (1/5 phases, 22-01 of 2 plans done)
 
 ## Performance Metrics
 
@@ -99,11 +99,11 @@ Previous milestones:
 
 ## Session Continuity
 
-Last session: 2026-01-27
-Stopped at: Phase 21 complete and verified
+Last session: 2026-01-27T22:42:15Z
+Stopped at: Completed 22-01-PLAN.md (Piper TTS container deployment)
 Resume file: None
 
 **Next steps:**
-1. Plan Phase 22 (TTS Reliability -- Piper Fallback)
-2. Execute Phase 22
+1. Execute Phase 22 Plan 02 (TTS fallback routing logic)
+2. Verify Phase 22 complete
 3. Continue through Phases 23-25
