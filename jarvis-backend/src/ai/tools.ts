@@ -1,5 +1,5 @@
 /**
- * LLM-optimized Claude tool definitions for all 28 MCP tools.
+ * LLM-optimized Claude tool definitions for all 32 MCP tools.
  *
  * These are hardcoded (not auto-converted from Zod schemas) to give Claude
  * the best possible descriptions for tool selection. Each description guides
@@ -540,6 +540,73 @@ export function getClaudeTools(): Anthropic.Tool[] {
           },
         },
         required: ['project'],
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // YELLOW tier -- voice retraining pipeline
+    // -----------------------------------------------------------------------
+    {
+      name: 'extract_voice_audio',
+      description:
+        'Extract audio segments from a video or audio file for JARVIS voice training. Use when the user provides a video or audio file and wants to extract voice clips for retraining (e.g., "extract the voice from this video", "process this file for voice training"). Converts to 22050Hz mono WAV, detects speech boundaries using silence detection, and segments into 4-16 second clips suitable for XTTS v2 fine-tuning.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          sourcePath: {
+            type: 'string',
+            description: 'Absolute path to source video or audio file on the Home node (e.g., "/opt/jarvis-tts/sources/jarvis-clip.mp4")',
+          },
+          minDuration: {
+            type: 'number',
+            description: 'Minimum clip duration in seconds (default: 4)',
+          },
+          maxDuration: {
+            type: 'number',
+            description: 'Maximum clip duration in seconds (default: 16)',
+          },
+        },
+        required: ['sourcePath'],
+      },
+    },
+    {
+      name: 'prepare_voice_dataset',
+      description:
+        'Transcribe extracted audio clips and build an LJSpeech-format training dataset. Use after extract_voice_audio to transcribe clips with Whisper and generate metadata.csv. Run this when the user says "prepare the dataset", "transcribe the clips", or after extracting audio segments.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          regenerate: {
+            type: 'boolean',
+            description: 'Re-transcribe all clips even if metadata.csv already exists (default: false)',
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'retrain_voice_model',
+      description:
+        'Fine-tune the XTTS v2 GPT decoder on the prepared JARVIS voice dataset. Use when the user asks to retrain, improve, or update the JARVIS voice model (e.g., "retrain the voice", "improve voice quality"). Runs inside the TTS Docker container. Produces fine-tuned weights and updated speaker embeddings. Requires a prepared dataset (run prepare_voice_dataset first).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          epochs: {
+            type: 'number',
+            description: 'Number of training epochs (default: 6, more epochs = better quality but longer training)',
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'deploy_voice_model',
+      description:
+        'Deploy the retrained voice model to the live TTS service. REQUIRES USER CONFIRMATION. Clears cached voice output, restarts the TTS Docker container to load new weights, waits for health check, and runs a test synthesis. Use after retrain_voice_model when the user wants to activate the new voice.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
       },
     },
   ];

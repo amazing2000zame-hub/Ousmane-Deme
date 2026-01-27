@@ -66,6 +66,14 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   copy_file: ActionTier.YELLOW,
   transfer_file: ActionTier.YELLOW,
 
+  // YELLOW -- voice pipeline (extraction, dataset, training)
+  extract_voice_audio: ActionTier.YELLOW,
+  prepare_voice_dataset: ActionTier.YELLOW,
+  retrain_voice_model: ActionTier.YELLOW,
+
+  // RED -- voice deployment (changes live TTS service)
+  deploy_voice_model: ActionTier.RED,
+
   // YELLOW -- starting VMs/CTs (non-destructive, no confirmation needed)
   start_vm: ActionTier.YELLOW,
   start_container: ActionTier.YELLOW,
