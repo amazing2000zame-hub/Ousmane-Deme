@@ -41,7 +41,7 @@ services:
       jarvis-tts:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/api/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/api/health?liveness"]
       interval: 30s
       timeout: 5s
       retries: 3
