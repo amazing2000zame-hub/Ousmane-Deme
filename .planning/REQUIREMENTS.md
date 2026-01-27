@@ -16,10 +16,10 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### TTS Performance
 
-- [ ] **PERF-01**: TTS LRU cache expanded to 200+ entries with engine-specific cache keys
+- [x] **PERF-01**: TTS LRU cache expanded to 200+ entries with engine-specific cache keys
 - [ ] **PERF-02**: Bounded parallel TTS synthesis with max 2 concurrent workers and CPU affinity separation
 - [ ] **PERF-03**: Disk-persistent TTS cache that survives container restarts with startup pre-warming of common JARVIS phrases
-- [ ] **PERF-04**: Sentence detection minimum length reduced and TTS health check with automatic container restart on failure
+- [x] **PERF-04**: Sentence detection minimum length reduced and TTS health check with automatic container restart on failure
 
 ### Audio Encoding
 
@@ -27,13 +27,13 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Backend Optimization
 
-- [ ] **BACK-01**: SQLite performance PRAGMAs applied (synchronous=NORMAL, cache_size=-64000, temp_store=MEMORY, mmap_size=268435456)
+- [x] **BACK-01**: SQLite performance PRAGMAs applied (synchronous=NORMAL, cache_size=-64000, temp_store=MEMORY, mmap_size=268435456)
 - [ ] **BACK-02**: Conversation sliding window keeping last 20-30 messages in full with token-aware truncation and background Qwen summarization of older context
 
 ### Observability
 
 - [ ] **OBS-01**: Latency tracing pipeline with per-request timing breakdown (t0 message received through t5 audio plays) using performance.now() timestamps
-- [ ] **OBS-02**: Expanded /api/health endpoint returning component-level status for TTS engines, LLM, Proxmox API connectivity, and database
+- [x] **OBS-02**: Expanded /api/health endpoint returning component-level status for TTS engines, LLM, Proxmox API connectivity, and database
 
 ### Frontend
 
@@ -77,10 +77,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BACK-01 | Phase 21 | Pending |
-| PERF-01 | Phase 21 | Pending |
-| PERF-04 | Phase 21 | Pending |
-| OBS-02 | Phase 21 | Pending |
+| BACK-01 | Phase 21 | Done |
+| PERF-01 | Phase 21 | Done |
+| PERF-04 | Phase 21 | Done |
+| OBS-02 | Phase 21 | Done |
 | TTS-01 | Phase 22 | Pending |
 | TTS-02 | Phase 22 | Pending |
 | TTS-03 | Phase 22 | Pending |

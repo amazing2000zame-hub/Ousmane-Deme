@@ -10,19 +10,19 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Milestone: v1.5 Optimization & Latency Reduction
-Phase: 21 -- Quick Wins & Measurement Baseline
-Plan: 01 of 01 (in phase)
-Status: Phase 21 plan 01 complete
-Last activity: 2026-01-27 -- Completed 21-01-PLAN.md (Quick Wins & Baseline)
+Phase: 21 -- Quick Wins & Measurement Baseline (COMPLETE)
+Plan: --
+Status: Phase 21 verified and shipped. Ready for Phase 22.
+Last activity: 2026-01-27 -- Phase 21 shipped (SQLite PRAGMAs, sentence threshold, TTS cache/health/restart, component health endpoint)
 
 Progress: [████░░░░░░░░░░░░░░░░] 20% v1.5 (1/5 phases)
 
 ## Performance Metrics
 
 **Velocity (from v1.0-v1.4):**
-- Total plans completed: 40
+- Total plans completed: 41
 - Average duration: 4.9 min
-- Phases shipped: 20
+- Phases shipped: 21
 - Milestones shipped: 5 (v1.0, v1.1, v1.2, v1.3, v1.4)
 
 ## Accumulated Context
@@ -99,11 +99,11 @@ Previous milestones:
 
 ## Session Continuity
 
-Last session: 2026-01-27T22:12:57Z
-Stopped at: Completed 21-01-PLAN.md (Quick Wins & Baseline)
+Last session: 2026-01-27
+Stopped at: Phase 21 complete and verified
 Resume file: None
 
 **Next steps:**
-1. Execute remaining Phase 21 plans (if any)
-2. Plan and execute Phase 22 (TTS Fallback)
+1. Plan Phase 22 (TTS Reliability -- Piper Fallback)
+2. Execute Phase 22
 3. Continue through Phases 23-25

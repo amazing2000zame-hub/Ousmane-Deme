@@ -439,7 +439,7 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 | 18. Backend Data Caching | v1.4 | 5/5 | Complete | 2026-01-27 |
 | 19. Dashboard Rendering | v1.4 | 4/4 | Complete | 2026-01-27 |
 | 20. Theme Consistency | v1.4 | 3/3 | Complete | 2026-01-27 |
-| 21. Quick Wins & Baseline | v1.5 | 0/1 | Planned | - |
+| 21. Quick Wins & Baseline | v1.5 | 1/1 | Complete | 2026-01-27 |
 | 22. TTS Reliability | v1.5 | 0/? | Not started | - |
 | 23. Parallel TTS + Opus | v1.5 | 0/? | Not started | - |
 | 24. Observability & Context | v1.5 | 0/? | Not started | - |
@@ -447,4 +447,4 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 
 ---
 
-Last updated: 2026-01-27 (Phase 21 planned -- 1 plan in 1 wave)
+Last updated: 2026-01-27 (Phase 21 complete -- Quick Wins & Baseline shipped)
