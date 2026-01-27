@@ -9,13 +9,13 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### File Operations
 
-- [ ] **FILE-01**: JARVIS can download a file from a URL to a specified server directory
-- [ ] **FILE-02**: JARVIS can import/copy files between directories on the server
-- [ ] **FILE-03**: JARVIS can import/copy files between cluster nodes via SSH
-- [ ] **FILE-04**: JARVIS can list directory contents on any cluster node
-- [ ] **FILE-05**: File downloads have SSRF protection (block internal/private IPs, validate URLs)
-- [ ] **FILE-06**: All file paths are sanitized against path traversal attacks (no ../, symlink resolution)
-- [ ] **FILE-07**: File operations have disk space checks before writing
+- [x] **FILE-01**: JARVIS can download a file from a URL to a specified server directory
+- [x] **FILE-02**: JARVIS can import/copy files between directories on the server
+- [x] **FILE-03**: JARVIS can import/copy files between cluster nodes via SSH
+- [x] **FILE-04**: JARVIS can list directory contents on any cluster node
+- [x] **FILE-05**: File downloads have SSRF protection (block internal/private IPs, validate URLs)
+- [x] **FILE-06**: All file paths are sanitized against path traversal attacks (no ../, symlink resolution)
+- [x] **FILE-07**: File operations have disk space checks before writing
 
 ### Project Intelligence
 
@@ -66,13 +66,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FILE-01 | Phase 12 | Pending |
-| FILE-02 | Phase 12 | Pending |
-| FILE-03 | Phase 12 | Pending |
-| FILE-04 | Phase 12 | Pending |
-| FILE-05 | Phase 12 | Pending |
-| FILE-06 | Phase 12 | Pending |
-| FILE-07 | Phase 12 | Pending |
+| FILE-01 | Phase 12 | Complete |
+| FILE-02 | Phase 12 | Complete |
+| FILE-03 | Phase 12 | Complete |
+| FILE-04 | Phase 12 | Complete |
+| FILE-05 | Phase 12 | Complete |
+| FILE-06 | Phase 12 | Complete |
+| FILE-07 | Phase 12 | Complete |
 | PROJ-01 | Phase 13 | Pending |
 | PROJ-02 | Phase 13 | Pending |
 | PROJ-03 | Phase 13 | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-01-26*
-*Last updated: 2026-01-26 after roadmap creation (traceability filled)*
+*Last updated: 2026-01-27 after Phase 12 completion (FILE-01 through FILE-07 complete)*

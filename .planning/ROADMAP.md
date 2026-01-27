@@ -117,18 +117,12 @@ Plans:
 **Goal**: Users can ask JARVIS to download, transfer, and manage files across cluster nodes with safety guarantees against path traversal, SSRF, and disk exhaustion
 **Depends on**: Phase 11 (v1.2 complete)
 **Requirements**: FILE-01, FILE-02, FILE-03, FILE-04, FILE-05, FILE-06, FILE-07
-**Success Criteria** (what must be TRUE):
-  1. User can ask JARVIS to download a file from a public URL and JARVIS saves it to the requested server directory
-  2. User can ask JARVIS to copy a file between directories on the same node or between cluster nodes, and the file appears at the destination
-  3. User can ask JARVIS to list contents of any directory on any cluster node and see file names, sizes, and types
-  4. JARVIS rejects download requests targeting internal/private IP addresses (192.168.x.x, 10.x.x.x, localhost) and logs the blocked attempt
-  5. JARVIS rejects any file path containing traversal patterns (../) or targeting protected system directories (/etc/pve/priv/, /root/.ssh/) and returns a clear denial message
-**Plans**: 3 plans
+**Status**: Complete (9 commits: 07139ca, dfa0497, efaa675, 239c12e, 016c3ec, 3d242ea, 4f2bca0, be9ab45, 90afb74)
 
 Plans:
-- [ ] 12-01-PLAN.md -- Path sanitization infrastructure + URL/SSRF validation + disk space checks + context race fix
-- [ ] 12-02-PLAN.md -- File listing + file info MCP tools (GREEN tier, 2 tools)
-- [ ] 12-03-PLAN.md -- File download with SSRF protection + file copy + cross-node transfer (YELLOW tier, 3 tools)
+- [x] 12-01-PLAN.md -- Path sanitization infrastructure + URL/SSRF validation + disk space checks + context race fix
+- [x] 12-02-PLAN.md -- File listing + file info MCP tools (GREEN tier, 2 tools)
+- [x] 12-03-PLAN.md -- File download with SSRF protection + file copy + cross-node transfer (YELLOW tier, 3 tools)
 
 #### Phase 13: Project Intelligence
 **Goal**: Users can browse, read, and search across all 24 indexed projects on the cluster through natural language requests to JARVIS, with automatic blocking of sensitive files
@@ -242,11 +236,11 @@ Phases 12 through 15 execute sequentially. Phase 15 depends on Phase 12 (file do
 | 9. Docker Deployment | v1.1 | 2/2 | Complete | 2026-01-26 |
 | 10. E2E Testing | v1.1 | 2/2 | Complete | 2026-01-26 |
 | 11. JARVIS Voice | v1.2 | 4/4 | Complete | 2026-01-26 |
-| 12. File Operations | v1.3 | 0/3 | Planned | - |
+| 12. File Operations | v1.3 | 3/3 | Complete | 2026-01-27 |
 | 13. Project Intelligence | v1.3 | 0/3 | Not started | - |
 | 14. Code Analysis | v1.3 | 0/2 | Not started | - |
 | 15. Voice Retraining | v1.3 | 0/3 | Not started | - |
 
 ---
 
-Last updated: 2026-01-26
+Last updated: 2026-01-27
