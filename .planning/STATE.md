@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Milestone: v1.5 Optimization & Latency Reduction
-Phase: 23 -- TTS Performance -- Parallel Synthesis & Opus Encoding (IN PROGRESS)
-Plan: 01 of 03 complete (plans 01, 03 done; plan 02 pending)
-Status: In progress. Plan 01 (infrastructure foundation) shipped. Plan 03 (gapless playback) shipped.
-Last activity: 2026-01-27 -- Completed 23-01-PLAN.md (Docker infra, config, cache module, Opus encoder)
+Phase: 23 -- TTS Performance -- Parallel Synthesis & Opus Encoding (COMPLETE)
+Plan: 03 of 03 complete (all plans shipped)
+Status: Phase complete. All 3 plans shipped (01 infra, 02 backend integration, 03 gapless playback).
+Last activity: 2026-01-27 -- Completed 23-02-PLAN.md (disk cache, parallel TTS, Opus encoding)
 
-Progress: [██████████░░░░░░░░░░] 40% v1.5 (2/5 phases complete: 21, 22; phase 23 in progress)
+Progress: [████████████░░░░░░░░] 60% v1.5 (3/5 phases complete: 21, 22, 23; phases 24-25 remaining)
 
 ## Performance Metrics
 
@@ -52,6 +52,11 @@ Progress: [██████████░░░░░░░░░░] 40% v1.
 - SHA-256 of normalized text as cache filename -- filesystem-safe, collision-resistant
 - cpuset pinning: XTTS cores 0-3, Piper 4-5, backend 6-9 (llama-server uses OS scheduler on all)
 - FFmpeg installed in backend container via apt-get (not npm) -- zero new npm dependencies maintained
+- Disk cache writes fire-and-forget to avoid blocking TTS response path
+- Disk cache promote-on-hit: disk reads write back to in-memory LRU for instant repeat access
+- Engine lock safe across parallel workers due to JS single-threaded event loop (no mutex)
+- Opus encoding per-emission, not cached (WAV on disk, Opus re-encoded each time)
+- Pre-warm 12 common phrases with 10s startup delay for XTTS container readiness
 
 ### Key Decisions (v1.4 - carried forward)
 
@@ -111,9 +116,10 @@ Previous milestones:
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Completed 23-01-PLAN.md (infrastructure foundation)
+Stopped at: Completed 23-02-PLAN.md (Phase 23 fully complete)
 Resume file: None
 
 **Next steps:**
-1. Execute Phase 23 Plan 02 (backend integration: parallel TTS, disk cache, Opus in chat.ts)
-2. Continue through Phases 24-25
+1. Execute Phase 24 (Observability & Context Management)
+2. Execute Phase 25 (Chat Virtualization)
+3. Deploy Phase 23 changes (Docker rebuild required)
