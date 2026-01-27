@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Milestone: v1.5 Optimization & Latency Reduction
-Phase: 22 -- TTS Reliability -- Piper Fallback (COMPLETE)
-Plan: --
-Status: Phase 22 verified and shipped. Ready for Phase 23.
-Last activity: 2026-01-27 -- Phase 22 shipped (Piper TTS container, fallback routing, 3s timeout, health tracking, engine lock)
+Phase: 23 -- TTS Performance -- Parallel Synthesis & Opus Encoding (IN PROGRESS)
+Plan: 03 of 04 complete
+Status: In progress. Plan 03 (gapless playback) shipped.
+Last activity: 2026-01-27 -- Completed 23-03-PLAN.md (gapless playback with clock scheduling and pre-decode)
 
-Progress: [██████████░░░░░░░░░░] 40% v1.5 (2/5 phases complete: 21, 22)
+Progress: [██████████░░░░░░░░░░] 40% v1.5 (2/5 phases complete: 21, 22; phase 23 in progress)
 
 ## Performance Metrics
 
@@ -44,6 +44,10 @@ Progress: [██████████░░░░░░░░░░] 40% v1.
 - 3-second XTTS timeout balances quality vs latency; 30s recovery interval prevents hammering
 - Engine lock scoped per-response (handleSend), resets automatically for XTTS recovery
 - Sequential XTTS-then-Piper racing, not parallel, to avoid CPU contention
+- Gapless playback uses source.start(startAt) clock scheduling, not onended chaining
+- Pre-decode next buffer during playback to eliminate async decode latency
+- Clock (nextStartTime) resets on session start/stop/finalize to prevent stale scheduling
+- decodeAudioData handles WAV and OGG Opus natively -- no format-specific decoder needed
 
 ### Key Decisions (v1.4 - carried forward)
 
@@ -103,10 +107,9 @@ Previous milestones:
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Phase 22 complete and verified
+Stopped at: Completed 23-03-PLAN.md (gapless playback)
 Resume file: None
 
 **Next steps:**
-1. Plan Phase 23 (TTS Performance -- Parallel Synthesis & Opus Encoding)
-2. Execute Phase 23
-3. Continue through Phases 24-25
+1. Execute remaining Phase 23 plans (04)
+2. Continue through Phases 24-25
