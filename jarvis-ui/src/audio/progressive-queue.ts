@@ -1,9 +1,16 @@
 /**
- * Progressive audio queue — plays audio chunks sequentially as they arrive
- * from the streaming voice pipeline (PERF-03/04).
+ * Progressive audio queue — dual-track voice playback (PERF-03/04/06).
  *
- * Manages a FIFO queue of ArrayBuffer audio chunks, decoding and playing
- * them via Web Audio API. Connects to an AnalyserNode for visualization.
+ * Track 1: Browser SpeechSynthesis — instant sentence playback (~0ms delay)
+ *   Sentences arrive via chat:sentence events and play immediately.
+ *
+ * Track 2: XTTS audio chunks — custom JARVIS voice (10-30s delay on CPU)
+ *   Audio chunks arrive via chat:audio_chunk events and are cached.
+ *   Used for "click to replay" with the JARVIS voice.
+ *
+ * This dual-track approach eliminates perceived delay: the user hears
+ * voice immediately via browser speech, while XTTS generates the custom
+ * voice in the background for future replays and cache warm-up.
  */
 
 import { useVoiceStore } from '../stores/voice';
@@ -43,7 +50,66 @@ export function getSharedAudioContext(): {
 }
 
 // ---------------------------------------------------------------------------
-// Queue state
+// Track 1: Browser SpeechSynthesis — instant sentence playback
+// ---------------------------------------------------------------------------
+
+let sentenceQueue: string[] = [];
+let isSpeakingBrowser = false;
+let browserSessionActive = false;
+
+/**
+ * Speak a sentence immediately using browser SpeechSynthesis.
+ * Sentences are queued and played sequentially.
+ */
+export function speakSentenceBrowser(sessionId: string, text: string): void {
+  if (sessionId !== activeSessionId) return;
+  if (!window.speechSynthesis) return;
+
+  sentenceQueue.push(text);
+
+  if (!isSpeakingBrowser) {
+    playNextSentence();
+  }
+}
+
+function playNextSentence(): void {
+  if (sentenceQueue.length === 0) {
+    isSpeakingBrowser = false;
+    // If browser stream is done and no XTTS audio came in, finalize
+    if (browserStreamDone && !xttsChunksReceived) {
+      finalize();
+    }
+    return;
+  }
+
+  isSpeakingBrowser = true;
+  const text = sentenceQueue.shift()!;
+  const store = useVoiceStore.getState();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = store.speed;
+  utterance.volume = store.volume;
+  utterance.lang = 'en-GB';
+
+  // Try to find a British voice for JARVIS feel
+  const voices = window.speechSynthesis.getVoices();
+  const preferred = voices.find(
+    (v) => v.lang.startsWith('en-GB') && v.name.toLowerCase().includes('male'),
+  ) ?? voices.find(
+    (v) => v.lang.startsWith('en-GB'),
+  ) ?? voices.find(
+    (v) => v.lang.startsWith('en'),
+  );
+  if (preferred) utterance.voice = preferred;
+
+  utterance.onend = () => playNextSentence();
+  utterance.onerror = () => playNextSentence();
+
+  window.speechSynthesis.speak(utterance);
+}
+
+// ---------------------------------------------------------------------------
+// Track 2: XTTS audio chunks — queued for replay
 // ---------------------------------------------------------------------------
 
 interface QueuedChunk {
@@ -52,43 +118,48 @@ interface QueuedChunk {
   index: number;
 }
 
-let queue: QueuedChunk[] = [];
-let isPlaying = false;
+let xttsQueue: QueuedChunk[] = [];
+let isPlayingXtts = false;
 let currentSource: AudioBufferSourceNode | null = null;
-let streamDone = false;
+let xttsStreamDone = false;
+let xttsChunksReceived = 0;
+
+// ---------------------------------------------------------------------------
+// Shared state
+// ---------------------------------------------------------------------------
+
 let activeSessionId: string | null = null;
-let chunksReceived = 0;
+let browserStreamDone = false;
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Start a new progressive audio session.
- * Resets the queue and prepares for incoming chunks.
+ * Start a new progressive voice session.
+ * Prepares both browser speech and XTTS tracks.
  */
 export function startProgressiveSession(sessionId: string, messageId: string): void {
-  // Stop any existing playback
   stopProgressive();
 
   activeSessionId = sessionId;
-  chunksReceived = 0;
-  streamDone = false;
-  queue = [];
-  isPlaying = false;
+  browserStreamDone = false;
+  browserSessionActive = true;
+  sentenceQueue = [];
+  isSpeakingBrowser = false;
 
-  // Signal playing state
+  xttsQueue = [];
+  isPlayingXtts = false;
+  xttsStreamDone = false;
+  xttsChunksReceived = 0;
+
   const store = useVoiceStore.getState();
   store.setPlaying(true, messageId);
-
-  // Connect analyser for visualization
-  getAudioContext();
-  store.setAnalyserNode(analyser);
 }
 
 /**
- * Queue an audio chunk for progressive playback.
- * If nothing is currently playing, starts playback immediately.
+ * Queue an XTTS audio chunk. These arrive late (10-30s after sentence).
+ * Currently stored for potential replay; browser speech handles live playback.
  */
 export function queueAudioChunk(
   sessionId: string,
@@ -97,52 +168,68 @@ export function queueAudioChunk(
   index: number,
 ): void {
   if (sessionId !== activeSessionId) return;
+  xttsChunksReceived++;
+  xttsQueue.push({ buffer: chunk, contentType, index });
+  xttsQueue.sort((a, b) => a.index - b.index);
 
-  chunksReceived++;
-  queue.push({ buffer: chunk, contentType, index });
-
-  // Sort by index to handle out-of-order delivery
-  queue.sort((a, b) => a.index - b.index);
-
-  // Start playback if not already playing
-  if (!isPlaying) {
-    playNext();
+  // If browser speech is already done, play XTTS audio
+  // (this path handles the case where XTTS is fast, e.g., cached phrases)
+  if (!isSpeakingBrowser && !isPlayingXtts && browserStreamDone) {
+    playNextXttsChunk();
   }
 }
 
 /**
- * Signal that all audio chunks have been sent for this session.
- * Playback will stop after the last queued chunk finishes.
+ * Signal that all XTTS audio chunks have been sent.
  */
 export function markStreamDone(sessionId: string): void {
   if (sessionId !== activeSessionId) return;
-  streamDone = true;
+  xttsStreamDone = true;
 
-  // If queue is empty and nothing playing, finalize now
-  if (!isPlaying && queue.length === 0) {
+  if (!isPlayingXtts && xttsQueue.length === 0 && !isSpeakingBrowser) {
     finalize();
   }
 }
 
-/** Stop progressive playback and reset state. */
+/**
+ * Signal that all sentences have been emitted (LLM done).
+ */
+export function markBrowserStreamDone(): void {
+  browserStreamDone = true;
+  if (!isSpeakingBrowser && !isPlayingXtts) {
+    finalize();
+  }
+}
+
+/** Stop all progressive playback and reset state. */
 export function stopProgressive(): void {
+  // Stop XTTS playback
   if (currentSource) {
     try { currentSource.stop(); } catch { /* already stopped */ }
     currentSource = null;
   }
-  queue = [];
-  isPlaying = false;
-  streamDone = false;
+  // Stop browser speech
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+
+  sentenceQueue = [];
+  xttsQueue = [];
+  isSpeakingBrowser = false;
+  isPlayingXtts = false;
+  xttsStreamDone = false;
+  browserStreamDone = false;
   activeSessionId = null;
-  chunksReceived = 0;
+  browserSessionActive = false;
+  xttsChunksReceived = 0;
 
   useVoiceStore.getState().setPlaying(false, null);
   useVoiceStore.getState().setAnalyserNode(null);
 }
 
-/** Whether a progressive session is active (has received at least one chunk). */
+/** Whether a progressive session is active (browser speech started). */
 export function isProgressiveActive(): boolean {
-  return activeSessionId !== null && chunksReceived > 0;
+  return activeSessionId !== null && browserSessionActive;
 }
 
 /** Get the active progressive session ID. */
@@ -151,56 +238,56 @@ export function getProgressiveSessionId(): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Internal playback
+// XTTS playback (for replay or when XTTS is fast)
 // ---------------------------------------------------------------------------
 
-async function playNext(): Promise<void> {
-  if (queue.length === 0) {
-    isPlaying = false;
-    if (streamDone) {
+async function playNextXttsChunk(): Promise<void> {
+  if (xttsQueue.length === 0) {
+    isPlayingXtts = false;
+    if (xttsStreamDone) {
       finalize();
     }
     return;
   }
 
-  isPlaying = true;
-  const chunk = queue.shift()!;
+  isPlayingXtts = true;
+  const chunk = xttsQueue.shift()!;
 
   try {
     const { ctx, gainNode: gain } = getSharedAudioContext();
-
-    // Set volume from store
     const volume = useVoiceStore.getState().volume;
     gain.gain.value = volume;
 
-    // Decode the audio chunk
     const audioBuffer = await ctx.decodeAudioData(chunk.buffer.slice(0));
-
     const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(gain);
     currentSource = source;
 
+    // Connect analyser for visualizer
+    useVoiceStore.getState().setAnalyserNode(analyser);
+
     source.onended = () => {
       currentSource = null;
-      // Play next chunk in queue
-      playNext();
+      playNextXttsChunk();
     };
 
     source.start();
   } catch (err) {
-    console.warn('[ProgressiveAudio] Failed to play chunk:', err);
+    console.warn('[ProgressiveAudio] Failed to play XTTS chunk:', err);
     currentSource = null;
-    // Try next chunk
-    playNext();
+    playNextXttsChunk();
   }
 }
 
 function finalize(): void {
   activeSessionId = null;
-  chunksReceived = 0;
-  isPlaying = false;
-  streamDone = false;
+  browserSessionActive = false;
+  xttsChunksReceived = 0;
+  isPlayingXtts = false;
+  isSpeakingBrowser = false;
+  xttsStreamDone = false;
+  browserStreamDone = false;
 
   useVoiceStore.getState().setPlaying(false, null);
   useVoiceStore.getState().setAnalyserNode(null);

@@ -6,6 +6,8 @@ import { useChatStore } from '../stores/chat';
 import { useVoiceStore } from '../stores/voice';
 import {
   startProgressiveSession,
+  speakSentenceBrowser,
+  markBrowserStreamDone,
   queueAudioChunk,
   markStreamDone,
   stopProgressive,
@@ -130,9 +132,27 @@ export function useChatSocket(): ChatSocketActions {
       });
     }
 
-    // PERF-03/04: Progressive audio chunk handling
+    // PERF-03/04/06: Dual-track progressive voice pipeline
     let progressiveSessionStarted = false;
 
+    // Track 1: Browser SpeechSynthesis — instant sentence playback
+    function onSentence(data: { sessionId: string; index: number; text: string }) {
+      const voiceState = useVoiceStore.getState();
+      if (!voiceState.enabled || !voiceState.autoPlay) return;
+
+      // Start progressive session on first sentence (instant voice)
+      if (!progressiveSessionStarted) {
+        progressiveSessionStarted = true;
+        const messageId = useChatStore.getState().streamingMessageId;
+        if (messageId) {
+          startProgressiveSession(data.sessionId, messageId);
+        }
+      }
+
+      speakSentenceBrowser(data.sessionId, data.text);
+    }
+
+    // Track 2: XTTS audio chunks — cached for replay with custom JARVIS voice
     function onAudioChunk(data: {
       sessionId: string;
       index: number;
@@ -142,7 +162,7 @@ export function useChatSocket(): ChatSocketActions {
       const voiceState = useVoiceStore.getState();
       if (!voiceState.enabled || !voiceState.autoPlay) return;
 
-      // Start progressive session on first chunk
+      // If somehow we got audio before a sentence event, start the session
       if (!progressiveSessionStarted) {
         progressiveSessionStarted = true;
         const messageId = useChatStore.getState().streamingMessageId;
@@ -171,6 +191,11 @@ export function useChatSocket(): ChatSocketActions {
         store.updateLastMessageProvider(data.provider);
       }
       store.stopStreaming();
+
+      // Signal browser speech track that all sentences have been emitted
+      if (progressiveSessionStarted) {
+        markBrowserStreamDone();
+      }
 
       // Reset progressive flag for next message
       progressiveSessionStarted = false;
@@ -209,6 +234,7 @@ export function useChatSocket(): ChatSocketActions {
     socket.on('chat:blocked', onBlocked);
     socket.on('chat:done', onDone);
     socket.on('chat:error', onChatError);
+    socket.on('chat:sentence', onSentence);
     socket.on('chat:audio_chunk', onAudioChunk);
     socket.on('chat:audio_done', onAudioDone);
     socket.on('connect_error', onConnectError);
@@ -236,6 +262,7 @@ export function useChatSocket(): ChatSocketActions {
       socket.off('chat:blocked', onBlocked);
       socket.off('chat:done', onDone);
       socket.off('chat:error', onChatError);
+      socket.off('chat:sentence', onSentence);
       socket.off('chat:audio_chunk', onAudioChunk);
       socket.off('chat:audio_done', onAudioDone);
       socket.off('connect_error', onConnectError);

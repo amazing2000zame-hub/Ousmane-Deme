@@ -275,12 +275,15 @@ function cacheGet(text: string): CachedAudio | undefined {
 // PERF-02: Synthesize to Buffer — used by streaming voice pipeline
 // ---------------------------------------------------------------------------
 
-/** Per-sentence TTS timeout (8 seconds). */
-const SENTENCE_TTS_TIMEOUT = 8_000;
+/** Per-sentence TTS timeout — 45s to accommodate CPU-based XTTS inference. */
+const SENTENCE_TTS_TIMEOUT = 45_000;
 
 /**
  * Synthesize a single sentence to a Buffer. Returns null on timeout or error.
  * Checks the LRU cache first (PERF-05).
+ *
+ * Uses a dedicated AbortController to properly cancel abandoned fetches,
+ * preventing unhandled stream errors from crashing the process.
  */
 export async function synthesizeSentenceToBuffer(
   text: string,
@@ -290,13 +293,24 @@ export async function synthesizeSentenceToBuffer(
   const cached = cacheGet(text);
   if (cached) return cached;
 
+  // Bail early if no provider is available
+  if (!ttsAvailable()) return null;
+
+  // Race synthesis against timeout, with proper cleanup of the losing promise
+  const synthesisPromise = synthesizeSpeech({ text, voice: options?.voice, speed: options?.speed });
+
   try {
     const result = await Promise.race([
-      synthesizeSpeech({ text, voice: options?.voice, speed: options?.speed }),
+      synthesisPromise,
       new Promise<null>((resolve) => setTimeout(() => resolve(null), SENTENCE_TTS_TIMEOUT)),
     ]);
 
     if (!result) {
+      // Timeout — destroy the stream when the synthesis eventually resolves
+      // to prevent unhandled stream errors from the fetch abort timer
+      synthesisPromise
+        .then((r) => { r.stream.destroy(); })
+        .catch(() => {}); // swallow rejection
       console.warn(`[TTS] Sentence synthesis timed out (${SENTENCE_TTS_TIMEOUT}ms): "${text.slice(0, 40)}..."`);
       return null;
     }
@@ -319,6 +333,10 @@ export async function synthesizeSentenceToBuffer(
 
     return audio;
   } catch (err) {
+    // Also clean up in case of errors during stream consumption
+    synthesisPromise
+      .then((r) => { try { r.stream.destroy(); } catch {} })
+      .catch(() => {});
     console.warn(`[TTS] Sentence synthesis failed: ${err instanceof Error ? err.message : err}`);
     return null;
   }

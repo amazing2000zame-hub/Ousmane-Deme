@@ -206,8 +206,12 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         let audioChunkIndex = 0;
 
         if (voicePipeline) {
-          sentenceAccumulator = new SentenceAccumulator((sentence, _index) => {
-            // Fire-and-forget TTS synthesis per sentence
+          sentenceAccumulator = new SentenceAccumulator((sentence, sentenceIdx) => {
+            // Emit sentence text immediately so frontend can use browser
+            // SpeechSynthesis while waiting for XTTS audio
+            socket.emit('chat:sentence', { sessionId, index: sentenceIdx, text: sentence });
+
+            // Fire-and-forget TTS synthesis per sentence (may take 15-30s on CPU)
             const promise = (async () => {
               try {
                 const audio = await synthesizeSentenceToBuffer(sentence);
