@@ -17,23 +17,23 @@ const PRIMARY_GLOW = {
   high: 'var(--shadow-jarvis-glow)',
 } as const;
 
-/** Semantic color glows stay fixed regardless of theme */
+/** PERF-026: Semantic color glows use CSS var tokens (standardized intensities) */
 const GLOW_MAP = {
   amber: PRIMARY_GLOW,
   cyan: {
-    low: '0 0 4px rgba(0,212,255,0.2)',
-    medium: '0 0 8px rgba(0,212,255,0.3)',
-    high: '0 0 15px rgba(0,212,255,0.4)',
+    low: 'var(--shadow-jarvis-glow-cyan-xs)',
+    medium: 'var(--shadow-jarvis-glow-cyan-sm)',
+    high: 'var(--shadow-jarvis-glow-cyan)',
   },
   green: {
-    low: '0 0 4px rgba(51,255,136,0.2)',
-    medium: '0 0 8px rgba(51,255,136,0.3)',
-    high: '0 0 15px rgba(51,255,136,0.4)',
+    low: 'var(--shadow-jarvis-glow-green-xs)',
+    medium: 'var(--shadow-jarvis-glow-green-sm)',
+    high: 'var(--shadow-jarvis-glow-green)',
   },
   red: {
-    low: '0 0 4px rgba(255,51,51,0.2)',
-    medium: '0 0 8px rgba(255,51,51,0.3)',
-    high: '0 0 15px rgba(255,51,51,0.4)',
+    low: 'var(--shadow-jarvis-glow-red-xs)',
+    medium: 'var(--shadow-jarvis-glow-red-sm)',
+    high: 'var(--shadow-jarvis-glow-red)',
   },
 } as const;
 

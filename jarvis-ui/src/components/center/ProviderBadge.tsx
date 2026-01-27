@@ -7,15 +7,16 @@ interface ProviderBadgeProps {
   provider: 'claude' | 'qwen';
 }
 
+/** PERF-024: Colors reference CSS custom property tokens defined in index.css */
 const PROVIDER_CONFIG = {
   claude: {
     label: 'CLAUDE',
-    color: '#D4A574',
+    color: 'var(--color-jarvis-provider-claude)',
     icon: '\u{1F9E0}', // brain emoji
   },
   qwen: {
     label: 'QWEN LOCAL',
-    color: '#00D9FF',
+    color: 'var(--color-jarvis-provider-qwen)',
     icon: '\u26A1', // lightning emoji
   },
 } as const;

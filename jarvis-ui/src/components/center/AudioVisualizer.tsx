@@ -3,7 +3,8 @@
  * when JARVIS is speaking. Reads frequency data from the
  * AnalyserNode exposed by the voice store.
  *
- * Iron Man aesthetic: amber bars on dark background with glow.
+ * PERF-024: Uses CSS custom property tokens for bar/glow colors
+ * so the visualizer follows the active color theme.
  */
 
 import { useEffect, useRef } from 'react';
@@ -11,6 +12,11 @@ import { useVoiceStore } from '../../stores/voice';
 
 const BAR_COUNT = 32;
 const BAR_GAP = 2;
+
+/** Read a CSS custom property from :root. */
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
 
 export function AudioVisualizer() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -23,6 +29,11 @@ export function AudioVisualizer() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // PERF-024: Read theme-aware bar colors from CSS variables
+    const barActive = cssVar('--color-jarvis-bar-active');
+    const barGlow = cssVar('--color-jarvis-bar-glow');
+    const barIdle = cssVar('--color-jarvis-bar-idle');
 
     /**
      * PERF-20: Throttle to 30fps during playback (33ms frame budget).
@@ -63,8 +74,9 @@ export function AudioVisualizer() {
           const y = height - barHeight;
 
           const intensity = avg / 255;
-          ctx.fillStyle = `rgba(255, 176, 0, ${0.3 + intensity * 0.7})`;
-          ctx.shadowColor = 'rgba(255, 176, 0, 0.5)';
+          ctx.globalAlpha = 0.3 + intensity * 0.7;
+          ctx.fillStyle = barActive;
+          ctx.shadowColor = barGlow;
           ctx.shadowBlur = intensity > 0.5 ? 4 : 0;
 
           const radius = Math.min(barWidth / 2, 2);
@@ -79,12 +91,13 @@ export function AudioVisualizer() {
           ctx.fill();
         }
         ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
 
         // Continue loop only while playing
         animationRef.current = requestAnimationFrame(draw);
       } else {
         // PERF-20: Idle state — draw once, do NOT continue rAF loop (0% CPU)
-        ctx.strokeStyle = 'rgba(255, 176, 0, 0.2)';
+        ctx.strokeStyle = barIdle;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, height / 2);

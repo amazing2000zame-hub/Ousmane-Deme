@@ -1,5 +1,4 @@
-import { useState, useCallback, useEffect, type FormEvent } from 'react';
-import { AnimatePresence } from 'motion/react';
+import { useState, useCallback, useEffect, lazy, Suspense, type FormEvent } from 'react';
 import { Toaster, toast } from 'sonner';
 import { useAuthStore } from './stores/auth';
 import { useUIStore } from './stores/ui';
@@ -7,9 +6,11 @@ import { useClusterSocket } from './hooks/useClusterSocket';
 import { useEventsSocket } from './hooks/useEventsSocket';
 import { login } from './services/api';
 import { Dashboard } from './components/layout/Dashboard';
-import { BootSequence } from './components/boot/BootSequence';
 import { ScanLines } from './effects/ScanLines';
 import { GridBackground } from './effects/GridBackground';
+
+/** PERF-021: Lazy-load motion/react library via BootOverlay chunk (~40KB gzipped saved from initial bundle) */
+const LazyBootOverlay = lazy(() => import('./components/boot/BootOverlay'));
 
 /** Sync colorTheme store value to <html data-theme="..."> */
 function useApplyColorTheme() {
@@ -109,11 +110,12 @@ function AuthenticatedApp() {
 
   return (
     <>
-      <AnimatePresence mode="wait">
-        {!bootComplete && (
-          <BootSequence key="boot" onComplete={handleBootComplete} />
-        )}
-      </AnimatePresence>
+      {/* PERF-021: Lazy-loaded boot overlay — motion/react only loads during boot */}
+      {!bootComplete && (
+        <Suspense fallback={<div className="fixed inset-0 bg-jarvis-bg z-50" />}>
+          <LazyBootOverlay show={!bootComplete} onComplete={handleBootComplete} />
+        </Suspense>
+      )}
       {bootComplete && <Dashboard />}
     </>
   );

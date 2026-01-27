@@ -37,10 +37,11 @@ export default function ConfirmDialog({
 
   if (!isOpen) return null;
 
+  /** PERF-024/026: Use CSS var shadow tokens instead of hardcoded rgba */
   const confirmColor =
     variant === 'danger'
-      ? 'bg-jarvis-red hover:bg-jarvis-red/80 shadow-[0_0_12px_rgba(255,51,51,0.3)]'
-      : 'bg-jarvis-orange hover:bg-jarvis-orange/80 shadow-[0_0_12px_rgba(255,107,0,0.3)]';
+      ? 'bg-jarvis-red hover:bg-jarvis-red/80'
+      : 'bg-jarvis-orange hover:bg-jarvis-orange/80';
 
   return (
     <div
@@ -68,6 +69,7 @@ export default function ConfirmDialog({
           <button
             onClick={onConfirm}
             className={`px-4 py-2 text-sm text-white font-semibold rounded transition-all hover:shadow-lg ${confirmColor}`}
+            style={{ boxShadow: variant === 'danger' ? 'var(--shadow-jarvis-glow-red-sm)' : 'var(--shadow-jarvis-glow-orange)' }}
           >
             {confirmLabel}
           </button>

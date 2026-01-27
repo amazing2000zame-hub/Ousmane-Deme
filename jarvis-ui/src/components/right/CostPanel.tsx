@@ -108,7 +108,7 @@ export function CostPanel() {
                   className="h-full transition-all duration-300"
                   style={{
                     width: `${Math.min(budget.percentUsed, 100)}%`,
-                    backgroundColor: budget.exceeded ? '#f87171' : '#22d3ee',
+                    backgroundColor: budget.exceeded ? 'var(--color-jarvis-budget-exceeded)' : 'var(--color-jarvis-budget-ok)',
                   }}
                 />
               </div>
@@ -125,7 +125,7 @@ export function CostPanel() {
             <div className="text-[9px] text-jarvis-text-dim mb-0.5">
               {period.toUpperCase()} TOTAL
             </div>
-            <div className="text-lg font-bold" style={{ color: '#D4A574' }}>
+            <div className="text-lg font-bold" style={{ color: 'var(--color-jarvis-provider-claude)' }}>
               ${(summary.total ?? 0).toFixed(3)}
             </div>
           </div>
@@ -133,10 +133,10 @@ export function CostPanel() {
           {/* Provider breakdown */}
           <div className="space-y-2">
             {claudeData && (
-              <div className="p-2 border" style={{ borderColor: '#D4A57433' }}>
+              <div className="p-2 border" style={{ borderColor: 'color-mix(in srgb, var(--color-jarvis-provider-claude) 20%, transparent)' }}>
                 <div className="flex justify-between text-[9px] mb-0.5">
-                  <span style={{ color: '#D4A574' }}>{'\u{1F9E0}'} CLAUDE</span>
-                  <span style={{ color: '#D4A574' }}>${claudeData.totalCost.toFixed(3)}</span>
+                  <span style={{ color: 'var(--color-jarvis-provider-claude)' }}>{'\u{1F9E0}'} CLAUDE</span>
+                  <span style={{ color: 'var(--color-jarvis-provider-claude)' }}>${claudeData.totalCost.toFixed(3)}</span>
                 </div>
                 <div className="text-[8px] text-jarvis-text-dim">
                   {claudeData.messageCount} msgs
@@ -148,7 +148,7 @@ export function CostPanel() {
               </div>
             )}
             {qwenData && (
-              <div className="p-2 border" style={{ borderColor: '#00D9FF33' }}>
+              <div className="p-2 border" style={{ borderColor: 'color-mix(in srgb, var(--color-jarvis-provider-qwen) 20%, transparent)' }}>
                 <div className="flex justify-between text-[9px] mb-0.5">
                   <span className="text-cyan-400">{'\u26A1'} QWEN LOCAL</span>
                   <span className="text-cyan-400">FREE</span>

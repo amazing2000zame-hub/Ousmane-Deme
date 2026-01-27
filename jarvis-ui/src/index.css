@@ -22,11 +22,29 @@
   --color-jarvis-text-dim: #7a7060;      /* Secondary text: 4.7:1 (AA) */
   --color-jarvis-text-muted: #4a4540;    /* Muted text: 3.1:1 (large text only) */
 
-  /* --- Glow Shadows --- */
+  /* --- Semantic Colors (PERF-024) --- */
+  --color-jarvis-provider-claude: #D4A574;
+  --color-jarvis-provider-qwen: #00D9FF;
+  --color-jarvis-bar-active: rgba(255, 176, 0, 1);
+  --color-jarvis-bar-glow: rgba(255, 176, 0, 0.5);
+  --color-jarvis-bar-idle: rgba(255, 176, 0, 0.2);
+  --color-jarvis-budget-ok: #22d3ee;
+  --color-jarvis-budget-exceeded: #f87171;
+
+  /* --- Glow Shadows (PERF-026: standardized intensities) --- */
   --shadow-jarvis-glow: 0 0 15px rgba(255, 184, 0, 0.4), 0 0 30px rgba(255, 184, 0, 0.2);
   --shadow-jarvis-glow-sm: 0 0 8px rgba(255, 184, 0, 0.3);
   --shadow-jarvis-glow-xs: 0 0 4px rgba(255, 184, 0, 0.2);
   --shadow-jarvis-glow-cyan: 0 0 15px rgba(0, 212, 255, 0.4);
+  --shadow-jarvis-glow-cyan-sm: 0 0 8px rgba(0, 212, 255, 0.3);
+  --shadow-jarvis-glow-cyan-xs: 0 0 4px rgba(0, 212, 255, 0.2);
+  --shadow-jarvis-glow-green: 0 0 15px rgba(51, 255, 136, 0.4);
+  --shadow-jarvis-glow-green-sm: 0 0 8px rgba(51, 255, 136, 0.3);
+  --shadow-jarvis-glow-green-xs: 0 0 4px rgba(51, 255, 136, 0.2);
+  --shadow-jarvis-glow-red: 0 0 15px rgba(255, 51, 51, 0.4);
+  --shadow-jarvis-glow-red-sm: 0 0 8px rgba(255, 51, 51, 0.3);
+  --shadow-jarvis-glow-red-xs: 0 0 4px rgba(255, 51, 51, 0.2);
+  --shadow-jarvis-glow-orange: 0 0 12px rgba(255, 107, 0, 0.3);
 
   /* --- Fonts --- */
   --font-display: 'Orbitron', sans-serif;
@@ -119,6 +137,9 @@ body {
   --color-jarvis-text-dim: #607a7a;
   --color-jarvis-text-muted: #404a4a;
   --color-jarvis-cyan: #ffb800;          /* swap — info uses amber when primary is cyan */
+  --color-jarvis-bar-active: rgba(0, 212, 255, 1);
+  --color-jarvis-bar-glow: rgba(0, 212, 255, 0.5);
+  --color-jarvis-bar-idle: rgba(0, 212, 255, 0.2);
   --shadow-jarvis-glow: 0 0 15px rgba(0, 212, 255, 0.4), 0 0 30px rgba(0, 212, 255, 0.2);
   --shadow-jarvis-glow-sm: 0 0 8px rgba(0, 212, 255, 0.3);
   --shadow-jarvis-glow-xs: 0 0 4px rgba(0, 212, 255, 0.2);
@@ -138,6 +159,9 @@ body {
   --color-jarvis-text-dim: #607a66;
   --color-jarvis-text-muted: #404a42;
   --color-jarvis-green: #00d4ff;          /* swap — success uses cyan when primary is green */
+  --color-jarvis-bar-active: rgba(51, 255, 136, 1);
+  --color-jarvis-bar-glow: rgba(51, 255, 136, 0.5);
+  --color-jarvis-bar-idle: rgba(51, 255, 136, 0.2);
   --shadow-jarvis-glow: 0 0 15px rgba(51, 255, 136, 0.4), 0 0 30px rgba(51, 255, 136, 0.2);
   --shadow-jarvis-glow-sm: 0 0 8px rgba(51, 255, 136, 0.3);
   --shadow-jarvis-glow-xs: 0 0 4px rgba(51, 255, 136, 0.2);
@@ -156,6 +180,9 @@ body {
   --color-jarvis-text: #e0d0e8;
   --color-jarvis-text-dim: #7a6080;
   --color-jarvis-text-muted: #4a4050;
+  --color-jarvis-bar-active: rgba(179, 102, 255, 1);
+  --color-jarvis-bar-glow: rgba(179, 102, 255, 0.5);
+  --color-jarvis-bar-idle: rgba(179, 102, 255, 0.2);
   --shadow-jarvis-glow: 0 0 15px rgba(179, 102, 255, 0.4), 0 0 30px rgba(179, 102, 255, 0.2);
   --shadow-jarvis-glow-sm: 0 0 8px rgba(179, 102, 255, 0.3);
   --shadow-jarvis-glow-xs: 0 0 4px rgba(179, 102, 255, 0.2);
@@ -176,6 +203,9 @@ body {
   --color-jarvis-text-dim: #7a6060;
   --color-jarvis-text-muted: #4a4040;
   --color-jarvis-red: #ff8800;            /* swap — error uses orange when primary is red */
+  --color-jarvis-bar-active: rgba(255, 51, 51, 1);
+  --color-jarvis-bar-glow: rgba(255, 51, 51, 0.5);
+  --color-jarvis-bar-idle: rgba(255, 51, 51, 0.2);
   --shadow-jarvis-glow: 0 0 15px rgba(255, 51, 51, 0.4), 0 0 30px rgba(255, 51, 51, 0.2);
   --shadow-jarvis-glow-sm: 0 0 8px rgba(255, 51, 51, 0.3);
   --shadow-jarvis-glow-xs: 0 0 4px rgba(255, 51, 51, 0.2);
