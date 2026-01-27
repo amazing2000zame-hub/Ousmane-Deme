@@ -5,24 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Milestone v1.3 -- Phase 12 complete, ready for Phase 13
+**Current focus:** Milestone v1.3 -- Phase 13 complete, ready for Phase 14
 
 ## Current Position
 
 Milestone: v1.3 File Operations & Project Intelligence
-Phase: 12 of 15 (File Operations Foundation) -- COMPLETE
-Plan: 3 of 3 complete (12-01, 12-02, 12-03 all shipped)
+Phase: 13 of 15 (Project Intelligence) -- COMPLETE
+Plan: 3 of 3 complete (13-01, 13-02, 13-03 all shipped)
 Status: Phase complete
-Last activity: 2026-01-27 -- Completed 12-03-PLAN.md (file transfer/download tools)
+Last activity: 2026-01-27 -- Completed Phase 13 (registry client, project tools, secret blocking)
 
-Progress: [████████████████████] 100% Phase 12 (v1.0-v1.2 complete, Phase 12 shipped)
+Progress: [████████████████████] 100% Phase 13 (v1.0-v1.2 complete, Phases 12-13 shipped)
 
 ## Performance Metrics
 
 **Velocity (from v1.0-v1.2):**
-- Total plans completed: 34
+- Total plans completed: 37
 - Average duration: 4.9 min
-- Phases shipped: 12
+- Phases shipped: 13
 
 ## Accumulated Context
 
@@ -45,6 +45,12 @@ Progress: [████████████████████] 100% Ph
 - Cross-node transfers route through Home as SFTP intermediary with temp file cleanup
 - Auto-rename on conflict uses filename(1).ext pattern, capped at 100 attempts
 - Streaming download via Readable.fromWeb() + pipeline() with byte tracking
+- Registry client uses 5-min TTL cache, graceful degradation on SSH failure
+- Project tools all GREEN tier (read-only, no side effects)
+- Flat sorted list presentation with full cards per user preference
+- Secret blocking: 28 filenames + 13 patterns + 8 path segments
+- Node name mapping: registry lowercase → config case-sensitive ("home" → "Home")
+- Total MCP tools: 27 (23 existing + 4 project tools)
 
 Previous milestones:
 - v1.0 MVP (Phases 1-6): Full dashboard + AI + monitoring + safety
@@ -61,14 +67,14 @@ Previous milestones:
 - Voice training quality depends on quality of source videos user provides
 - ~~Path traversal is the top security risk~~ RESOLVED in 12-01 (paths.ts)
 - ~~SSRF protection needed before any download tool ships~~ RESOLVED in 12-01 (urls.ts)
-- Secret blocking needed before any project read tool ships
+- ~~Secret blocking needed before any project read tool ships~~ RESOLVED in 13-03 (secrets.ts)
 
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Completed 12-03-PLAN.md -- Phase 12 fully complete
+Stopped at: Completed Phase 13 -- Project Intelligence fully shipped
 Resume file: None
 
 **Next steps:**
-1. Begin Phase 13 (Project Intelligence) planning
-2. Implement secret blocking before project read tools ship
+1. Begin Phase 14 (Code Analysis & Discussion) planning
+2. Implement project analysis MCP tool with prompt engineering

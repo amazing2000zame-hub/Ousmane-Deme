@@ -134,12 +134,12 @@ Plans:
   3. User can ask JARVIS to read any source file from a project and see its contents in chat
   4. User can ask JARVIS to search for a pattern (e.g., "find all TODO comments") across project files and see matching lines with file paths
   5. JARVIS blocks reads of .env files, private keys, credentials, and other sensitive files, returning a denial message instead of contents
-**Plans**: TBD
+**Status**: Complete
 
 Plans:
-- [ ] 13-01: Registry client (SSH to agent1, 5-min cache, typed project access)
-- [ ] 13-02: Project browsing MCP tools (list, structure, read, search -- all GREEN tier)
-- [ ] 13-03: Secret blocking infrastructure (file patterns, path patterns, content scanning)
+- [x] 13-01-PLAN.md -- Registry client (SSH to agent1, 5-min cache, typed project access)
+- [x] 13-02-PLAN.md -- Project browsing MCP tools (list, structure, read, search -- 4 GREEN tier tools)
+- [x] 13-03-PLAN.md -- Secret blocking infrastructure (28 filenames, 13 patterns, 8 path segments)
 
 #### Phase 14: Code Analysis & Discussion
 **Goal**: Users can have JARVIS analyze project code and receive architecture overviews, quality assessments, and actionable improvement suggestions through natural chat conversation
@@ -237,10 +237,10 @@ Phases 12 through 15 execute sequentially. Phase 15 depends on Phase 12 (file do
 | 10. E2E Testing | v1.1 | 2/2 | Complete | 2026-01-26 |
 | 11. JARVIS Voice | v1.2 | 4/4 | Complete | 2026-01-26 |
 | 12. File Operations | v1.3 | 3/3 | Complete | 2026-01-27 |
-| 13. Project Intelligence | v1.3 | 0/3 | Not started | - |
+| 13. Project Intelligence | v1.3 | 3/3 | Complete | 2026-01-27 |
 | 14. Code Analysis | v1.3 | 0/2 | Not started | - |
 | 15. Voice Retraining | v1.3 | 0/3 | Not started | - |
 
 ---
 
-Last updated: 2026-01-27
+Last updated: 2026-01-27 (Phase 13 complete)

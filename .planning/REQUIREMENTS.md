@@ -19,12 +19,12 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Project Intelligence
 
-- [ ] **PROJ-01**: JARVIS can browse project directory structure on any cluster node
-- [ ] **PROJ-02**: JARVIS can read source files from any project on the cluster
-- [ ] **PROJ-03**: JARVIS can search/grep across project files for patterns
+- [x] **PROJ-01**: JARVIS can browse project directory structure on any cluster node
+- [x] **PROJ-02**: JARVIS can read source files from any project on the cluster
+- [x] **PROJ-03**: JARVIS can search/grep across project files for patterns
 - [ ] **PROJ-04**: JARVIS can analyze project code and suggest improvements via chat
-- [ ] **PROJ-05**: Project browsing integrates with existing project registry (24 indexed projects on agent1)
-- [ ] **PROJ-06**: Sensitive files (.env, private keys, credentials, .git/config) are blocked from read access
+- [x] **PROJ-05**: Project browsing integrates with existing project registry (24 indexed projects on agent1)
+- [x] **PROJ-06**: Sensitive files (.env, private keys, credentials, .git/config) are blocked from read access
 - [ ] **PROJ-07**: Project analysis provides architecture overview, code quality notes, and actionable improvement suggestions
 
 ### Voice Retraining
@@ -73,12 +73,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FILE-05 | Phase 12 | Complete |
 | FILE-06 | Phase 12 | Complete |
 | FILE-07 | Phase 12 | Complete |
-| PROJ-01 | Phase 13 | Pending |
-| PROJ-02 | Phase 13 | Pending |
-| PROJ-03 | Phase 13 | Pending |
+| PROJ-01 | Phase 13 | Complete |
+| PROJ-02 | Phase 13 | Complete |
+| PROJ-03 | Phase 13 | Complete |
 | PROJ-04 | Phase 14 | Pending |
-| PROJ-05 | Phase 13 | Pending |
-| PROJ-06 | Phase 13 | Pending |
+| PROJ-05 | Phase 13 | Complete |
+| PROJ-06 | Phase 13 | Complete |
 | PROJ-07 | Phase 14 | Pending |
 | VOICE-13 | Phase 15 | Pending |
 | VOICE-14 | Phase 15 | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-01-26*
-*Last updated: 2026-01-27 after Phase 12 completion (FILE-01 through FILE-07 complete)*
+*Last updated: 2026-01-27 after Phase 13 completion (PROJ-01, PROJ-02, PROJ-03, PROJ-05, PROJ-06 complete)*
