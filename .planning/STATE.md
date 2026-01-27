@@ -11,9 +11,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 
 Milestone: v1.5 Optimization & Latency Reduction
 Phase: 23 -- TTS Performance -- Parallel Synthesis & Opus Encoding (IN PROGRESS)
-Plan: 03 of 04 complete
-Status: In progress. Plan 03 (gapless playback) shipped.
-Last activity: 2026-01-27 -- Completed 23-03-PLAN.md (gapless playback with clock scheduling and pre-decode)
+Plan: 01 of 03 complete (plans 01, 03 done; plan 02 pending)
+Status: In progress. Plan 01 (infrastructure foundation) shipped. Plan 03 (gapless playback) shipped.
+Last activity: 2026-01-27 -- Completed 23-01-PLAN.md (Docker infra, config, cache module, Opus encoder)
 
 Progress: [██████████░░░░░░░░░░] 40% v1.5 (2/5 phases complete: 21, 22; phase 23 in progress)
 
@@ -48,6 +48,10 @@ Progress: [██████████░░░░░░░░░░] 40% v1.
 - Pre-decode next buffer during playback to eliminate async decode latency
 - Clock (nextStartTime) resets on session start/stop/finalize to prevent stale scheduling
 - decodeAudioData handles WAV and OGG Opus natively -- no format-specific decoder needed
+- Disk cache stores WAV only (not Opus) -- re-encode on emission is cheaper than dual formats
+- SHA-256 of normalized text as cache filename -- filesystem-safe, collision-resistant
+- cpuset pinning: XTTS cores 0-3, Piper 4-5, backend 6-9 (llama-server uses OS scheduler on all)
+- FFmpeg installed in backend container via apt-get (not npm) -- zero new npm dependencies maintained
 
 ### Key Decisions (v1.4 - carried forward)
 
@@ -107,9 +111,9 @@ Previous milestones:
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Completed 23-03-PLAN.md (gapless playback)
+Stopped at: Completed 23-01-PLAN.md (infrastructure foundation)
 Resume file: None
 
 **Next steps:**
-1. Execute remaining Phase 23 plans (04)
+1. Execute Phase 23 Plan 02 (backend integration: parallel TTS, disk cache, Opus in chat.ts)
 2. Continue through Phases 24-25
