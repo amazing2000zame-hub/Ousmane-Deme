@@ -63,6 +63,9 @@ export const config = {
   // TTS — Local XTTS v2 (preferred, custom JARVIS voice clone)
   localTtsEndpoint: process.env.LOCAL_TTS_ENDPOINT || 'http://192.168.1.50:5050',
 
+  // TTS -- Piper CPU fallback (fast, <200ms)
+  piperTtsEndpoint: process.env.PIPER_TTS_ENDPOINT || 'http://jarvis-piper:5000',
+
   // TTS (Text-to-Speech) — OpenAI fallback
   ttsVoice: process.env.TTS_VOICE || 'onyx',
   ttsSpeed: parseFloat(process.env.TTS_SPEED || '1.0'),
@@ -77,6 +80,7 @@ export const config = {
 
   // CORS
   corsOrigins: [
+    'http://192.168.1.50:3004',
     'http://192.168.1.65:3004',
     'http://localhost:3004',
     'http://localhost:5173',
