@@ -23,6 +23,7 @@ import { config } from '../config.js';
 // ---------------------------------------------------------------------------
 
 export type TTSProvider = 'local' | 'elevenlabs' | 'openai';
+export type TTSEngine = 'xtts' | 'piper';
 export type OpenAIVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
 
 interface TTSOptions {
@@ -68,6 +69,35 @@ async function checkLocalTTSHealth(): Promise<boolean> {
   return localTTSHealthy;
 }
 
+// ---------------------------------------------------------------------------
+// XTTS health state for fallback routing (TTS-03)
+// ---------------------------------------------------------------------------
+
+let xttsHealthy = true;
+let xttsLastFailure = 0;
+const XTTS_RECOVERY_CHECK_INTERVAL = 30_000; // 30s before re-trying XTTS
+const XTTS_FALLBACK_TIMEOUT = 3_000; // 3s timeout triggers Piper (TTS-02)
+
+function shouldTryXTTS(): boolean {
+  if (!xttsHealthy) {
+    if (Date.now() - xttsLastFailure > XTTS_RECOVERY_CHECK_INTERVAL) {
+      return true; // Allow a recovery retry
+    }
+    return false;
+  }
+  return true;
+}
+
+function markXTTSFailed(): void {
+  xttsHealthy = false;
+  xttsLastFailure = Date.now();
+  lastHealthCheck = 0; // Reset existing health cache so next health check re-probes
+}
+
+function markXTTSSucceeded(): void {
+  xttsHealthy = true;
+}
+
 export function getActiveProvider(): TTSProvider | null {
   if (localTTSConfigured()) return 'local';
   if (process.env.ELEVENLABS_API_KEY) return 'elevenlabs';
@@ -75,8 +105,13 @@ export function getActiveProvider(): TTSProvider | null {
   return null;
 }
 
+/** Whether Piper TTS fallback is configured (endpoint set). */
+function piperTTSConfigured(): boolean {
+  return !!config.piperTtsEndpoint;
+}
+
 export function ttsAvailable(): boolean {
-  return getActiveProvider() !== null;
+  return getActiveProvider() !== null || piperTTSConfigured();
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +159,36 @@ async function synthesizeLocal(options: TTSOptions): Promise<TTSResult> {
   return {
     stream: nodeStream,
     contentType: response.headers.get('content-type') ?? 'audio/wav',
+    provider: 'local',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Piper TTS (fast CPU fallback, <200ms)
+// ---------------------------------------------------------------------------
+
+async function synthesizePiper(text: string): Promise<TTSResult> {
+  const endpoint = config.piperTtsEndpoint;
+
+  const response = await fetch(`${endpoint}/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: text,
+    signal: AbortSignal.timeout(10_000), // 10s generous timeout for Piper
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Piper TTS error ${response.status}: ${body}`);
+  }
+
+  const nodeStream = Readable.fromWeb(
+    response.body as import('stream/web').ReadableStream
+  );
+
+  return {
+    stream: nodeStream,
+    contentType: 'audio/wav',
     provider: 'local',
   };
 }
@@ -238,6 +303,10 @@ interface CachedAudio {
   provider: TTSProvider;
 }
 
+export interface CachedAudioWithEngine extends CachedAudio {
+  engine: TTSEngine;
+}
+
 const SENTENCE_CACHE_MAX = 200;
 const sentenceCache = new Map<string, CachedAudio>();
 
@@ -341,6 +410,132 @@ export async function synthesizeSentenceToBuffer(
     // Reset health cache so next request re-checks (don't permanently mark healthy service as down)
     lastHealthCheck = 0;
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// TTS-02/03/04: Sentence synthesis with Piper fallback
+// ---------------------------------------------------------------------------
+
+interface SentenceFallbackOptions {
+  voice?: string;
+  speed?: number;
+  engineLock?: TTSEngine | null;
+}
+
+/**
+ * Synthesize a sentence with automatic Piper fallback.
+ *
+ * Routing logic:
+ * 1. If engineLock is 'piper', go directly to Piper (TTS-04: consistency)
+ * 2. Check XTTS cache, then Piper cache
+ * 3. If XTTS is healthy, race it against 3s timeout (TTS-02)
+ * 4. If XTTS times out or errors, fall back to Piper (TTS-03)
+ * 5. Track XTTS failures for health-aware routing
+ */
+export async function synthesizeSentenceWithFallback(
+  text: string,
+  options?: SentenceFallbackOptions,
+): Promise<CachedAudioWithEngine | null> {
+  const engineLock = options?.engineLock ?? null;
+
+  // TTS-04: If locked to piper, go directly to Piper
+  if (engineLock === 'piper') {
+    return synthesizeViaPiper(text);
+  }
+
+  // Check XTTS cache first (free, instant)
+  const cachedXtts = cacheGet(text, 'xtts');
+  if (cachedXtts) return { ...cachedXtts, engine: 'xtts' as TTSEngine };
+
+  // Check Piper cache if XTTS is known-unhealthy (skip waiting for XTTS)
+  if (!shouldTryXTTS()) {
+    const cachedPiper = cacheGet(text, 'piper');
+    if (cachedPiper) return { ...cachedPiper, engine: 'piper' as TTSEngine };
+    return synthesizeViaPiper(text);
+  }
+
+  // Try XTTS with 3-second timeout (TTS-02)
+  if (localTTSConfigured()) {
+    try {
+      const synthesisPromise = synthesizeSpeech({
+        text,
+        voice: options?.voice,
+        speed: options?.speed,
+      });
+
+      const xttsResult = await Promise.race([
+        synthesisPromise,
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), XTTS_FALLBACK_TIMEOUT)
+        ),
+      ]);
+
+      if (xttsResult) {
+        // XTTS succeeded within 3 seconds
+        const chunks: Buffer[] = [];
+        for await (const chunk of xttsResult.stream) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        const buffer = Buffer.concat(chunks);
+        const audio: CachedAudioWithEngine = {
+          buffer,
+          contentType: xttsResult.contentType,
+          provider: xttsResult.provider,
+          engine: 'xtts',
+        };
+        cachePut(text, audio, 'xtts');
+        markXTTSSucceeded();
+        return audio;
+      }
+
+      // XTTS timed out at 3s -- clean up the dangling promise and fall through to Piper
+      synthesisPromise
+        .then((r) => { try { r.stream.destroy(); } catch {} })
+        .catch(() => {});
+      console.warn(`[TTS] XTTS timed out (${XTTS_FALLBACK_TIMEOUT}ms), falling back to Piper`);
+      markXTTSFailed();
+    } catch (err) {
+      console.warn(`[TTS] XTTS error, falling back to Piper: ${err instanceof Error ? err.message : err}`);
+      markXTTSFailed();
+    }
+  }
+
+  // Fallback to Piper
+  return synthesizeViaPiper(text);
+}
+
+/**
+ * Synthesize via Piper with cache check. Returns null if both engines fail.
+ */
+async function synthesizeViaPiper(text: string): Promise<CachedAudioWithEngine | null> {
+  // Check Piper cache
+  const cached = cacheGet(text, 'piper');
+  if (cached) return { ...cached, engine: 'piper' as TTSEngine };
+
+  if (!piperTTSConfigured()) {
+    console.warn('[TTS] Piper not configured, cannot fallback');
+    return null;
+  }
+
+  try {
+    const result = await synthesizePiper(text);
+    const chunks: Buffer[] = [];
+    for await (const chunk of result.stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const buffer = Buffer.concat(chunks);
+    const audio: CachedAudioWithEngine = {
+      buffer,
+      contentType: result.contentType,
+      provider: 'local',
+      engine: 'piper',
+    };
+    cachePut(text, audio, 'piper');
+    return audio;
+  } catch (err) {
+    console.warn(`[TTS] Piper fallback also failed: ${err instanceof Error ? err.message : err}`);
+    return null; // Both engines failed
   }
 }
 
