@@ -1,5 +1,5 @@
 /**
- * LLM-optimized Claude tool definitions for all 18 MCP tools.
+ * LLM-optimized Claude tool definitions for all 20 MCP tools.
  *
  * These are hardcoded (not auto-converted from Zod schemas) to give Claude
  * the best possible descriptions for tool selection. Each description guides
@@ -134,6 +134,56 @@ export function getClaudeTools(): Anthropic.Tool[] {
           },
         },
         required: ['storage'],
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // GREEN tier -- read-only file operations
+    // -----------------------------------------------------------------------
+    {
+      name: 'list_directory',
+      description:
+        'List the contents of a directory on any cluster node. Returns a tree-view with file sizes and directory item counts. Use when the user asks to see what files are in a directory, browse a folder, or explore a project structure. Supports all 4 cluster nodes (Home, pve, agent1, agent).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          node: {
+            type: 'string',
+            description: 'Cluster node name: "Home", "pve", "agent1", or "agent"',
+          },
+          path: {
+            type: 'string',
+            description: 'Absolute directory path (e.g., "/opt/jarvis-backend/src")',
+          },
+          showHidden: {
+            type: 'boolean',
+            description: 'Show dotfiles (default: true)',
+          },
+          maxItems: {
+            type: 'number',
+            description: 'Max items before summarizing with counts (default: 50)',
+          },
+        },
+        required: ['node', 'path'],
+      },
+    },
+    {
+      name: 'get_file_info',
+      description:
+        'Get detailed metadata about a specific file or directory on any cluster node. Returns size, type, permissions, and modification date. Use when the user asks about a specific file\'s details, size, or when it was last modified.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          node: {
+            type: 'string',
+            description: 'Cluster node name: "Home", "pve", "agent1", or "agent"',
+          },
+          path: {
+            type: 'string',
+            description: 'Absolute file or directory path',
+          },
+        },
+        required: ['node', 'path'],
       },
     },
 

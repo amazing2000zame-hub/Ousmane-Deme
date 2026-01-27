@@ -1,5 +1,5 @@
 /**
- * MCP server instance with all 18 tools registered.
+ * MCP server instance with all 20 tools registered.
  *
  * Provides executeTool() as the single entry point for all cluster operations.
  * The pipeline: sanitize -> checkSafety -> execute handler -> log to memory store.
@@ -11,10 +11,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { checkSafety, type SafetyResult, type ActionTier } from '../safety/tiers.js';
 import { sanitizeInput } from '../safety/sanitize.js';
+import { setOverrideContext } from '../safety/context.js';
 import { memoryStore } from '../db/memory.js';
 import { registerClusterTools } from './tools/cluster.js';
 import { registerLifecycleTools } from './tools/lifecycle.js';
 import { registerSystemTools } from './tools/system.js';
+import { registerFileTools } from './tools/files.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -95,6 +97,7 @@ mcpServer.tool = function (...fnArgs: unknown[]): unknown {
 registerClusterTools(mcpServer);
 registerLifecycleTools(mcpServer);
 registerSystemTools(mcpServer);
+registerFileTools(mcpServer);
 
 // ---------------------------------------------------------------------------
 // executeTool -- the single entry point for all tool invocations
@@ -115,6 +118,7 @@ export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   source: ToolSource = 'api',
+  overrideActive: boolean = false,
 ): Promise<ToolResult> {
   const startTime = Date.now();
 
@@ -145,7 +149,7 @@ export async function executeTool(
 
   // Step 3: Safety check
   const confirmed = Boolean(sanitizedArgs.confirmed);
-  const safety: SafetyResult = checkSafety(name, sanitizedArgs, confirmed);
+  const safety: SafetyResult = checkSafety(name, sanitizedArgs, confirmed, overrideActive);
 
   if (!safety.allowed) {
     const blockedResult: ToolResult = {
@@ -180,7 +184,8 @@ export async function executeTool(
     return blockedResult;
   }
 
-  // Step 4: Execute handler
+  // Step 4: Execute handler (set override context for handlers that check it)
+  setOverrideContext(overrideActive);
   let result: ToolResult;
   try {
     result = await handler(sanitizedArgs);
@@ -192,6 +197,8 @@ export async function executeTool(
       }],
       isError: true,
     };
+  } finally {
+    setOverrideContext(false);
   }
 
   // Step 5: Log execution to memory store

@@ -45,16 +45,22 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   get_recent_tasks: ActionTier.GREEN,
   get_backups: ActionTier.GREEN,
 
+  // GREEN -- read-only file operations
+  list_directory: ActionTier.GREEN,
+  get_file_info: ActionTier.GREEN,
+
   // YELLOW -- operational commands with controlled side effects
   execute_ssh: ActionTier.YELLOW,
   restart_service: ActionTier.YELLOW,
   wake_node: ActionTier.YELLOW,
 
-  // RED -- VM/CT lifecycle changes requiring explicit confirmation
-  start_vm: ActionTier.RED,
+  // YELLOW -- starting VMs/CTs (non-destructive, no confirmation needed)
+  start_vm: ActionTier.YELLOW,
+  start_container: ActionTier.YELLOW,
+
+  // RED -- stopping/restarting VMs/CTs requires explicit confirmation
   stop_vm: ActionTier.RED,
   restart_vm: ActionTier.RED,
-  start_container: ActionTier.RED,
   stop_container: ActionTier.RED,
   restart_container: ActionTier.RED,
 
@@ -99,10 +105,11 @@ export function checkSafety(
   tool: string,
   args: Record<string, unknown>,
   confirmed: boolean = false,
+  overrideActive: boolean = false,
 ): SafetyResult {
   const tier = getToolTier(tool);
 
-  // Step 2: Protected resource check (overrides everything)
+  // Step 2: Protected resource check (overrides everything, even override key)
   const protectedCheck = isProtectedResource(args);
   if (protectedCheck.protected) {
     return {
@@ -112,16 +119,21 @@ export function checkSafety(
     };
   }
 
-  // Step 3: BLACK tier -- always blocked
+  // Step 3: Override active -- bypass BLACK and RED restrictions
+  if (overrideActive) {
+    return { allowed: true, tier };
+  }
+
+  // Step 4: BLACK tier -- always blocked (without override)
   if (tier === ActionTier.BLACK) {
     return {
       allowed: false,
-      reason: `Tool "${tool}" is classified as BLACK tier and is always blocked`,
+      reason: `Tool "${tool}" is classified as BLACK tier and is always blocked. Use the override passkey to elevate.`,
       tier,
     };
   }
 
-  // Step 4: RED tier -- requires explicit confirmation
+  // Step 5: RED tier -- requires explicit confirmation
   if (tier === ActionTier.RED) {
     if (!confirmed) {
       return {
