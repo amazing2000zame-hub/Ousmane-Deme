@@ -17,13 +17,13 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### TTS Performance
 
 - [x] **PERF-01**: TTS LRU cache expanded to 200+ entries with engine-specific cache keys
-- [ ] **PERF-02**: Bounded parallel TTS synthesis with max 2 concurrent workers and CPU affinity separation
-- [ ] **PERF-03**: Disk-persistent TTS cache that survives container restarts with startup pre-warming of common JARVIS phrases
+- [x] **PERF-02**: Bounded parallel TTS synthesis with max 2 concurrent workers and CPU affinity separation
+- [x] **PERF-03**: Disk-persistent TTS cache that survives container restarts with startup pre-warming of common JARVIS phrases
 - [x] **PERF-04**: Sentence detection minimum length reduced and TTS health check with automatic container restart on failure
 
 ### Audio Encoding
 
-- [ ] **AUDIO-01**: Optional Opus audio codec via FFmpeg encoding (8-10x smaller payloads, configurable flag for LAN vs remote access)
+- [x] **AUDIO-01**: Optional Opus audio codec via FFmpeg encoding (8-10x smaller payloads, configurable flag for LAN vs remote access)
 
 ### Backend Optimization
 
@@ -85,9 +85,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TTS-02 | Phase 22 | Done |
 | TTS-03 | Phase 22 | Done |
 | TTS-04 | Phase 22 | Done |
-| PERF-02 | Phase 23 | Pending |
-| PERF-03 | Phase 23 | Pending |
-| AUDIO-01 | Phase 23 | Pending |
+| PERF-02 | Phase 23 | Complete |
+| PERF-03 | Phase 23 | Complete |
+| AUDIO-01 | Phase 23 | Complete |
 | OBS-01 | Phase 24 | Pending |
 | BACK-02 | Phase 24 | Pending |
 | UI-01 | Phase 25 | Pending |
