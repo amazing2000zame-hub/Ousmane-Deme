@@ -1,5 +1,5 @@
 /**
- * LLM-optimized Claude tool definitions for all 23 MCP tools.
+ * LLM-optimized Claude tool definitions for all 27 MCP tools.
  *
  * These are hardcoded (not auto-converted from Zod schemas) to give Claude
  * the best possible descriptions for tool selection. Each description guides
@@ -440,6 +440,86 @@ export function getClaudeTools(): Anthropic.Tool[] {
           },
         },
         required: ['sourceNode', 'sourcePath', 'destNode', 'destPath'],
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // GREEN tier -- read-only project intelligence
+    // -----------------------------------------------------------------------
+    {
+      name: 'list_projects',
+      description:
+        'List all indexed projects across the cluster. Shows project name, node, type, path, and description for each project. Use when the user asks about projects, "show me all projects", "what projects are on the cluster", or wants to know what codebases exist. Supports optional text filter to search by name, description, or type.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          filter: {
+            type: 'string',
+            description: 'Optional text filter to search project names, descriptions, or types (e.g., "node", "python", "jarvis")',
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'get_project_structure',
+      description:
+        'Show the directory tree of a project. Use when the user asks to see a project\'s structure, files, or layout (e.g., "show me the structure of jarvis-ui", "what files are in the telegram bot project"). Returns a hierarchical tree view. Sensitive directories (.git, node_modules) are excluded.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          project: {
+            type: 'string',
+            description: 'Project name from the registry (e.g., "jarvis-ui", "file-organizer", "homecluster-telegram-bot")',
+          },
+          maxDepth: {
+            type: 'number',
+            description: 'Maximum directory depth to show (default: 3)',
+          },
+        },
+        required: ['project'],
+      },
+    },
+    {
+      name: 'read_project_file',
+      description:
+        'Read a source file from a project. Use when the user asks to see the code, read a file, or look at a specific file in a project (e.g., "show me the index.ts from jarvis-backend", "read the package.json from file-organizer"). Blocks sensitive files like .env, private keys, and credentials. File path is relative to the project root.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          project: {
+            type: 'string',
+            description: 'Project name from the registry',
+          },
+          file: {
+            type: 'string',
+            description: 'Relative file path within the project (e.g., "src/index.ts", "package.json", "README.md")',
+          },
+        },
+        required: ['project', 'file'],
+      },
+    },
+    {
+      name: 'search_project_files',
+      description:
+        'Search for a text pattern across all files in a project using grep. Use when the user asks to find something in a project\'s code (e.g., "find all TODO comments in jarvis-backend", "search for error handling in the telegram bot", "where is the database connection defined"). Returns matching lines with file paths and line numbers.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          project: {
+            type: 'string',
+            description: 'Project name from the registry',
+          },
+          pattern: {
+            type: 'string',
+            description: 'Search pattern (supports regular expressions)',
+          },
+          fileFilter: {
+            type: 'string',
+            description: 'Optional file extension filter (e.g., "ts", "py", "json")',
+          },
+        },
+        required: ['project', 'pattern'],
       },
     },
   ];

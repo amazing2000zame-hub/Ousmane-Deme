@@ -257,7 +257,8 @@ export type SafetyAuditAction =
   | 'path_traversal_blocked'
   | 'ssrf_blocked'
   | 'protected_path_blocked'
-  | 'disk_space_refused';
+  | 'disk_space_refused'
+  | 'secret_file_blocked';
 
 /**
  * Log a safety-relevant event to the events table for audit purposes.

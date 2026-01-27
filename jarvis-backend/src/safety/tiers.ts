@@ -49,6 +49,12 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   list_directory: ActionTier.GREEN,
   get_file_info: ActionTier.GREEN,
 
+  // GREEN -- read-only project intelligence
+  list_projects: ActionTier.GREEN,
+  get_project_structure: ActionTier.GREEN,
+  read_project_file: ActionTier.GREEN,
+  search_project_files: ActionTier.GREEN,
+
   // YELLOW -- operational commands with controlled side effects
   execute_ssh: ActionTier.YELLOW,
   restart_service: ActionTier.YELLOW,
