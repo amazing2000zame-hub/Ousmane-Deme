@@ -64,18 +64,23 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - Smart home integration -- Proxmox cluster focus only for v1
 - Mobile native app -- responsive web handles mobile
 
-## Current Milestone: v1.4 Performance & Reliability
+## Current Milestone: v1.5 Optimization & Latency Reduction
 
-**Goal:** Optimize Jarvis for real-time responsiveness -- reduce voice latency from 15-30s to <4s via streaming TTS, eliminate chat UI jank, cut duplicate Proxmox API calls by 50%+, fix dashboard render performance, and unify theme/color consistency.
+**Goal:** Reduce JARVIS voice latency to 2-4s first-audio, achieve 99%+ TTS reliability via Piper fallback, and cut overall response latency 50-70% through parallel TTS, Opus audio codec, conversation windowing, latency tracing, and health monitoring.
 
 **Target features:**
-- Streaming voice pipeline -- sentence-by-sentence TTS synthesis during LLM streaming for <4s first audio
-- Chat rendering performance -- O(1) token append, RAF-batched updates, React.memo message components
-- Backend data caching -- shared Proxmox API cache, parallel temperature polling, system prompt caching
-- Dashboard rendering -- granular store updates, component memoization, idle animation optimization
-- Theme consistency -- unified color tokens, layout overflow fixes, standardized glow intensities
+- Quick wins -- TTS cache expansion (200+ entries), sentence detection tuning, TTS health check with auto-restart, SQLite WAL mode
+- Piper TTS fallback -- deploy Piper as fast CPU TTS (10-20x faster than XTTS), 3-second timeout triggers fallback
+- Parallel TTS -- fire 2-3 sentences concurrently, reorder on frontend by index
+- Opus audio codec -- replace WAV with Opus for 10x smaller transfer, faster delivery
+- Pre-warm TTS cache -- common JARVIS phrases cached at startup for instant playback
+- Conversation sliding window -- keep last 20-30 messages in full, summarize older context
+- Latency tracing pipeline -- timestamps at each stage (t0 message → t5 audio plays)
+- Health dashboard endpoint -- /api/health returning backend, TTS, LLM, Proxmox connectivity status
+- Web Worker audio decoding -- move AudioContext decoding off main thread
+- Chat history virtualization -- react-window for long conversations
 
-**Previous milestone (v1.3):** File Operations & Project Intelligence -- Phases 12-14 complete, Phase 15 (Voice Retraining) pending
+**Previous milestone (v1.4):** Performance & Reliability -- Phases 16-20 (streaming voice, chat rendering, backend caching, dashboard perf, theme polish)
 
 ## Current State (v1.0 shipped 2026-01-26)
 
@@ -146,4 +151,4 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 | Safety-first Phase 1 | CRITICAL pitfalls must be architectural, not retrofitted | Confirmed -- dependency DAG + command allowlist |
 
 ---
-*Last updated: 2026-01-27 after v1.4 milestone planned*
+*Last updated: 2026-01-27 after v1.5 milestone started*

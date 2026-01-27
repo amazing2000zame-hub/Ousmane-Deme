@@ -5,29 +5,36 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Milestone v1.4 -- Performance & Reliability (Phases 16-20 planned)
+**Current focus:** Milestone v1.5 -- Optimization & Latency Reduction
 
 ## Current Position
 
-Milestone: v1.4 Performance & Reliability
-Phase: 16 of 20 (Streaming Voice Pipeline) -- NOT STARTED
-Plan: 0 of 4
-Status: Milestone planned, ready for Phase 16 execution
-Last activity: 2026-01-27 -- Created v1.4 milestone with 5 phases, 27 requirements, 19 plans
+Milestone: v1.5 Optimization & Latency Reduction
+Phase: Not started (defining requirements)
+Plan: —
+Status: Researching domain ecosystem for new features
+Last activity: 2026-01-27 — Milestone v1.5 started, research phase initiated
 
-Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.4 (v1.0-v1.3 complete, Phase 15 voice retrained & deployed)
+Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.5
 
 ## Performance Metrics
 
-**Velocity (from v1.0-v1.3):**
+**Velocity (from v1.0-v1.4):**
 - Total plans completed: 39
 - Average duration: 4.9 min
-- Phases shipped: 14
-- v1.4 planned: 19 plans across 5 phases
+- Phases shipped: 20
+- Milestones shipped: 5 (v1.0, v1.1, v1.2, v1.3, v1.4)
 
 ## Accumulated Context
 
-### Key Decisions (v1.4)
+### Key Decisions (v1.5)
+
+- Piper TTS deployed as fast fallback alongside XTTS (3-second timeout triggers Piper)
+- Phase 4 items (GPU TTS, distributed architecture, VLAN, ML router) deferred to v1.6+
+- Optimization guide from /root/PNfj.docx is primary source document
+- Focus: Phases 1-3 only (Quick Wins, TTS Overhaul, Backend & Frontend)
+
+### Key Decisions (v1.4 - carried forward)
 
 - Streaming voice pipeline targets <4s first-audio (vs current 15-30s)
 - Sentence boundaries detected during LLM streaming, TTS per-sentence
@@ -47,8 +54,6 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.4
 - prefers-reduced-motion support for accessibility
 - All hardcoded colors replaced with theme tokens
 - Glow effects standardized to sm/md/lg intensity tokens
-- 27 requirements (PERF-001 through PERF-027)
-- 3 future requirements deferred to v1.5+ (GPU TTS, WebSocket compression, virtual scrolling)
 
 ### Key Decisions (v1.3 - carried forward)
 
@@ -57,13 +62,6 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.4
 - Code analysis uses Claude via existing agentic loop (not AST parsing)
 - Voice training orchestrates existing TTS container scripts via docker exec
 - Zero new npm dependencies -- Node.js 22 built-ins handle all requirements
-- AsyncLocalStorage with module-level fallback for backward-compatible override context
-- Safety audit logs use existing events table (type: action, severity: warning)
-- URL validation resolves DNS before checking IP to catch hostname-based SSRF
-- Protected path matching: trailing slash = directory subtree, no slash = exact file
-- Secret blocking: 28 filenames + 13 patterns + 8 path segments
-- Total MCP tools: 32 (23 base + 5 project/analysis + 4 voice pipeline)
-- analyze_project gathers 6 context sections with prompt injection defense
 - Voice retrained with 64 clips from 3 YouTube/video sources (vs 10 poor clips before)
 - Fine-tuned GPT decoder: 441M params, 6 epochs, 384 steps, loss 6.95→5.1
 - Speaker embedding recomputed with fine-tuned conditioning encoder
@@ -73,28 +71,30 @@ Previous milestones:
 - v1.1 Hybrid Intelligence (Phases 7-10): Hybrid LLM, memory, Docker, testing
 - v1.2 JARVIS Voice (Phase 11): TTS/STT with XTTS v2, ElevenLabs, OpenAI
 - v1.3 File Ops & Intelligence (Phases 12-15): File ops, project tools, code analysis, voice retraining
+- v1.4 Performance & Reliability (Phases 16-20): Streaming voice, chat rendering, backend caching, dashboard perf, theme polish
 
 ### Pending Todos
 
-- ~~Voice quality poor with current XTTS v2 training~~ -- Phase 15 COMPLETE: retrained with 64 clips, deployed
-- Voice latency 15-30s -- Phase 16 will reduce to <4s via streaming pipeline
-- Chat UI jank during streaming -- Phase 17 will fix with O(1) append + RAF batching
-- Duplicate Proxmox API calls -- Phase 18 will add shared cache layer
-- Dashboard unnecessary re-renders -- Phase 19 will add granular updates + memoization
-- Hardcoded colors bypass theme tokens -- Phase 20 will unify
+- Voice latency still 15-30s -- v1.5 Quick Wins + TTS Overhaul will address
+- TTS reliability ~70% -- Piper fallback will push to 99%+
+- No conversation windowing -- context grows unbounded, slowing LLM
+- No latency tracing -- can't identify bottlenecks precisely
+- No health endpoint -- no programmatic health checking
 
 ### Blockers/Concerns
 
-- ~~Voice training quality depends on quality of source videos user provides~~ (Phase 15 DONE: 3 sources, 64 clips)
-- XTTS local inference speed (~8-15s for full text) is the voice latency bottleneck -- streaming per-sentence is the mitigation
-- React.memo effectiveness depends on stable object references from stores (Phase 19-01 must precede 19-02)
+- Home node disk usage should stay under 80% (currently ~52%)
+- Piper TTS Docker image adds ~500MB to deployment footprint
+- Opus codec requires browser support (all modern browsers support it)
+- react-window adds a new dependency to frontend
 
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Phase 15 (Voice Retraining Pipeline) COMPLETE -- trained, deployed, verified
+Stopped at: v1.5 milestone initialization — research phase
 Resume file: None
 
 **Next steps:**
-1. Begin Phase 16 (Streaming Voice Pipeline) planning or execution
-2. Phase 16-01: Sentence-boundary text accumulator in chat handler
+1. Complete domain research (4 parallel researchers)
+2. Define v1.5 requirements
+3. Create roadmap (phases 21+)
