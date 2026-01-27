@@ -15,6 +15,7 @@
 
 import OpenAI from 'openai';
 import { Readable } from 'node:stream';
+import http from 'node:http';
 import { config } from '../config.js';
 
 // ---------------------------------------------------------------------------
@@ -237,16 +238,16 @@ interface CachedAudio {
   provider: TTSProvider;
 }
 
-const SENTENCE_CACHE_MAX = 50;
+const SENTENCE_CACHE_MAX = 200;
 const sentenceCache = new Map<string, CachedAudio>();
 
 /** Normalize text for cache key (lowercase, trimmed, collapsed whitespace). */
-function cacheKey(text: string): string {
-  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+function cacheKey(text: string, engine: string = 'xtts'): string {
+  return `${engine}:${text.trim().toLowerCase().replace(/\s+/g, ' ')}`;
 }
 
-function cachePut(text: string, audio: CachedAudio): void {
-  const key = cacheKey(text);
+function cachePut(text: string, audio: CachedAudio, engine: string = 'xtts'): void {
+  const key = cacheKey(text, engine);
   // LRU eviction
   if (sentenceCache.size >= SENTENCE_CACHE_MAX) {
     const oldest = sentenceCache.keys().next().value!;
@@ -255,8 +256,8 @@ function cachePut(text: string, audio: CachedAudio): void {
   sentenceCache.set(key, audio);
 }
 
-function cacheGet(text: string): CachedAudio | undefined {
-  const key = cacheKey(text);
+function cacheGet(text: string, engine: string = 'xtts'): CachedAudio | undefined {
+  const key = cacheKey(text, engine);
   const entry = sentenceCache.get(key);
   if (entry) {
     // Move to end (most recently used)
@@ -270,8 +271,10 @@ function cacheGet(text: string): CachedAudio | undefined {
 // PERF-02: Synthesize to Buffer — used by streaming voice pipeline
 // ---------------------------------------------------------------------------
 
-/** Per-sentence TTS timeout — 45s to accommodate CPU-based XTTS inference. */
-const SENTENCE_TTS_TIMEOUT = 45_000;
+/** Per-sentence TTS timeout — 20s for CPU-based XTTS inference.
+ *  Typical synthesis: 8-15s per sentence. 20s covers slow cases without
+ *  blocking the queue indefinitely when the server is unresponsive. */
+const SENTENCE_TTS_TIMEOUT = 20_000;
 
 /**
  * Synthesize a single sentence to a Buffer. Returns null on timeout or error.
@@ -285,7 +288,7 @@ export async function synthesizeSentenceToBuffer(
   options?: { voice?: string; speed?: number },
 ): Promise<CachedAudio | null> {
   // PERF-05: Check cache
-  const cached = cacheGet(text);
+  const cached = cacheGet(text, 'xtts');
   if (cached) return cached;
 
   // Bail early if no provider is available
@@ -326,7 +329,7 @@ export async function synthesizeSentenceToBuffer(
     };
 
     // PERF-05: Cache for future use
-    cachePut(text, audio);
+    cachePut(text, audio, 'xtts');
 
     return audio;
   } catch (err) {
@@ -339,6 +342,72 @@ export async function synthesizeSentenceToBuffer(
     lastHealthCheck = 0;
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// PERF-06: TTS health check & container auto-restart
+// ---------------------------------------------------------------------------
+
+export async function checkTTSHealth(): Promise<{ healthy: boolean; responseMs: number; endpoint: string }> {
+  const endpoint = config.localTtsEndpoint;
+  const start = Date.now();
+  try {
+    const healthy = await checkLocalTTSHealth();
+    const responseMs = Date.now() - start;
+    if (!healthy) {
+      // Fire-and-forget restart attempt
+      restartTTSContainer().catch(() => {});
+    }
+    return { healthy, responseMs, endpoint };
+  } catch {
+    const responseMs = Date.now() - start;
+    restartTTSContainer().catch(() => {});
+    return { healthy: false, responseMs, endpoint };
+  }
+}
+
+let lastRestartAttempt = 0;
+const RESTART_COOLDOWN = 5 * 60 * 1000; // 5 minutes
+
+export async function restartTTSContainer(): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastRestartAttempt < RESTART_COOLDOWN) {
+    console.log('[TTS] Restart skipped — cooldown active');
+    return false;
+  }
+  lastRestartAttempt = now;
+
+  console.log('[TTS] Attempting container restart via Docker API...');
+
+  return new Promise<boolean>((resolve) => {
+    const req = http.request(
+      {
+        socketPath: '/var/run/docker.sock',
+        path: '/v1.45/containers/jarvis-tts/restart?t=10',
+        method: 'POST',
+        timeout: 30_000,
+      },
+      (res) => {
+        const success = res.statusCode === 204;
+        console.log(`[TTS] Restart ${success ? 'succeeded' : 'failed'} (HTTP ${res.statusCode})`);
+        res.resume(); // drain response
+        resolve(success);
+      },
+    );
+
+    req.on('error', (err) => {
+      console.warn(`[TTS] Restart error: ${err.message}`);
+      resolve(false);
+    });
+
+    req.on('timeout', () => {
+      console.warn('[TTS] Restart timed out (30s)');
+      req.destroy();
+      resolve(false);
+    });
+
+    req.end();
+  });
 }
 
 // ---------------------------------------------------------------------------

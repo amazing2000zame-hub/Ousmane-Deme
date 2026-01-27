@@ -1,7 +1,6 @@
 # Jarvis 3.1 - Proxmox Homelab Cluster Management
 # ================================================
 # Deploy: docker compose up -d --build
-# Remote:  ssh root@192.168.1.65 'cd /opt/jarvis && docker compose up -d --build'
 
 services:
   jarvis-backend:
@@ -9,6 +8,8 @@ services:
       context: ./jarvis-backend
     container_name: jarvis-backend
     restart: unless-stopped
+    security_opt:
+      - apparmor:unconfined
     stop_grace_period: 15s
     ports:
       - "4000:4000"
@@ -16,6 +17,7 @@ services:
       - jarvis-data:/data
       - /root/.ssh/id_ed25519:/app/.ssh/id_ed25519:ro
       - /root/.ssh/known_hosts:/app/.ssh/known_hosts:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=4000
@@ -29,9 +31,15 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - JARVIS_OVERRIDE_KEY=${JARVIS_OVERRIDE_KEY}
       - LOCAL_LLM_ENDPOINT=${LOCAL_LLM_ENDPOINT:-http://192.168.1.50:8080}
+      - LOCAL_TTS_ENDPOINT=${LOCAL_TTS_ENDPOINT:-http://jarvis-tts:5050}
       - DAILY_COST_LIMIT=${DAILY_COST_LIMIT:-10.0}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - jarvis-net
+    depends_on:
+      jarvis-tts:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/api/health"]
       interval: 30s
@@ -51,6 +59,8 @@ services:
         VITE_BACKEND_URL: ""
     container_name: jarvis-frontend
     restart: unless-stopped
+    security_opt:
+      - apparmor:unconfined
     ports:
       - "3004:80"
     networks:
@@ -59,7 +69,7 @@ services:
       jarvis-backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -67,6 +77,47 @@ services:
       driver: json-file
       options:
         max-size: "5m"
+        max-file: "3"
+
+  jarvis-tts:
+    build:
+      context: /opt/jarvis-tts
+    container_name: jarvis-tts
+    restart: unless-stopped
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - /opt/jarvis-tts/voices:/voices:ro
+      - /opt/jarvis-tts/models:/models
+      - /opt/jarvis-tts/cache:/cache
+      - /opt/jarvis-tts/training:/training
+    environment:
+      - PORT=5050
+      - VOICES_DIR=/voices
+      - MODEL_DIR=/models
+      - CACHE_DIR=/cache
+      - MAX_TEXT_LENGTH=5000
+      - DEFAULT_LANGUAGE=en
+    networks:
+      - jarvis-net
+    deploy:
+      resources:
+        limits:
+          cpus: "14"
+          memory: 16G
+        reservations:
+          cpus: "4"
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
         max-file: "3"
 
 volumes:
