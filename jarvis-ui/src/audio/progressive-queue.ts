@@ -1,11 +1,12 @@
 /**
- * Progressive audio queue — XTTS-only voice playback (PERF-03/04).
+ * Progressive audio queue -- gapless voice playback (PERF-03/04).
  *
- * Plays XTTS audio chunks progressively as they arrive via chat:audio_chunk
- * events. Uses the custom trained JARVIS voice for all speech output.
+ * Plays audio chunks progressively as they arrive via chat:audio_chunk
+ * events. Uses Web Audio clock scheduling (AudioBufferSourceNode.start(when))
+ * for zero-gap seamless sentence transitions. Supports both WAV and OGG Opus
+ * content types (auto-detected by decodeAudioData).
  *
- * chat:sentence events are used only to start the session and track state;
- * actual audio playback is driven entirely by XTTS audio chunks.
+ * Pre-decodes the next buffer during playback to eliminate decode latency.
  */
 
 import { useVoiceStore } from '../stores/voice';
@@ -116,6 +117,10 @@ export function queueAudioChunk(
   if (sessionId !== activeSessionId) return;
   xttsQueue.push({ buffer: chunk, contentType, index });
   xttsQueue.sort((a, b) => a.index - b.index);
+
+  if (contentType && !contentType.includes('wav')) {
+    console.debug(`[ProgressiveAudio] Received non-WAV chunk: ${contentType}`);
+  }
 
   // Start playback immediately if not already playing
   if (!isPlayingXtts) {
