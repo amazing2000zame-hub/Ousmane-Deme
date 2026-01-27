@@ -5,24 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Milestone v1.3 -- Phase 12 File Operations Foundation
+**Current focus:** Milestone v1.3 -- Phase 12 complete, ready for Phase 13
 
 ## Current Position
 
 Milestone: v1.3 File Operations & Project Intelligence
-Phase: 12 of 15 (File Operations Foundation)
-Plan: 2 of 3 complete (12-01 and 12-02 done, 12-03 remaining)
-Status: In progress
-Last activity: 2026-01-27 -- Completed 12-02-PLAN.md (file listing and info tools)
+Phase: 12 of 15 (File Operations Foundation) -- COMPLETE
+Plan: 3 of 3 complete (12-01, 12-02, 12-03 all shipped)
+Status: Phase complete
+Last activity: 2026-01-27 -- Completed 12-03-PLAN.md (file transfer/download tools)
 
-Progress: [██████████████████░░] 87% (v1.0-v1.2 complete, 12-01 and 12-02 shipped)
+Progress: [████████████████████] 100% Phase 12 (v1.0-v1.2 complete, Phase 12 shipped)
 
 ## Performance Metrics
 
 **Velocity (from v1.0-v1.2):**
-- Total plans completed: 31
-- Average duration: 5.0 min
-- Phases shipped: 11
+- Total plans completed: 34
+- Average duration: 4.9 min
+- Phases shipped: 12
 
 ## Accumulated Context
 
@@ -40,6 +40,11 @@ Progress: [██████████████████░░] 87% (v1
 - Tree-view output as plain text (not JSON) so Claude presents directory listings naturally
 - Noise file filtering: .DS_Store, Thumbs.db, AppleDouble files always excluded from listings
 - Remote directory item counts batched in single SSH command (max 30 dirs)
+- Transfer tools are YELLOW tier (auto-execute with logging)
+- Downloads > 500MB prompt for confirmation via Claude conversation flow
+- Cross-node transfers route through Home as SFTP intermediary with temp file cleanup
+- Auto-rename on conflict uses filename(1).ext pattern, capped at 100 attempts
+- Streaming download via Readable.fromWeb() + pipeline() with byte tracking
 
 Previous milestones:
 - v1.0 MVP (Phases 1-6): Full dashboard + AI + monitoring + safety
@@ -61,9 +66,9 @@ Previous milestones:
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Completed 12-02-PLAN.md (file listing and info tools -- list_directory, get_file_info)
+Stopped at: Completed 12-03-PLAN.md -- Phase 12 fully complete
 Resume file: None
 
 **Next steps:**
-1. Execute 12-03-PLAN.md (file transfer/download tools)
-2. Verify Phase 12 success criteria
+1. Begin Phase 13 (Project Intelligence) planning
+2. Implement secret blocking before project read tools ship
