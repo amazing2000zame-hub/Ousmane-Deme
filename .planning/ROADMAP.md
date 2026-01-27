@@ -192,7 +192,7 @@ Plans:
 | NodeCard re-renders per poll | 4 (all) | 1 (changed only) |
 | AudioVisualizer idle CPU | >0% (rAF loop) | 0% |
 | System prompt build (cached) | ~1-2s | <10ms |
-| Initial bundle savings | — | ~40KB gzipped |
+| Initial bundle savings | -- | ~40KB gzipped |
 
 #### Phase 16: Streaming Voice Pipeline
 **Goal**: Reduce voice latency from 15-30s to <4s by streaming TTS sentence-by-sentence while the LLM is still generating
@@ -300,6 +300,10 @@ Phases 16, 17, 18, 19 are largely independent and could run in parallel if neede
   2. User notices JARVIS no longer skips speaking short phrases like "Yes" or "Done" that were previously below the sentence length threshold
   3. TTS cache holds 200+ entries with engine-specific keys so XTTS and Piper cached audio never collide
   4. If the TTS container becomes unresponsive, the health check detects failure and triggers an automatic container restart attempt
+
+**Plans:** 1 plan
+Plans:
+- [ ] 21-01-PLAN.md -- SQLite PRAGMAs, TTS cache/restart, sentence tuning, component health endpoint
 
 #### Phase 22: TTS Reliability -- Piper Fallback Engine
 **Goal**: Users hear JARVIS speak on every response with 99%+ reliability because a fast Piper TTS fallback activates automatically when XTTS is slow or unhealthy
@@ -435,7 +439,7 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 | 18. Backend Data Caching | v1.4 | 5/5 | Complete | 2026-01-27 |
 | 19. Dashboard Rendering | v1.4 | 4/4 | Complete | 2026-01-27 |
 | 20. Theme Consistency | v1.4 | 3/3 | Complete | 2026-01-27 |
-| 21. Quick Wins & Baseline | v1.5 | 0/? | Not started | - |
+| 21. Quick Wins & Baseline | v1.5 | 0/1 | Planned | - |
 | 22. TTS Reliability | v1.5 | 0/? | Not started | - |
 | 23. Parallel TTS + Opus | v1.5 | 0/? | Not started | - |
 | 24. Observability & Context | v1.5 | 0/? | Not started | - |
@@ -443,4 +447,4 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 
 ---
 
-Last updated: 2026-01-27 (v1.5 milestone roadmapped -- Phases 21-25)
+Last updated: 2026-01-27 (Phase 21 planned -- 1 plan in 1 wave)
