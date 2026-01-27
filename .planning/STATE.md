@@ -10,19 +10,19 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Milestone: v1.5 Optimization & Latency Reduction
-Phase: 22 -- TTS Reliability -- Piper Fallback (IN PROGRESS)
-Plan: 01 of 02 complete
-Status: Plan 22-01 shipped (Piper container + config). Plan 22-02 next (fallback routing logic).
-Last activity: 2026-01-27 -- Completed 22-01-PLAN.md (Piper TTS container deployment + backend config wiring)
+Phase: 22 -- TTS Reliability -- Piper Fallback (COMPLETE)
+Plan: 02 of 02 complete
+Status: Phase 22 shipped. Piper container deployed (Plan 01) + fallback routing logic (Plan 02).
+Last activity: 2026-01-27 -- Completed 22-02-PLAN.md (TTS fallback routing with engine lock)
 
-Progress: [█████░░░░░░░░░░░░░░░] 25% v1.5 (1/5 phases, 22-01 of 2 plans done)
+Progress: [██████████░░░░░░░░░░] 40% v1.5 (2/5 phases complete: 21, 22)
 
 ## Performance Metrics
 
 **Velocity (from v1.0-v1.4):**
-- Total plans completed: 41
-- Average duration: 4.9 min
-- Phases shipped: 21
+- Total plans completed: 43
+- Average duration: 4.8 min
+- Phases shipped: 22
 - Milestones shipped: 5 (v1.0, v1.1, v1.2, v1.3, v1.4)
 
 ## Accumulated Context
@@ -41,6 +41,9 @@ Progress: [█████░░░░░░░░░░░░░░░] 25% v1.
 - Never mix TTS engines within a single response (voice consistency enforcement)
 - Bounded to max 2 concurrent TTS workers to avoid CPU starvation of LLM
 - Conversation summarization must preserve structured context (VMIDs, IPs, paths)
+- 3-second XTTS timeout balances quality vs latency; 30s recovery interval prevents hammering
+- Engine lock scoped per-response (handleSend), resets automatically for XTTS recovery
+- Sequential XTTS-then-Piper racing, not parallel, to avoid CPU contention
 
 ### Key Decisions (v1.4 - carried forward)
 
@@ -84,7 +87,7 @@ Previous milestones:
 ### Pending Todos
 
 - Voice latency still 15-30s -- v1.5 Quick Wins + TTS overhaul will address
-- TTS reliability ~70% -- Piper fallback (Phase 22) will push to 99%+
+- ~~TTS reliability ~70% -- Piper fallback (Phase 22) will push to 99%+~~ (DONE: Phase 22, plans 01+02)
 - No conversation windowing -- context grows unbounded, slowing LLM (Phase 24)
 - No latency tracing -- can't identify bottlenecks precisely (Phase 24)
 - ~~Health endpoint is liveness-only -- no component-level status~~ (DONE: Phase 21, plan 01)
@@ -99,11 +102,11 @@ Previous milestones:
 
 ## Session Continuity
 
-Last session: 2026-01-27T22:42:15Z
-Stopped at: Completed 22-01-PLAN.md (Piper TTS container deployment)
+Last session: 2026-01-27T22:48:02Z
+Stopped at: Completed 22-02-PLAN.md (TTS fallback routing logic)
 Resume file: None
 
 **Next steps:**
-1. Execute Phase 22 Plan 02 (TTS fallback routing logic)
-2. Verify Phase 22 complete
-3. Continue through Phases 23-25
+1. Phase 22 is fully complete -- verify with deployment if desired
+2. Execute Phase 23 (Parallel Pipeline + Opus encoding)
+3. Continue through Phases 24-25
