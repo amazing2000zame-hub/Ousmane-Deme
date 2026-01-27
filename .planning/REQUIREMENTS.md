@@ -1,64 +1,75 @@
-# Requirements: Jarvis 3.1 -- v1.3 File Operations & Project Intelligence
+# Requirements: Jarvis 3.1 -- v1.5 Optimization & Latency Reduction
 
-**Defined:** 2026-01-26
+**Defined:** 2026-01-27
 **Core Value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
 
-## v1.3 Requirements
+## v1.5 Requirements
 
 Requirements for this milestone. Each maps to roadmap phases.
 
-### File Operations
+### TTS Reliability & Fallback
 
-- [x] **FILE-01**: JARVIS can download a file from a URL to a specified server directory
-- [x] **FILE-02**: JARVIS can import/copy files between directories on the server
-- [x] **FILE-03**: JARVIS can import/copy files between cluster nodes via SSH
-- [x] **FILE-04**: JARVIS can list directory contents on any cluster node
-- [x] **FILE-05**: File downloads have SSRF protection (block internal/private IPs, validate URLs)
-- [x] **FILE-06**: All file paths are sanitized against path traversal attacks (no ../, symlink resolution)
-- [x] **FILE-07**: File operations have disk space checks before writing
+- [ ] **TTS-01**: Piper TTS deployed as Docker container providing <200ms CPU-based speech synthesis as fallback engine
+- [ ] **TTS-02**: Per-sentence 3-second timeout triggers automatic Piper fallback instead of skipping audio
+- [ ] **TTS-03**: Health-aware TTS routing skips XTTS when recent health check indicates failure
+- [ ] **TTS-04**: TTS engine consistency enforced -- if XTTS fails on any sentence, Piper used for all remaining sentences in that response
 
-### Project Intelligence
+### TTS Performance
 
-- [x] **PROJ-01**: JARVIS can browse project directory structure on any cluster node
-- [x] **PROJ-02**: JARVIS can read source files from any project on the cluster
-- [x] **PROJ-03**: JARVIS can search/grep across project files for patterns
-- [x] **PROJ-04**: JARVIS can analyze project code and suggest improvements via chat
-- [x] **PROJ-05**: Project browsing integrates with existing project registry (24 indexed projects on agent1)
-- [x] **PROJ-06**: Sensitive files (.env, private keys, credentials, .git/config) are blocked from read access
-- [x] **PROJ-07**: Project analysis provides architecture overview, code quality notes, and actionable improvement suggestions
+- [ ] **PERF-01**: TTS LRU cache expanded to 200+ entries with engine-specific cache keys
+- [ ] **PERF-02**: Bounded parallel TTS synthesis with max 2 concurrent workers and CPU affinity separation
+- [ ] **PERF-03**: Disk-persistent TTS cache that survives container restarts with startup pre-warming of common JARVIS phrases
+- [ ] **PERF-04**: Sentence detection minimum length reduced and TTS health check with automatic container restart on failure
 
-### Voice Retraining
+### Audio Encoding
 
-- [ ] **VOICE-13**: Extract clean audio segments from user-provided JARVIS video files using ffmpeg
-- [ ] **VOICE-14**: Build training dataset from extracted audio (LJSpeech format: metadata.csv + wavs/)
-- [ ] **VOICE-15**: Retrain XTTS v2 GPT decoder with new dataset for improved voice quality
-- [ ] **VOICE-16**: Update TTS server to use new fine-tuned model weights and clear old cache
+- [ ] **AUDIO-01**: Optional Opus audio codec via FFmpeg encoding (8-10x smaller payloads, configurable flag for LAN vs remote access)
+
+### Backend Optimization
+
+- [ ] **BACK-01**: SQLite performance PRAGMAs applied (synchronous=NORMAL, cache_size=-64000, temp_store=MEMORY, mmap_size=268435456)
+- [ ] **BACK-02**: Conversation sliding window keeping last 20-30 messages in full with token-aware truncation and background Qwen summarization of older context
+
+### Observability
+
+- [ ] **OBS-01**: Latency tracing pipeline with per-request timing breakdown (t0 message received through t5 audio plays) using performance.now() timestamps
+- [ ] **OBS-02**: Expanded /api/health endpoint returning component-level status for TTS engines, LLM, Proxmox API connectivity, and database
+
+### Frontend
+
+- [ ] **UI-01**: Chat history virtualization using @tanstack/react-virtual for smooth scrolling at 100+ messages
 
 ## Future Requirements
 
 Deferred to later milestones.
 
-### File Operations (v2)
+### Advanced Optimization (v1.6+)
 
-- **FILE-08**: File delete capability with RED-tier confirmation
-- **FILE-09**: File upload from user's browser to server
-- **FILE-10**: Batch file operations (multi-file download/import)
+- **ADV-01**: GPU TTS acceleration (if hardware available)
+- **ADV-02**: Distributed component architecture across cluster nodes
+- **ADV-03**: VLAN segmentation for service isolation
+- **ADV-04**: ML-based intent router for LLM request classification
+- **ADV-05**: ElevenLabs cloud TTS fallback (requires API key)
+- **ADV-06**: Summary persistence across sessions for session resume
 
-### Project Intelligence (v2)
+### Voice Retraining (carried from v1.3)
 
-- **PROJ-08**: Git operations (pull, status, log) on projects
-- **PROJ-09**: Automated code review on git diffs
-- **PROJ-10**: Project dependency audit (outdated packages, vulnerabilities)
+- **VOICE-13**: Extract clean audio segments from user-provided JARVIS video files using ffmpeg
+- **VOICE-14**: Build training dataset from extracted audio (LJSpeech format)
+- **VOICE-15**: Retrain XTTS v2 GPT decoder with new dataset
+- **VOICE-16**: Update TTS server to use new fine-tuned model weights
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| File editing/writing by JARVIS | Too dangerous for v1.3 -- read-only project access first |
-| Git push/commit operations | Write operations deferred, safety implications too high |
-| Real-time file watching | Complexity for little value in homelab context |
-| IDE integration | Out of scope -- JARVIS is a chat assistant, not an IDE |
-| Arbitrary command execution for analysis | Already have execute_ssh -- project tools should be purpose-built |
+| Multiple XTTS worker instances | XTTS v2 batch_size=1 constraint; concurrent requests cause CUDA errors |
+| Voice cloning on Piper fallback | Accept voice change on fallback; complexity not worth it for edge case |
+| RAG-based context retrieval | Overkill for single-user homelab |
+| Always-on Opus encoding | Adds 10-50ms latency with zero benefit on gigabit LAN |
+| Web Worker audio decoding | AudioContext unavailable in Workers (W3C spec issue since 2013) |
+| react-window | Inferior dynamic height support vs @tanstack/react-virtual |
+| OpenTelemetry distributed tracing | performance.now() sufficient for homelab scale |
 
 ## Traceability
 
@@ -66,30 +77,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FILE-01 | Phase 12 | Complete |
-| FILE-02 | Phase 12 | Complete |
-| FILE-03 | Phase 12 | Complete |
-| FILE-04 | Phase 12 | Complete |
-| FILE-05 | Phase 12 | Complete |
-| FILE-06 | Phase 12 | Complete |
-| FILE-07 | Phase 12 | Complete |
-| PROJ-01 | Phase 13 | Complete |
-| PROJ-02 | Phase 13 | Complete |
-| PROJ-03 | Phase 13 | Complete |
-| PROJ-04 | Phase 14 | Complete |
-| PROJ-05 | Phase 13 | Complete |
-| PROJ-06 | Phase 13 | Complete |
-| PROJ-07 | Phase 14 | Complete |
-| VOICE-13 | Phase 15 | Pending |
-| VOICE-14 | Phase 15 | Pending |
-| VOICE-15 | Phase 15 | Pending |
-| VOICE-16 | Phase 15 | Pending |
+| TTS-01 | — | Pending |
+| TTS-02 | — | Pending |
+| TTS-03 | — | Pending |
+| TTS-04 | — | Pending |
+| PERF-01 | — | Pending |
+| PERF-02 | — | Pending |
+| PERF-03 | — | Pending |
+| PERF-04 | — | Pending |
+| AUDIO-01 | — | Pending |
+| BACK-01 | — | Pending |
+| BACK-02 | — | Pending |
+| OBS-01 | — | Pending |
+| OBS-02 | — | Pending |
+| UI-01 | — | Pending |
 
 **Coverage:**
-- v1.3 requirements: 18 total
-- Mapped to phases: 18
-- Unmapped: 0
+- v1.5 requirements: 14 total
+- Mapped to phases: 0
+- Unmapped: 14
 
 ---
-*Requirements defined: 2026-01-26*
-*Last updated: 2026-01-27 after Phase 14 completion (all PROJ requirements complete)*
+*Requirements defined: 2026-01-27*
