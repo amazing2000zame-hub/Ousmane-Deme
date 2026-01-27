@@ -82,15 +82,30 @@ export function ttsAvailable(): boolean {
 // Local XTTS v2 (zero-shot voice cloning)
 // ---------------------------------------------------------------------------
 
+/** XTTS v2 has a hard limit of 400 tokens (~1400 chars). Truncate at sentence boundary. */
+const XTTS_MAX_CHARS = 1200;
+
+function truncateForXTTS(text: string): string {
+  if (text.length <= XTTS_MAX_CHARS) return text;
+  // Try to cut at last sentence boundary within limit
+  const truncated = text.slice(0, XTTS_MAX_CHARS);
+  const lastPeriod = truncated.lastIndexOf('. ');
+  if (lastPeriod > XTTS_MAX_CHARS * 0.5) {
+    return truncated.slice(0, lastPeriod + 1);
+  }
+  return truncated;
+}
+
 async function synthesizeLocal(options: TTSOptions): Promise<TTSResult> {
   const { text, speed } = options;
   const endpoint = config.localTtsEndpoint;
 
+  const safeText = truncateForXTTS(text);
   const response = await fetch(`${endpoint}/synthesize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      text,
+      text: safeText,
       voice: 'jarvis',
       language: 'en',
       speed: speed ?? 1.0,
@@ -312,6 +327,8 @@ export async function synthesizeSentenceToBuffer(
         .then((r) => { r.stream.destroy(); })
         .catch(() => {}); // swallow rejection
       console.warn(`[TTS] Sentence synthesis timed out (${SENTENCE_TTS_TIMEOUT}ms): "${text.slice(0, 40)}..."`);
+      // Reset health cache so next request re-checks
+      lastHealthCheck = 0;
       return null;
     }
 
@@ -338,6 +355,8 @@ export async function synthesizeSentenceToBuffer(
       .then((r) => { try { r.stream.destroy(); } catch {} })
       .catch(() => {});
     console.warn(`[TTS] Sentence synthesis failed: ${err instanceof Error ? err.message : err}`);
+    // Reset health cache so next request re-checks (don't permanently mark healthy service as down)
+    lastHealthCheck = 0;
     return null;
   }
 }
