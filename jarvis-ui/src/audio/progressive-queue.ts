@@ -14,6 +14,7 @@
  */
 
 import { useVoiceStore } from '../stores/voice';
+import { cleanTextForSpeech } from './text-cleaner';
 
 // ---------------------------------------------------------------------------
 // Singleton Web Audio context (shared with useVoice.ts)
@@ -59,13 +60,18 @@ let browserSessionActive = false;
 
 /**
  * Speak a sentence immediately using browser SpeechSynthesis.
+ * Text is cleaned of markdown/special characters before speaking.
  * Sentences are queued and played sequentially.
  */
 export function speakSentenceBrowser(sessionId: string, text: string): void {
   if (sessionId !== activeSessionId) return;
   if (!window.speechSynthesis) return;
 
-  sentenceQueue.push(text);
+  // Clean markdown and special characters before speaking
+  const cleaned = cleanTextForSpeech(text);
+  if (!cleaned) return;
+
+  sentenceQueue.push(cleaned);
 
   if (!isSpeakingBrowser) {
     playNextSentence();
@@ -131,6 +137,13 @@ let xttsChunksReceived = 0;
 let activeSessionId: string | null = null;
 let browserStreamDone = false;
 
+/**
+ * Tracks whether progressive playback was used for the current/last response.
+ * This persists beyond session finalization so ChatPanel can check it
+ * and skip redundant monolithic auto-play.
+ */
+let _progressiveWasUsed = false;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -138,9 +151,21 @@ let browserStreamDone = false;
 /**
  * Start a new progressive voice session.
  * Prepares both browser speech and XTTS tracks.
+ *
+ * NOTE: Does NOT call speechSynthesis.cancel() when no speech is active.
+ * Chrome silently drops speak() calls immediately after cancel().
  */
 export function startProgressiveSession(sessionId: string, messageId: string): void {
-  stopProgressive();
+  // Stop any XTTS playback from a previous session
+  if (currentSource) {
+    try { currentSource.stop(); } catch { /* already stopped */ }
+    currentSource = null;
+  }
+  // Only cancel browser speech if it's actually playing (avoids Chrome bug
+  // where cancel() immediately before speak() silently drops the speak)
+  if (isSpeakingBrowser && typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
 
   activeSessionId = sessionId;
   browserStreamDone = false;
@@ -152,6 +177,7 @@ export function startProgressiveSession(sessionId: string, messageId: string): v
   isPlayingXtts = false;
   xttsStreamDone = false;
   xttsChunksReceived = 0;
+  _progressiveWasUsed = true;
 
   const store = useVoiceStore.getState();
   store.setPlaying(true, messageId);
@@ -232,6 +258,20 @@ export function isProgressiveActive(): boolean {
   return activeSessionId !== null && browserSessionActive;
 }
 
+/**
+ * Whether progressive playback was used for the last response.
+ * Returns true even after the session has finalized — used by ChatPanel
+ * to avoid redundant monolithic auto-play after progressive finishes.
+ */
+export function wasProgressiveUsedForSession(): boolean {
+  return _progressiveWasUsed;
+}
+
+/** Reset the progressive-used flag. Call after ChatPanel has checked it. */
+export function resetProgressiveUsed(): void {
+  _progressiveWasUsed = false;
+}
+
 /** Get the active progressive session ID. */
 export function getProgressiveSessionId(): string | null {
   return activeSessionId;
@@ -288,6 +328,8 @@ function finalize(): void {
   isSpeakingBrowser = false;
   xttsStreamDone = false;
   browserStreamDone = false;
+  // NOTE: _progressiveWasUsed is NOT reset here — it persists so
+  // ChatPanel can check it after finalization to skip monolithic auto-play.
 
   useVoiceStore.getState().setPlaying(false, null);
   useVoiceStore.getState().setAnalyserNode(null);

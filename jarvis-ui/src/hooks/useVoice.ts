@@ -14,6 +14,7 @@ import { useCallback, useRef } from 'react';
 import { useVoiceStore } from '../stores/voice';
 import { useAuthStore } from '../stores/auth';
 import { getSharedAudioContext, stopProgressive } from '../audio/progressive-queue';
+import { cleanTextForSpeech } from '../audio/text-cleaner';
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://192.168.1.50:4000';
 
@@ -139,18 +140,20 @@ export function useVoice(): UseVoiceReturn {
     // Stop any current playback
     stop();
 
-    if (!text.trim()) return;
+    // Clean markdown and special characters before speaking
+    const cleaned = cleanTextForSpeech(text);
+    if (!cleaned) return;
 
     const state = useVoiceStore.getState();
 
     // All non-browser providers use the backend /api/tts endpoint
     if (state.provider === 'local' || state.provider === 'elevenlabs' || state.provider === 'openai') {
-      const success = await speakWithBackend(text, messageId);
+      const success = await speakWithBackend(cleaned, messageId);
       if (success) return;
     }
 
     // Browser fallback (also used when backend fails)
-    speakWithBrowser(text, messageId);
+    speakWithBrowser(cleaned, messageId);
   }, [stop, speakWithBackend, speakWithBrowser]);
 
   return { speak, stop };

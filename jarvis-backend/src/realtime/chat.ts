@@ -45,6 +45,7 @@ import { detectRecallQuery, buildRecallBlock } from '../ai/memory-recall.js';
 import { memoryBank } from '../db/memories.js';
 import { SentenceAccumulator } from '../ai/sentence-stream.js';
 import { synthesizeSentenceToBuffer, ttsAvailable } from '../ai/tts.js';
+import { cleanTextForSpeech } from '../ai/text-cleaner.js';
 
 // Provider lookup map
 const providers: Record<string, LLMProvider> = {
@@ -207,14 +208,18 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
 
         if (voicePipeline) {
           sentenceAccumulator = new SentenceAccumulator((sentence, sentenceIdx) => {
-            // Emit sentence text immediately so frontend can use browser
+            // Clean markdown/special characters before speech
+            const cleaned = cleanTextForSpeech(sentence);
+            if (!cleaned) return;
+
+            // Emit cleaned sentence text immediately so frontend can use browser
             // SpeechSynthesis while waiting for XTTS audio
-            socket.emit('chat:sentence', { sessionId, index: sentenceIdx, text: sentence });
+            socket.emit('chat:sentence', { sessionId, index: sentenceIdx, text: cleaned });
 
             // Fire-and-forget TTS synthesis per sentence (may take 15-30s on CPU)
             const promise = (async () => {
               try {
-                const audio = await synthesizeSentenceToBuffer(sentence);
+                const audio = await synthesizeSentenceToBuffer(cleaned);
                 if (audio && !abortController.signal.aborted) {
                   socket.emit('chat:audio_chunk', {
                     sessionId,

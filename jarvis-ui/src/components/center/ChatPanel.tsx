@@ -3,7 +3,7 @@ import { useChatSocket } from '../../hooks/useChatSocket';
 import { useChatStore } from '../../stores/chat';
 import { useVoiceStore } from '../../stores/voice';
 import { useVoice } from '../../hooks/useVoice';
-import { isProgressiveActive } from '../../audio/progressive-queue';
+import { wasProgressiveUsedForSession, resetProgressiveUsed } from '../../audio/progressive-queue';
 import { ChatInput } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
 import { AudioVisualizer } from './AudioVisualizer';
@@ -73,16 +73,21 @@ export function ChatPanel() {
 
   // Auto-play TTS when streaming stops (response complete).
   // PERF-04: Skip monolithic speak if the streaming voice pipeline already
-  // delivered audio chunks progressively during this response.
+  // delivered audio progressively during this response.
   useEffect(() => {
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isStreaming;
 
     if (wasStreaming && !isStreaming && voiceEnabled && autoPlay) {
-      // If progressive audio handled playback, don't also do monolithic speak
-      if (isProgressiveActive()) return;
+      // If progressive audio was used (even if already finalized), skip
+      // monolithic speak — the dual-track pipeline already handled playback.
+      if (wasProgressiveUsedForSession()) {
+        resetProgressiveUsed();
+        return;
+      }
 
       // Fallback: monolithic speak for the complete response
+      // (only runs when voiceMode wasn't active during streaming)
       const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
       if (lastAssistant?.content) {
         speak(lastAssistant.content, lastAssistant.id);
