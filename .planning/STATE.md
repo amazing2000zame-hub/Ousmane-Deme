@@ -15,7 +15,7 @@ Plan: 0 of 4
 Status: Milestone planned, ready for Phase 16 execution
 Last activity: 2026-01-27 -- Created v1.4 milestone with 5 phases, 27 requirements, 19 plans
 
-Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.4 (v1.0-v1.2 complete, v1.3 Phases 12-14 shipped, Phase 15 pending)
+Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.4 (v1.0-v1.3 complete, Phase 15 voice retrained & deployed)
 
 ## Performance Metrics
 
@@ -62,18 +62,21 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.4
 - URL validation resolves DNS before checking IP to catch hostname-based SSRF
 - Protected path matching: trailing slash = directory subtree, no slash = exact file
 - Secret blocking: 28 filenames + 13 patterns + 8 path segments
-- Total MCP tools: 28 (23 existing + 4 project + 1 analysis tool)
+- Total MCP tools: 32 (23 base + 5 project/analysis + 4 voice pipeline)
 - analyze_project gathers 6 context sections with prompt injection defense
+- Voice retrained with 64 clips from 3 YouTube/video sources (vs 10 poor clips before)
+- Fine-tuned GPT decoder: 441M params, 6 epochs, 384 steps, loss 6.95→5.1
+- Speaker embedding recomputed with fine-tuned conditioning encoder
 
 Previous milestones:
 - v1.0 MVP (Phases 1-6): Full dashboard + AI + monitoring + safety
 - v1.1 Hybrid Intelligence (Phases 7-10): Hybrid LLM, memory, Docker, testing
 - v1.2 JARVIS Voice (Phase 11): TTS/STT with XTTS v2, ElevenLabs, OpenAI
-- v1.3 File Ops & Intelligence (Phases 12-14): File ops, project tools, code analysis (Phase 15 pending)
+- v1.3 File Ops & Intelligence (Phases 12-15): File ops, project tools, code analysis, voice retraining
 
 ### Pending Todos
 
-- Voice quality poor with current XTTS v2 training -- Phase 15 will retrain with proper sources
+- ~~Voice quality poor with current XTTS v2 training~~ -- Phase 15 COMPLETE: retrained with 64 clips, deployed
 - Voice latency 15-30s -- Phase 16 will reduce to <4s via streaming pipeline
 - Chat UI jank during streaming -- Phase 17 will fix with O(1) append + RAF batching
 - Duplicate Proxmox API calls -- Phase 18 will add shared cache layer
@@ -82,17 +85,16 @@ Previous milestones:
 
 ### Blockers/Concerns
 
-- Voice training quality depends on quality of source videos user provides (Phase 15)
+- ~~Voice training quality depends on quality of source videos user provides~~ (Phase 15 DONE: 3 sources, 64 clips)
 - XTTS local inference speed (~8-15s for full text) is the voice latency bottleneck -- streaming per-sentence is the mitigation
 - React.memo effectiveness depends on stable object references from stores (Phase 19-01 must precede 19-02)
 
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Created v1.4 Performance & Reliability milestone -- 5 phases, 27 requirements, 19 plans
+Stopped at: Phase 15 (Voice Retraining Pipeline) COMPLETE -- trained, deployed, verified
 Resume file: None
 
 **Next steps:**
 1. Begin Phase 16 (Streaming Voice Pipeline) planning or execution
 2. Phase 16-01: Sentence-boundary text accumulator in chat handler
-3. Alternatively, complete Phase 15 (Voice Retraining) first if source videos are available
