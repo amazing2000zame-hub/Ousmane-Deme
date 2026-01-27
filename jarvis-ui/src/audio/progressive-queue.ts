@@ -58,6 +58,9 @@ let xttsQueue: QueuedChunk[] = [];
 let isPlayingXtts = false;
 let currentSource: AudioBufferSourceNode | null = null;
 let xttsStreamDone = false;
+let nextStartTime = 0; // Web Audio clock time for next chunk start
+let prefetchedBuffer: AudioBuffer | null = null;
+let prefetchedIndex = -1;
 
 // ---------------------------------------------------------------------------
 // Shared state
@@ -91,6 +94,9 @@ export function startProgressiveSession(sessionId: string, messageId: string): v
   xttsQueue = [];
   isPlayingXtts = false;
   xttsStreamDone = false;
+  nextStartTime = 0;
+  prefetchedBuffer = null;
+  prefetchedIndex = -1;
   _progressiveWasUsed = true;
 
   const store = useVoiceStore.getState();
@@ -139,6 +145,9 @@ export function stopProgressive(): void {
   xttsQueue = [];
   isPlayingXtts = false;
   xttsStreamDone = false;
+  nextStartTime = 0;
+  prefetchedBuffer = null;
+  prefetchedIndex = -1;
   activeSessionId = null;
 
   useVoiceStore.getState().setPlaying(false, null);
@@ -190,7 +199,16 @@ async function playNextXttsChunk(): Promise<void> {
     const volume = useVoiceStore.getState().volume;
     gain.gain.value = volume;
 
-    const audioBuffer = await ctx.decodeAudioData(chunk.buffer.slice(0));
+    // Use pre-decoded buffer if available for this chunk, otherwise decode now
+    let audioBuffer: AudioBuffer;
+    if (prefetchedBuffer && prefetchedIndex === chunk.index) {
+      audioBuffer = prefetchedBuffer;
+      prefetchedBuffer = null;
+      prefetchedIndex = -1;
+    } else {
+      audioBuffer = await ctx.decodeAudioData(chunk.buffer.slice(0));
+    }
+
     const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(gain);
@@ -199,16 +217,39 @@ async function playNextXttsChunk(): Promise<void> {
     // Connect analyser for visualizer
     useVoiceStore.getState().setAnalyserNode(analyser);
 
+    // Schedule at precise time (gapless playback)
+    const now = ctx.currentTime;
+    const startAt = Math.max(now, nextStartTime);
+    nextStartTime = startAt + audioBuffer.duration;
+
     source.onended = () => {
       currentSource = null;
       playNextXttsChunk();
     };
 
-    source.start();
+    source.start(startAt);
+
+    // Pre-decode next chunk while current is playing
+    prefetchNextChunk();
   } catch (err) {
-    console.warn('[ProgressiveAudio] Failed to play XTTS chunk:', err);
+    console.warn('[ProgressiveAudio] Failed to play chunk:', err);
     currentSource = null;
     playNextXttsChunk();
+  }
+}
+
+async function prefetchNextChunk(): Promise<void> {
+  if (xttsQueue.length === 0) return;
+  const next = xttsQueue[0]; // Peek, don't shift
+  if (next.index === prefetchedIndex) return; // Already prefetched
+
+  try {
+    const { ctx } = getSharedAudioContext();
+    prefetchedBuffer = await ctx.decodeAudioData(next.buffer.slice(0));
+    prefetchedIndex = next.index;
+  } catch {
+    prefetchedBuffer = null;
+    prefetchedIndex = -1;
   }
 }
 
@@ -216,6 +257,10 @@ function finalize(): void {
   activeSessionId = null;
   isPlayingXtts = false;
   xttsStreamDone = false;
+  nextStartTime = 0;
+  prefetchedBuffer = null;
+  prefetchedIndex = -1;
+  xttsQueue = []; // Clear any leftover chunks
   // NOTE: _progressiveWasUsed is NOT reset here — it persists so
   // ChatPanel can check it after finalization to skip monolithic auto-play.
 
