@@ -47,7 +47,6 @@ export function useVoice(): UseVoiceReturn {
     if (!cleaned) return;
 
     try {
-      const state = useVoiceStore.getState();
       const res = await fetch(`${BASE_URL}/api/tts`, {
         method: 'POST',
         headers: {
@@ -56,8 +55,8 @@ export function useVoice(): UseVoiceReturn {
         },
         body: JSON.stringify({
           text: cleaned,
-          voice: state.voice,
-          speed: state.speed,
+          voice: 'jarvis',
+          speed: 1.0,
         }),
       });
 
@@ -71,8 +70,8 @@ export function useVoice(): UseVoiceReturn {
       const { ctx, analyser: sharedAnalyser, gainNode: sharedGain } = getSharedAudioContext();
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
-      // Set volume
-      sharedGain.gain.value = state.volume;
+      // Set volume (hardcoded)
+      sharedGain.gain.value = 0.8;
 
       // Create and play source
       const source = ctx.createBufferSource();

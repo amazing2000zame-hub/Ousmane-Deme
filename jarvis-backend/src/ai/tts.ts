@@ -212,39 +212,19 @@ async function synthesizeOpenAI(options: TTSOptions): Promise<TTSResult> {
 // ---------------------------------------------------------------------------
 
 /**
- * Synthesize speech from text. Automatically selects the best available provider.
- * Priority: local XTTS > ElevenLabs > OpenAI.
+ * Synthesize speech from text. Hardcoded to local XTTS JARVIS voice.
  */
 export async function synthesizeSpeech(options: TTSOptions): Promise<TTSResult> {
-  const requestedProvider = options.provider ?? getActiveProvider();
-
-  if (!requestedProvider) {
-    throw new Error('TTS unavailable: no provider configured (LOCAL_TTS_ENDPOINT, ELEVENLABS_API_KEY, or OPENAI_API_KEY)');
+  if (!localTTSConfigured()) {
+    throw new Error('TTS unavailable: LOCAL_TTS_ENDPOINT not configured');
   }
 
-  // Local XTTS v2 — preferred (free, custom JARVIS voice)
-  if (requestedProvider === 'local' && localTTSConfigured()) {
-    const healthy = await checkLocalTTSHealth();
-    if (healthy) {
-      return synthesizeLocal(options);
-    }
-    // Fall through to cloud providers if local is down
-    console.warn('[TTS] Local XTTS service unhealthy, falling back to cloud provider');
+  const healthy = await checkLocalTTSHealth();
+  if (!healthy) {
+    throw new Error('TTS unavailable: local XTTS service not healthy');
   }
 
-  if (requestedProvider === 'elevenlabs' && process.env.ELEVENLABS_API_KEY) {
-    return synthesizeElevenLabs(options);
-  }
-
-  if (requestedProvider === 'openai' && process.env.OPENAI_API_KEY) {
-    return synthesizeOpenAI(options);
-  }
-
-  // Fallback: try whatever is available (skip local if already failed)
-  if (process.env.ELEVENLABS_API_KEY) return synthesizeElevenLabs(options);
-  if (process.env.OPENAI_API_KEY) return synthesizeOpenAI(options);
-
-  throw new Error('TTS unavailable: no provider configured');
+  return synthesizeLocal(options);
 }
 
 // ---------------------------------------------------------------------------
