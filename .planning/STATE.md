@@ -5,24 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Milestone v1.3 -- Phase 13 complete, ready for Phase 14
+**Current focus:** Milestone v1.3 -- Phase 14 complete, ready for Phase 15
 
 ## Current Position
 
 Milestone: v1.3 File Operations & Project Intelligence
-Phase: 13 of 15 (Project Intelligence) -- COMPLETE
-Plan: 3 of 3 complete (13-01, 13-02, 13-03 all shipped)
+Phase: 14 of 15 (Code Analysis & Discussion) -- COMPLETE
+Plan: 2 of 2 complete (14-01, 14-02 all shipped)
 Status: Phase complete
-Last activity: 2026-01-27 -- Completed Phase 13 (registry client, project tools, secret blocking)
+Last activity: 2026-01-27 -- Completed Phase 14 (analyze_project tool, system prompt update)
 
-Progress: [████████████████████] 100% Phase 13 (v1.0-v1.2 complete, Phases 12-13 shipped)
+Progress: [████████████████████] 100% Phase 14 (v1.0-v1.2 complete, Phases 12-14 shipped)
 
 ## Performance Metrics
 
 **Velocity (from v1.0-v1.2):**
-- Total plans completed: 37
+- Total plans completed: 39
 - Average duration: 4.9 min
-- Phases shipped: 13
+- Phases shipped: 14
 
 ## Accumulated Context
 
@@ -50,7 +50,12 @@ Progress: [████████████████████] 100% Ph
 - Flat sorted list presentation with full cards per user preference
 - Secret blocking: 28 filenames + 13 patterns + 8 path segments
 - Node name mapping: registry lowercase → config case-sensitive ("home" → "Home")
-- Total MCP tools: 27 (23 existing + 4 project tools)
+- Total MCP tools: 28 (23 existing + 4 project + 1 analysis tool)
+- analyze_project gathers 6 context sections (metadata, structure, key files, metrics, TODOs, error patterns)
+- File contents wrapped in XML tags with prompt injection defense preamble
+- Multi-turn discussions handled by existing agentic loop with system prompt guidance
+- Analysis output structured as: architecture overview → quality observations → improvement suggestions
+- 50KB per-file limit for analysis context, 5 matches per file for pattern searches
 
 Previous milestones:
 - v1.0 MVP (Phases 1-6): Full dashboard + AI + monitoring + safety
@@ -72,9 +77,9 @@ Previous milestones:
 ## Session Continuity
 
 Last session: 2026-01-27
-Stopped at: Completed Phase 13 -- Project Intelligence fully shipped
+Stopped at: Completed Phase 14 -- Code Analysis & Discussion fully shipped
 Resume file: None
 
 **Next steps:**
-1. Begin Phase 14 (Code Analysis & Discussion) planning
-2. Implement project analysis MCP tool with prompt engineering
+1. Begin Phase 15 (Voice Retraining Pipeline) planning
+2. Audio extraction from video files via ffmpeg

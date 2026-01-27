@@ -22,10 +22,10 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **PROJ-01**: JARVIS can browse project directory structure on any cluster node
 - [x] **PROJ-02**: JARVIS can read source files from any project on the cluster
 - [x] **PROJ-03**: JARVIS can search/grep across project files for patterns
-- [ ] **PROJ-04**: JARVIS can analyze project code and suggest improvements via chat
+- [x] **PROJ-04**: JARVIS can analyze project code and suggest improvements via chat
 - [x] **PROJ-05**: Project browsing integrates with existing project registry (24 indexed projects on agent1)
 - [x] **PROJ-06**: Sensitive files (.env, private keys, credentials, .git/config) are blocked from read access
-- [ ] **PROJ-07**: Project analysis provides architecture overview, code quality notes, and actionable improvement suggestions
+- [x] **PROJ-07**: Project analysis provides architecture overview, code quality notes, and actionable improvement suggestions
 
 ### Voice Retraining
 
@@ -76,10 +76,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROJ-01 | Phase 13 | Complete |
 | PROJ-02 | Phase 13 | Complete |
 | PROJ-03 | Phase 13 | Complete |
-| PROJ-04 | Phase 14 | Pending |
+| PROJ-04 | Phase 14 | Complete |
 | PROJ-05 | Phase 13 | Complete |
 | PROJ-06 | Phase 13 | Complete |
-| PROJ-07 | Phase 14 | Pending |
+| PROJ-07 | Phase 14 | Complete |
 | VOICE-13 | Phase 15 | Pending |
 | VOICE-14 | Phase 15 | Pending |
 | VOICE-15 | Phase 15 | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-01-26*
-*Last updated: 2026-01-27 after Phase 13 completion (PROJ-01, PROJ-02, PROJ-03, PROJ-05, PROJ-06 complete)*
+*Last updated: 2026-01-27 after Phase 14 completion (all PROJ requirements complete)*

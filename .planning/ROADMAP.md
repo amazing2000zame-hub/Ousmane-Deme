@@ -149,11 +149,11 @@ Plans:
   1. User can ask JARVIS to analyze a project and receive a structured response covering architecture overview, code quality observations, and specific improvement suggestions
   2. User can have a multi-turn conversation about a project's code where JARVIS references actual file contents and provides contextual recommendations
   3. Analysis output includes actionable suggestions (not vague advice) tied to specific files or patterns found in the codebase
-**Plans**: TBD
+**Status**: Complete
 
 Plans:
-- [ ] 14-01: Project analysis MCP tool + analysis prompt engineering with prompt injection defense
-- [ ] 14-02: Multi-turn project discussion with file context retrieval
+- [x] 14-01-PLAN.md -- analyze_project MCP tool (6-section context gathering, prompt injection defense)
+- [x] 14-02-PLAN.md -- System prompt update for multi-turn project discussion guidance
 
 #### Phase 15: Voice Retraining Pipeline
 **Goal**: Users can provide JARVIS video source files and trigger an end-to-end pipeline that extracts clean audio, builds a training dataset, retrains the XTTS v2 model, and deploys the improved voice -- all orchestrated through chat
@@ -238,7 +238,7 @@ Phases 12 through 15 execute sequentially. Phase 15 depends on Phase 12 (file do
 | 11. JARVIS Voice | v1.2 | 4/4 | Complete | 2026-01-26 |
 | 12. File Operations | v1.3 | 3/3 | Complete | 2026-01-27 |
 | 13. Project Intelligence | v1.3 | 3/3 | Complete | 2026-01-27 |
-| 14. Code Analysis | v1.3 | 0/2 | Not started | - |
+| 14. Code Analysis | v1.3 | 2/2 | Complete | 2026-01-27 |
 | 15. Voice Retraining | v1.3 | 0/3 | Not started | - |
 
 ---
