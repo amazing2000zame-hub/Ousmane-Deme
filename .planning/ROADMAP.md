@@ -315,10 +315,11 @@ Plans:
   3. When XTTS container is stopped or crashed, JARVIS continues speaking immediately using Piper without any user intervention
   4. When XTTS recovers from failure, subsequent responses automatically resume using the JARVIS voice without requiring a restart
 
-**Plans:** 2 plans
+**Status**: Complete (5 commits: 546489d, d44a88b, 4bf6f69, 583f7bd, 7e4f254)
+
 Plans:
-- [ ] 22-01-PLAN.md -- Deploy Piper TTS Docker container + config wiring
-- [ ] 22-02-PLAN.md -- Fallback routing with 3s timeout, health tracking, engine lock
+- [x] 22-01-PLAN.md -- Deploy Piper TTS Docker container + config wiring
+- [x] 22-02-PLAN.md -- Fallback routing with 3s timeout, health tracking, engine lock
 
 #### Phase 23: TTS Performance -- Parallel Synthesis & Opus Encoding
 **Goal**: Users experience faster multi-sentence responses through bounded parallel TTS synthesis, and remote users get 8-10x smaller audio payloads via optional Opus encoding
@@ -445,11 +446,11 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 | 19. Dashboard Rendering | v1.4 | 4/4 | Complete | 2026-01-27 |
 | 20. Theme Consistency | v1.4 | 3/3 | Complete | 2026-01-27 |
 | 21. Quick Wins & Baseline | v1.5 | 1/1 | Complete | 2026-01-27 |
-| 22. TTS Reliability | v1.5 | 0/2 | Not started | - |
+| 22. TTS Reliability | v1.5 | 2/2 | Complete | 2026-01-27 |
 | 23. Parallel TTS + Opus | v1.5 | 0/? | Not started | - |
 | 24. Observability & Context | v1.5 | 0/? | Not started | - |
 | 25. Chat Virtualization | v1.5 | 0/? | Not started | - |
 
 ---
 
-Last updated: 2026-01-27 (Phase 22 planned -- 2 plans in 2 waves)
+Last updated: 2026-01-27 (Phase 22 complete -- TTS reliability via Piper fallback)

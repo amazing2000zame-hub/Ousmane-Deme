@@ -9,10 +9,10 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### TTS Reliability & Fallback
 
-- [ ] **TTS-01**: Piper TTS deployed as Docker container providing <200ms CPU-based speech synthesis as fallback engine
-- [ ] **TTS-02**: Per-sentence 3-second timeout triggers automatic Piper fallback instead of skipping audio
-- [ ] **TTS-03**: Health-aware TTS routing skips XTTS when recent health check indicates failure
-- [ ] **TTS-04**: TTS engine consistency enforced -- if XTTS fails on any sentence, Piper used for all remaining sentences in that response
+- [x] **TTS-01**: Piper TTS deployed as Docker container providing <200ms CPU-based speech synthesis as fallback engine
+- [x] **TTS-02**: Per-sentence 3-second timeout triggers automatic Piper fallback instead of skipping audio
+- [x] **TTS-03**: Health-aware TTS routing skips XTTS when recent health check indicates failure
+- [x] **TTS-04**: TTS engine consistency enforced -- if XTTS fails on any sentence, Piper used for all remaining sentences in that response
 
 ### TTS Performance
 
@@ -81,10 +81,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERF-01 | Phase 21 | Done |
 | PERF-04 | Phase 21 | Done |
 | OBS-02 | Phase 21 | Done |
-| TTS-01 | Phase 22 | Pending |
-| TTS-02 | Phase 22 | Pending |
-| TTS-03 | Phase 22 | Pending |
-| TTS-04 | Phase 22 | Pending |
+| TTS-01 | Phase 22 | Done |
+| TTS-02 | Phase 22 | Done |
+| TTS-03 | Phase 22 | Done |
+| TTS-04 | Phase 22 | Done |
 | PERF-02 | Phase 23 | Pending |
 | PERF-03 | Phase 23 | Pending |
 | AUDIO-01 | Phase 23 | Pending |
