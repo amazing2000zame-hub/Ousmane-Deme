@@ -331,6 +331,12 @@ Plans:
   3. When Opus encoding is enabled via config flag, audio payloads transmitted over Socket.IO are 8-10x smaller than WAV, verified by observing network transfer sizes
   4. LLM inference speed (tokens/sec) does not degrade more than 10% when parallel TTS is active, confirmed by latency tracing (Phase 24)
 
+**Plans:** 3 plans
+Plans:
+- [ ] 23-01-PLAN.md -- Infrastructure, config, disk cache module, Opus encoding module
+- [ ] 23-02-PLAN.md -- Backend TTS integration (disk cache, parallel drain, Opus, pre-warm)
+- [ ] 23-03-PLAN.md -- Frontend gapless playback (clock scheduling, pre-decode)
+
 #### Phase 24: Observability & Context Management
 **Goal**: Operators can trace exactly where time is spent in every request, and users benefit from smarter context management that keeps conversations coherent without overflowing the LLM context window
 **Depends on**: Phase 23 (tracing should measure the optimized pipeline, not the baseline; context window is independent but sequenced here for delivery)
@@ -447,10 +453,10 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 | 20. Theme Consistency | v1.4 | 3/3 | Complete | 2026-01-27 |
 | 21. Quick Wins & Baseline | v1.5 | 1/1 | Complete | 2026-01-27 |
 | 22. TTS Reliability | v1.5 | 2/2 | Complete | 2026-01-27 |
-| 23. Parallel TTS + Opus | v1.5 | 0/? | Not started | - |
+| 23. Parallel TTS + Opus | v1.5 | 0/3 | Not started | - |
 | 24. Observability & Context | v1.5 | 0/? | Not started | - |
 | 25. Chat Virtualization | v1.5 | 0/? | Not started | - |
 
 ---
 
-Last updated: 2026-01-27 (Phase 22 complete -- TTS reliability via Piper fallback)
+Last updated: 2026-01-27 (Phase 23 planned -- 3 plans in 2 waves)
