@@ -33,6 +33,7 @@ services:
       - LOCAL_LLM_ENDPOINT=${LOCAL_LLM_ENDPOINT:-http://192.168.1.50:8080}
       - LOCAL_TTS_ENDPOINT=${LOCAL_TTS_ENDPOINT:-http://jarvis-tts:5050}
       - DAILY_COST_LIMIT=${DAILY_COST_LIMIT:-10.0}
+      - PIPER_TTS_ENDPOINT=${PIPER_TTS_ENDPOINT:-http://jarvis-piper:5000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -120,8 +121,41 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  jarvis-piper:
+    image: rhasspy/wyoming-piper:latest
+    container_name: jarvis-piper
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - piper-voices:/data
+    command: --voice en_US-hfc_male-medium
+    networks:
+      - jarvis-net
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 512M
+        reservations:
+          cpus: "1"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/?text=test"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
 volumes:
   jarvis-data:
+    driver: local
+  piper-voices:
     driver: local
 
 networks:
