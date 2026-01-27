@@ -17,6 +17,7 @@ import OpenAI from 'openai';
 import { Readable } from 'node:stream';
 import http from 'node:http';
 import { config } from '../config.js';
+import { initDiskCache, diskCacheGet, diskCachePut } from './tts-cache.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -448,10 +449,34 @@ export async function synthesizeSentenceWithFallback(
   const cachedXtts = cacheGet(text, 'xtts');
   if (cachedXtts) return { ...cachedXtts, engine: 'xtts' as TTSEngine };
 
+  // Check XTTS disk cache (second tier)
+  const diskXtts = await diskCacheGet(text, 'xtts');
+  if (diskXtts) {
+    const audio: CachedAudioWithEngine = {
+      buffer: diskXtts,
+      contentType: 'audio/wav',
+      provider: 'local',
+      engine: 'xtts',
+    };
+    cachePut(text, audio, 'xtts'); // Promote to in-memory
+    return audio;
+  }
+
   // Check Piper cache if XTTS is known-unhealthy (skip waiting for XTTS)
   if (!shouldTryXTTS()) {
     const cachedPiper = cacheGet(text, 'piper');
     if (cachedPiper) return { ...cachedPiper, engine: 'piper' as TTSEngine };
+    const diskPiper = await diskCacheGet(text, 'piper');
+    if (diskPiper) {
+      const audio: CachedAudioWithEngine = {
+        buffer: diskPiper,
+        contentType: 'audio/wav',
+        provider: 'local',
+        engine: 'piper',
+      };
+      cachePut(text, audio, 'piper');
+      return audio;
+    }
     return synthesizeViaPiper(text);
   }
 
@@ -485,6 +510,7 @@ export async function synthesizeSentenceWithFallback(
           engine: 'xtts',
         };
         cachePut(text, audio, 'xtts');
+        diskCachePut(text, 'xtts', audio.buffer).catch(() => {}); // Fire-and-forget disk write
         markXTTSSucceeded();
         return audio;
       }
@@ -513,6 +539,19 @@ async function synthesizeViaPiper(text: string): Promise<CachedAudioWithEngine |
   const cached = cacheGet(text, 'piper');
   if (cached) return { ...cached, engine: 'piper' as TTSEngine };
 
+  // Check Piper disk cache (second tier)
+  const diskCached = await diskCacheGet(text, 'piper');
+  if (diskCached) {
+    const audio: CachedAudioWithEngine = {
+      buffer: diskCached,
+      contentType: 'audio/wav',
+      provider: 'local',
+      engine: 'piper',
+    };
+    cachePut(text, audio, 'piper'); // Promote to in-memory
+    return audio;
+  }
+
   if (!piperTTSConfigured()) {
     console.warn('[TTS] Piper not configured, cannot fallback');
     return null;
@@ -532,6 +571,7 @@ async function synthesizeViaPiper(text: string): Promise<CachedAudioWithEngine |
       engine: 'piper',
     };
     cachePut(text, audio, 'piper');
+    diskCachePut(text, 'piper', audio.buffer).catch(() => {}); // Fire-and-forget
     return audio;
   } catch (err) {
     console.warn(`[TTS] Piper fallback also failed: ${err instanceof Error ? err.message : err}`);
@@ -603,6 +643,57 @@ export async function restartTTSContainer(): Promise<boolean> {
 
     req.end();
   });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 23: Pre-warm common JARVIS phrases into disk + in-memory cache
+// ---------------------------------------------------------------------------
+
+const PREWARM_PHRASES = [
+  'Certainly, sir.',
+  'Right away.',
+  'Systems nominal.',
+  'All systems operational.',
+  'Good morning, sir.',
+  'Good evening, sir.',
+  'At your service.',
+  'Understood.',
+  'Done.',
+  'Task complete.',
+  'Processing your request.',
+  "I'll look into that right away.",
+];
+
+export async function prewarmTtsCache(): Promise<void> {
+  await initDiskCache();
+  console.log('[TTS Cache] Starting pre-warm of common phrases...');
+
+  let warmed = 0;
+  let skipped = 0;
+
+  for (const phrase of PREWARM_PHRASES) {
+    // Check disk cache first (already cached from previous run?)
+    const cached = await diskCacheGet(phrase, 'xtts');
+    if (cached) {
+      // Promote to in-memory cache
+      cachePut(phrase, { buffer: cached, contentType: 'audio/wav', provider: 'local' }, 'xtts');
+      skipped++;
+      continue;
+    }
+
+    // Synthesize via the fallback chain (serial, one at a time)
+    try {
+      const audio = await synthesizeSentenceWithFallback(phrase);
+      if (audio) {
+        await diskCachePut(phrase, audio.engine, audio.buffer);
+        warmed++;
+      }
+    } catch (err) {
+      console.warn(`[TTS Cache] Pre-warm failed for "${phrase}": ${err}`);
+    }
+  }
+
+  console.log(`[TTS Cache] Pre-warm complete: ${warmed} synthesized, ${skipped} already cached`);
 }
 
 // ---------------------------------------------------------------------------

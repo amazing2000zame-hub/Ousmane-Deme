@@ -15,6 +15,7 @@ import { setupChatHandlers } from './realtime/chat.js';
 import { costRouter } from './api/cost.js';
 import { memoryRouter } from './api/memory.js';
 import { ttsRouter } from './api/tts.js';
+import { prewarmTtsCache } from './ai/tts.js';
 import { authMiddleware } from './auth/jwt.js';
 import { memoryStore } from './db/memory.js';
 import { startMemoryCleanup, stopMemoryCleanup } from './services/memory-cleanup.js';
@@ -102,6 +103,13 @@ server.listen(config.port, () => {
     summary: '[System] JARVIS Online: Backend services initialized -- monitoring active',
   });
   console.log('[System] JARVIS Online event emitted');
+
+  // Phase 23: Pre-warm TTS disk cache after startup settles
+  setTimeout(() => {
+    prewarmTtsCache().catch((err) => {
+      console.warn(`[TTS Cache] Pre-warm error: ${err}`);
+    });
+  }, 10_000); // 10s delay to let XTTS container stabilize
 });
 
 // Graceful shutdown
