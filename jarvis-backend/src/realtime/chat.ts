@@ -46,6 +46,7 @@ import { memoryBank } from '../db/memories.js';
 import { SentenceAccumulator } from '../ai/sentence-stream.js';
 import { synthesizeSentenceWithFallback, ttsAvailable, type TTSEngine } from '../ai/tts.js';
 import { cleanTextForSpeech } from '../ai/text-cleaner.js';
+import { encodeWavToOpus, isOpusEnabled } from '../ai/opus-encode.js';
 
 // Provider lookup map
 const providers: Record<string, LLMProvider> = {
@@ -204,56 +205,83 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         let accumulatedText = '';
 
         // ---------------------------------------------------------------
-        // PERF-01/02/03: Streaming voice pipeline — serial TTS queue
+        // PERF-01/02/03: Streaming voice pipeline — bounded parallel TTS queue
         //
-        // Sentences are synthesized ONE AT A TIME to:
-        //  - Guarantee correct playback order (index assigned at detection)
-        //  - Prevent XTTS server overload (single concurrent request)
-        //  - Reduce CPU contention with llama-server
-        //  - Enable clean abort between sentences
+        // Up to config.ttsMaxParallel sentences synthesize concurrently:
+        //  - Index assigned at detection (deterministic order)
+        //  - Bounded workers prevent CPU starvation of llama-server
+        //  - Engine lock maintained across workers (JS single-threaded safety)
+        //  - Optional Opus encoding before Socket.IO emission (AUDIO-01)
+        //  - Clean abort between sentences via AbortController
         // ---------------------------------------------------------------
         const voicePipeline = voiceMode && ttsAvailable();
         let sentenceAccumulator: SentenceAccumulator | null = null;
         let audioChunkIndex = 0;
 
-        // Serial TTS queue — shared across sentence callbacks and onDone
+        // Bounded parallel TTS queue — shared across sentence callbacks and onDone
         const ttsQueue: { text: string; index: number }[] = [];
-        let ttsProcessing = false;
         let ttsStreamFinished = false;
         let engineLock: TTSEngine | null = null;
+        let activeWorkers = 0;
+        let totalEmitted = 0;
 
         async function drainTtsQueue(): Promise<void> {
-          if (ttsProcessing) return;
-          ttsProcessing = true;
-          while (ttsQueue.length > 0) {
+          // Launch up to config.ttsMaxParallel concurrent synthesis tasks
+          while (ttsQueue.length > 0 && activeWorkers < config.ttsMaxParallel) {
             if (abortController.signal.aborted) break;
             const item = ttsQueue.shift()!;
-            try {
-              const audio = await synthesizeSentenceWithFallback(item.text, { engineLock });
-              if (audio && !abortController.signal.aborted) {
-                // TTS-04: Update engine lock for voice consistency
-                if (engineLock === null) {
-                  engineLock = audio.engine;
-                }
-                if (audio.engine === 'piper') {
-                  engineLock = 'piper'; // Once piper, always piper for this response
-                }
+            activeWorkers++;
 
-                socket.emit('chat:audio_chunk', {
-                  sessionId,
-                  index: item.index,
-                  contentType: audio.contentType,
-                  audio: audio.buffer,
-                });
-              }
-            } catch (err) {
-              console.warn(`[Chat] TTS error sentence ${item.index}: ${err instanceof Error ? err.message : err}`);
-            }
+            // Fire-and-forget -- does NOT block the while loop
+            synthesizeAndEmit(item).finally(() => {
+              activeWorkers--;
+              // When a slot frees, try to fill it
+              drainTtsQueue();
+            });
           }
-          ttsProcessing = false;
-          // When stream is done and queue fully drained, signal audio complete
-          if (ttsStreamFinished && ttsQueue.length === 0) {
+
+          // When stream is done, all workers finished, and queue empty, signal complete
+          if (ttsStreamFinished && activeWorkers === 0 && ttsQueue.length === 0) {
             socket.emit('chat:audio_done', { sessionId, totalChunks: audioChunkIndex });
+          }
+        }
+
+        async function synthesizeAndEmit(item: { text: string; index: number }): Promise<void> {
+          try {
+            const audio = await synthesizeSentenceWithFallback(item.text, { engineLock });
+            if (audio && !abortController.signal.aborted) {
+              // TTS-04: Update engine lock for voice consistency
+              if (engineLock === null) {
+                engineLock = audio.engine;
+              }
+              if (audio.engine === 'piper') {
+                engineLock = 'piper'; // Once piper, always piper for this response
+              }
+
+              // Optional Opus encoding (AUDIO-01)
+              let emitBuffer = audio.buffer;
+              let emitContentType = audio.contentType;
+              if (isOpusEnabled()) {
+                try {
+                  const opus = await encodeWavToOpus(audio.buffer);
+                  emitBuffer = opus.buffer;
+                  emitContentType = opus.contentType;
+                } catch (err) {
+                  console.warn(`[Chat] Opus encoding failed, sending WAV: ${err instanceof Error ? err.message : err}`);
+                  // Fall through with original WAV
+                }
+              }
+
+              socket.emit('chat:audio_chunk', {
+                sessionId,
+                index: item.index,
+                contentType: emitContentType,
+                audio: emitBuffer,
+              });
+              totalEmitted++;
+            }
+          } catch (err) {
+            console.warn(`[Chat] TTS error sentence ${item.index}: ${err instanceof Error ? err.message : err}`);
           }
         }
 
@@ -356,8 +384,8 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
             if (sentenceAccumulator) {
               sentenceAccumulator.flush();
               ttsStreamFinished = true;
-              // If queue already empty (all synthesized), signal immediately
-              if (!ttsProcessing && ttsQueue.length === 0) {
+              // If queue already empty and no active workers, signal immediately
+              if (activeWorkers === 0 && ttsQueue.length === 0) {
                 socket.emit('chat:audio_done', { sessionId, totalChunks: audioChunkIndex });
               }
               // Otherwise drainTtsQueue() signals when it finishes
