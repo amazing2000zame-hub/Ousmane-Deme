@@ -15,8 +15,10 @@ export class SentenceAccumulator {
   private readonly onSentence: (sentence: string, index: number) => void;
 
   /** Minimum characters before we consider a boundary valid.
-   *  Avoids splitting on abbreviations like "Dr." or "U.S." */
-  private static readonly MIN_SENTENCE_LEN = 20;
+   *  Covers 'Yes.' (4 chars), 'Done.' (5 chars), 'Sure.' (5 chars) without
+   *  false-splitting on 'Dr.' (3 chars). Text shorter than 4 chars is still
+   *  spoken via flush() at end-of-stream. */
+  private static readonly MIN_SENTENCE_LEN = 4;
 
   constructor(onSentence: (sentence: string, index: number) => void) {
     this.onSentence = onSentence;
