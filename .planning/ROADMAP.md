@@ -303,7 +303,7 @@ Phases 16, 17, 18, 19 are largely independent and could run in parallel if neede
 
 **Plans:** 1 plan
 Plans:
-- [ ] 21-01-PLAN.md -- SQLite PRAGMAs, TTS cache/restart, sentence tuning, component health endpoint
+- [x] 21-01-PLAN.md -- SQLite PRAGMAs, TTS cache/restart, sentence tuning, component health endpoint
 
 #### Phase 22: TTS Reliability -- Piper Fallback Engine
 **Goal**: Users hear JARVIS speak on every response with 99%+ reliability because a fast Piper TTS fallback activates automatically when XTTS is slow or unhealthy
@@ -314,6 +314,11 @@ Plans:
   2. User never hears a mid-response voice change -- if XTTS fails on any sentence, all remaining sentences in that response use Piper consistently
   3. When XTTS container is stopped or crashed, JARVIS continues speaking immediately using Piper without any user intervention
   4. When XTTS recovers from failure, subsequent responses automatically resume using the JARVIS voice without requiring a restart
+
+**Plans:** 2 plans
+Plans:
+- [ ] 22-01-PLAN.md -- Deploy Piper TTS Docker container + config wiring
+- [ ] 22-02-PLAN.md -- Fallback routing with 3s timeout, health tracking, engine lock
 
 #### Phase 23: TTS Performance -- Parallel Synthesis & Opus Encoding
 **Goal**: Users experience faster multi-sentence responses through bounded parallel TTS synthesis, and remote users get 8-10x smaller audio payloads via optional Opus encoding
@@ -440,11 +445,11 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 | 19. Dashboard Rendering | v1.4 | 4/4 | Complete | 2026-01-27 |
 | 20. Theme Consistency | v1.4 | 3/3 | Complete | 2026-01-27 |
 | 21. Quick Wins & Baseline | v1.5 | 1/1 | Complete | 2026-01-27 |
-| 22. TTS Reliability | v1.5 | 0/? | Not started | - |
+| 22. TTS Reliability | v1.5 | 0/2 | Not started | - |
 | 23. Parallel TTS + Opus | v1.5 | 0/? | Not started | - |
 | 24. Observability & Context | v1.5 | 0/? | Not started | - |
 | 25. Chat Virtualization | v1.5 | 0/? | Not started | - |
 
 ---
 
-Last updated: 2026-01-27 (Phase 21 complete -- Quick Wins & Baseline shipped)
+Last updated: 2026-01-27 (Phase 22 planned -- 2 plans in 2 waves)
