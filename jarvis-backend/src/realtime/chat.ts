@@ -47,6 +47,8 @@ import { SentenceAccumulator } from '../ai/sentence-stream.js';
 import { synthesizeSentenceWithFallback, ttsAvailable, type TTSEngine } from '../ai/tts.js';
 import { cleanTextForSpeech } from '../ai/text-cleaner.js';
 import { encodeWavToOpus, isOpusEnabled } from '../ai/opus-encode.js';
+import { RequestTimer } from './timing.js';
+import { ContextManager } from '../ai/context-manager.js';
 
 // Provider lookup map
 const providers: Record<string, LLMProvider> = {
@@ -88,6 +90,8 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
     const sessionLastProvider = new Map<string, string>();
     /** PERF-014: Cache session history in-memory per socket (DB read once per session) */
     const sessionHistoryCache = new Map<string, Array<{ role: string; content: string }>>();
+    /** Phase 24: Shared context manager for sliding window + summarization */
+    const contextManager = new ContextManager();
 
     // ------------------------------------------------------------------
     // chat:send -- user sends a message
@@ -102,6 +106,9 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
       }
 
       try {
+        // Phase 24: Pipeline timing — t0_received is auto-marked in constructor
+        const timer = new RequestTimer();
+
         // Save user message to DB
         try {
           memoryStore.saveMessage({
@@ -176,6 +183,7 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         // Route message to appropriate provider
         const lastProvider = sessionLastProvider.get(sessionId);
         const decision = routeMessage(message, overrideActive, lastProvider);
+        timer.mark('t1_routed');
         const provider = providers[decision.provider];
         console.log(`[Chat] Routing to ${decision.provider}: ${decision.reason}`);
 
@@ -225,6 +233,11 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         let activeWorkers = 0;
         let totalEmitted = 0;
 
+        // Phase 24: Timing flags for first-occurrence marks
+        let firstTokenMarked = false;
+        let firstAudioReady = false;
+        let firstAudioEmitted = false;
+
         async function drainTtsQueue(): Promise<void> {
           // Launch up to config.ttsMaxParallel concurrent synthesis tasks
           while (ttsQueue.length > 0 && activeWorkers < config.ttsMaxParallel) {
@@ -258,6 +271,12 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
                 engineLock = 'piper'; // Once piper, always piper for this response
               }
 
+              // Phase 24: Mark first audio synthesis completed
+              if (!firstAudioReady) {
+                firstAudioReady = true;
+                timer.mark('t6_tts_first');
+              }
+
               // Optional Opus encoding (AUDIO-01)
               let emitBuffer = audio.buffer;
               let emitContentType = audio.contentType;
@@ -278,6 +297,11 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
                 contentType: emitContentType,
                 audio: emitBuffer,
               });
+              // Phase 24: Mark first audio delivered to client
+              if (!firstAudioEmitted) {
+                firstAudioEmitted = true;
+                timer.mark('t7_audio_delivered');
+              }
               totalEmitted++;
             }
           } catch (err) {
@@ -294,6 +318,7 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
             // Signal synthesizing stage on first sentence
             if (!firstSentenceEmitted) {
               firstSentenceEmitted = true;
+              timer.mark('t5_tts_queued');
               socket.emit('chat:stage', { sessionId, stage: 'synthesizing', detail: '' });
             }
 
@@ -309,6 +334,11 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         // Build streaming callbacks
         const callbacks: StreamCallbacks = {
           onTextDelta: (text: string) => {
+            // Phase 24: Mark first token received
+            if (!firstTokenMarked) {
+              firstTokenMarked = true;
+              timer.mark('t3_first_token');
+            }
             accumulatedText += text;
             socket.emit('chat:token', { sessionId, text });
             // PERF-01: Feed sentence accumulator during streaming
@@ -341,6 +371,7 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           },
 
           onDone: (usage) => {
+            timer.mark('t4_llm_done');
             const cost = calculateCost(decision.provider, usage);
 
             if (accumulatedText.length > 0) {
@@ -391,10 +422,16 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
               // Otherwise drainTtsQueue() signals when it finishes
             }
 
+            // Phase 24: Finalize timing and emit breakdown
+            timer.mark('total');
+            const timing = timer.breakdown();
+            console.log(`[Chat] ${timer.toLog()}`);
+
             // Emit chat:done immediately (text stream complete).
             // Audio may still be arriving via progressive pipeline;
             // frontend uses _progressiveWasUsed flag to avoid double-play.
-            socket.emit('chat:done', { sessionId, usage, provider: decision.provider, cost });
+            socket.emit('chat:done', { sessionId, usage, provider: decision.provider, cost, timing });
+            socket.emit('chat:timing', { sessionId, timing });
             abortControllers.delete(sessionId);
           },
 
@@ -405,6 +442,7 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         };
 
         // Dispatch to provider
+        timer.mark('t2_llm_start');
         const pending = await provider.chat(
           chatMessages,
           systemPrompt,
