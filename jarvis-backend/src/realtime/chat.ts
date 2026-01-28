@@ -137,36 +137,24 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           // Non-critical
         }
 
-        // PERF-014: Load conversation history (cached in-memory after first DB read)
-        let history: Array<{ role: string; content: string }> = [];
+        // Phase 24: Add user message to context manager
+        contextManager.addMessage(sessionId, 'user', message.trim());
+
+        // PERF-014: Also maintain sessionHistoryCache for backward compat (memory extraction, etc.)
         const cachedHistory = sessionHistoryCache.get(sessionId);
         if (cachedHistory) {
-          // Use cached history, add current message
           cachedHistory.push({ role: 'user', content: message.trim() });
-          history = cachedHistory.slice(-config.chatHistoryLimit);
         } else {
           try {
             const dbMessages = memoryStore.getSessionMessages(sessionId);
-            history = dbMessages.slice(-config.chatHistoryLimit);
-            // Initialize cache with DB history
-            sessionHistoryCache.set(sessionId, [...history]);
+            sessionHistoryCache.set(sessionId, [...dbMessages, { role: 'user', content: message.trim() }]);
+            // Seed context manager with DB history for first message in session
+            for (const msg of dbMessages) {
+              contextManager.addMessage(sessionId, msg.role, msg.content);
+            }
           } catch {
-            history = [{ role: 'user', content: message.trim() }];
-            sessionHistoryCache.set(sessionId, [...history]);
+            sessionHistoryCache.set(sessionId, [{ role: 'user', content: message.trim() }]);
           }
-        }
-
-        // Convert DB messages to simple format (works for both providers)
-        const chatMessages = history
-          .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .map((m) => ({
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-          }));
-
-        // Ensure we have at least the current message
-        if (chatMessages.length === 0 || chatMessages[chatMessages.length - 1].content !== message.trim()) {
-          chatMessages.push({ role: 'user', content: message.trim() });
         }
 
         // Detect override passkey in user message
@@ -204,6 +192,21 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         const systemPrompt = decision.provider === 'claude'
           ? buildClaudeSystemPrompt(summary, overrideActive, message, recallBlock, voiceMode)
           : buildQwenSystemPrompt(summary, message, recallBlock, voiceMode);
+
+        // Phase 24: Build context-managed message history
+        const systemPromptTokenEstimate = Math.ceil(systemPrompt.length / 4);
+        const memoryContextTokenEstimate = recallBlock ? Math.ceil(recallBlock.length / 4) : 0;
+        const chatMessages = await contextManager.buildContextMessages(
+          sessionId,
+          systemPromptTokenEstimate,
+          memoryContextTokenEstimate,
+        );
+
+        // Ensure current message is included (buildContextMessages works from session state)
+        const lastMsg = chatMessages[chatMessages.length - 1];
+        if (!lastMsg || lastMsg.content !== message.trim() || lastMsg.role !== 'user') {
+          chatMessages.push({ role: 'user', content: message.trim() });
+        }
 
         // Create abort controller for this session
         const abortController = new AbortController();
@@ -411,6 +414,18 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
               if (cached) cached.push({ role: 'assistant', content: accumulatedText });
             }
 
+            // Phase 24: Update context manager with assistant response
+            if (accumulatedText.length > 0) {
+              contextManager.addMessage(sessionId, 'assistant', accumulatedText);
+            }
+
+            // Phase 24: Trigger background summarization if threshold exceeded
+            if (contextManager.shouldSummarize(sessionId)) {
+              contextManager.summarize(sessionId)
+                .catch(err => console.warn(`[Context] Summarization failed: ${err instanceof Error ? err.message : err}`));
+              // Non-blocking: summarization runs in background, result available for next message
+            }
+
             // Flush remaining sentence text and mark TTS stream as done
             if (sentenceAccumulator) {
               sentenceAccumulator.flush();
@@ -600,6 +615,10 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
       abortControllers.clear();
       pendingConfirmations.clear();
       sessionLastProvider.clear();
+      // Phase 24: Clear context manager sessions for this socket
+      for (const sid of sessionHistoryCache.keys()) {
+        contextManager.clearSession(sid);
+      }
       sessionHistoryCache.clear();
     });
   });
