@@ -28,11 +28,11 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Backend Optimization
 
 - [x] **BACK-01**: SQLite performance PRAGMAs applied (synchronous=NORMAL, cache_size=-64000, temp_store=MEMORY, mmap_size=268435456)
-- [ ] **BACK-02**: Conversation sliding window keeping last 20-30 messages in full with token-aware truncation and background Qwen summarization of older context
+- [x] **BACK-02**: Conversation sliding window keeping last 20-30 messages in full with token-aware truncation and background Qwen summarization of older context
 
 ### Observability
 
-- [ ] **OBS-01**: Latency tracing pipeline with per-request timing breakdown (t0 message received through t5 audio plays) using performance.now() timestamps
+- [x] **OBS-01**: Latency tracing pipeline with per-request timing breakdown (t0 message received through t5 audio plays) using performance.now() timestamps
 - [x] **OBS-02**: Expanded /api/health endpoint returning component-level status for TTS engines, LLM, Proxmox API connectivity, and database
 
 ### Frontend
@@ -88,8 +88,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERF-02 | Phase 23 | Complete |
 | PERF-03 | Phase 23 | Complete |
 | AUDIO-01 | Phase 23 | Complete |
-| OBS-01 | Phase 24 | Pending |
-| BACK-02 | Phase 24 | Pending |
+| OBS-01 | Phase 24 | Complete |
+| BACK-02 | Phase 24 | Complete |
 | UI-01 | Phase 25 | Pending |
 
 **Coverage:**

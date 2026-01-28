@@ -347,10 +347,11 @@ Plans:
   2. Conversations longer than 20-30 messages automatically summarize older context in the background using Qwen, keeping the full recent window plus a compressed summary of earlier discussion
   3. Tool call context (VMIDs, IPs, file paths, error messages) survives summarization -- a user who discussed a specific VM 40 messages ago can reference it and JARVIS still knows the VMID
 
-**Plans:** 2 plans
+**Status**: Complete (6 commits: db2fd38, d8fbbe2, c2fc320, b77db65, d0031fc, b24f338)
+
 Plans:
-- [ ] 24-01-PLAN.md -- RequestTimer class, tokenize utility, ContextManager module, config updates
-- [ ] 24-02-PLAN.md -- Wire timing marks and context manager into chat.ts pipeline
+- [x] 24-01-PLAN.md -- RequestTimer class, tokenize utility, ContextManager module, config updates
+- [x] 24-02-PLAN.md -- Wire timing marks and context manager into chat.ts pipeline
 
 #### Phase 25: Frontend -- Chat Virtualization
 **Goal**: Users can scroll through long chat histories (100+ messages) without UI lag or frame drops
@@ -460,9 +461,9 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 | 21. Quick Wins & Baseline | v1.5 | 1/1 | Complete | 2026-01-27 |
 | 22. TTS Reliability | v1.5 | 2/2 | Complete | 2026-01-27 |
 | 23. Parallel TTS + Opus | v1.5 | 3/3 | Complete | 2026-01-27 |
-| 24. Observability & Context | v1.5 | 0/2 | Planned | - |
+| 24. Observability & Context | v1.5 | 2/2 | Complete | 2026-01-28 |
 | 25. Chat Virtualization | v1.5 | 0/? | Not started | - |
 
 ---
 
-Last updated: 2026-01-27 (Phase 24 planned -- 2 plans, 2 waves)
+Last updated: 2026-01-28 (Phase 24 complete -- timing instrumentation + context management)
