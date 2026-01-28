@@ -48,7 +48,7 @@ export const config = {
   // Local LLM fallback (OpenAI-compatible endpoint)
   localLlmEndpoint: process.env.LOCAL_LLM_ENDPOINT || 'http://192.168.1.50:8080',
   localLlmModel: process.env.LOCAL_LLM_MODEL || 'qwen2.5-7b-instruct-q4_k_m.gguf',
-  qwenContextWindow: parseInt(process.env.QWEN_CONTEXT_WINDOW || '4096', 10),
+  qwenContextWindow: parseInt(process.env.QWEN_CONTEXT_WINDOW || '8192', 10),
   qwenHistoryLimit: parseInt(process.env.QWEN_HISTORY_LIMIT || '10', 10),
 
   // Cost tracking
@@ -77,6 +77,13 @@ export const config = {
   ttsVoice: process.env.TTS_VOICE || 'onyx',
   ttsSpeed: parseFloat(process.env.TTS_SPEED || '1.0'),
   ttsModel: process.env.TTS_MODEL || 'tts-1',
+
+  // Phase 24: Context management
+  contextWindowTokens: parseInt(process.env.CONTEXT_WINDOW_TOKENS || '8192', 10),
+  contextResponseReserve: parseInt(process.env.CONTEXT_RESPONSE_RESERVE || '1024', 10),
+  contextSummarizeThreshold: parseInt(process.env.CONTEXT_SUMMARIZE_THRESHOLD || '25', 10),
+  contextRecentRatio: parseFloat(process.env.CONTEXT_RECENT_RATIO || '0.7'),
+  contextMaxSummaryTokens: parseInt(process.env.CONTEXT_MAX_SUMMARY_TOKENS || '500', 10),
 
   // ElevenLabs TTS (preferred when ELEVENLABS_API_KEY is set)
   elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID || 'onwK4e9ZLuTAKqWW03F9', // "Daniel" — deep British male
