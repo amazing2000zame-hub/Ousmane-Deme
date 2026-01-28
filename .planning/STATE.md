@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Milestone: v1.5 Optimization & Latency Reduction
-Phase: 24 -- Observability & Context Management (IN PROGRESS)
-Plan: 01 of 02 complete
-Status: Plan 24-01 complete. Ready for 24-02 (pipeline integration).
-Last activity: 2026-01-28 -- Completed 24-01-PLAN.md (RequestTimer, tokenize, ContextManager, config)
+Phase: 24 -- Observability & Context Management (COMPLETE)
+Plan: 02 of 02 complete
+Status: Phase 24 complete. Ready for Phase 25 (Chat Virtualization).
+Last activity: 2026-01-28 -- Completed 24-02-PLAN.md (timing instrumentation + context manager integration)
 
-Progress: [█████████████░░░░░░░] 65% v1.5 (3/5 phases complete + 24 in progress; phase 25 remaining)
+Progress: [████████████████░░░░] 80% v1.5 (4/5 phases complete: 21, 22, 23, 24; phase 25 remaining)
 
 ## Performance Metrics
 
 **Velocity (from v1.0-v1.4):**
-- Total plans completed: 46
+- Total plans completed: 48
 - Average duration: 4.8 min
 - Phases shipped: 23
 - Milestones shipped: 5 (v1.0, v1.1, v1.2, v1.3, v1.4)
@@ -57,6 +57,9 @@ Progress: [█████████████░░░░░░░] 65% v1.
 - Engine lock safe across parallel workers due to JS single-threaded event loop (no mutex)
 - Opus encoding per-emission, not cached (WAV on disk, Opus re-encoded each time)
 - Pre-warm 12 common phrases with 10s startup delay for XTTS container readiness
+- Dual state management: ContextManager for LLM context + sessionHistoryCache for memory extraction (backward compat)
+- char/4 estimation for system prompt token budgets (rough but sufficient for per-request budget allocation)
+- DB history seeds context manager only on first session message (cache presence indicates already seeded)
 
 ### Key Decisions (v1.4 - carried forward)
 
@@ -101,8 +104,8 @@ Previous milestones:
 
 - Voice latency still 15-30s -- v1.5 Quick Wins + TTS overhaul will address
 - ~~TTS reliability ~70% -- Piper fallback (Phase 22) will push to 99%+~~ (DONE: Phase 22, plans 01+02)
-- No conversation windowing -- ContextManager built, awaiting integration (Phase 24, plan 02)
-- No latency tracing -- RequestTimer built, awaiting integration (Phase 24, plan 02)
+- ~~No conversation windowing -- ContextManager built, awaiting integration (Phase 24, plan 02)~~ (DONE: Phase 24, plan 02)
+- ~~No latency tracing -- RequestTimer built, awaiting integration (Phase 24, plan 02)~~ (DONE: Phase 24, plan 02)
 - ~~Health endpoint is liveness-only -- no component-level status~~ (DONE: Phase 21, plan 01)
 
 ### Blockers/Concerns
@@ -116,10 +119,9 @@ Previous milestones:
 ## Session Continuity
 
 Last session: 2026-01-28
-Stopped at: Completed 24-01-PLAN.md
+Stopped at: Completed 24-02-PLAN.md (Phase 24 complete)
 Resume file: None
 
 **Next steps:**
-1. Execute Plan 24-02 (wire timing + context into live chat pipeline)
-2. Complete Phase 24
-3. Continue through Phase 25
+1. Plan and execute Phase 25 (Chat Virtualization)
+2. Complete v1.5 milestone
