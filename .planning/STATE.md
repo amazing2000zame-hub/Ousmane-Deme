@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Milestone: v1.5 Optimization & Latency Reduction
-Phase: 23 -- TTS Performance -- Parallel Synthesis & Opus Encoding (COMPLETE)
-Plan: --
-Status: Phase 23 verified and shipped. Ready for Phase 24.
-Last activity: 2026-01-27 -- Phase 23 shipped (disk cache, parallel TTS, Opus encoding, gapless playback)
+Phase: 24 -- Observability & Context Management (IN PROGRESS)
+Plan: 01 of 02 complete
+Status: Plan 24-01 complete. Ready for 24-02 (pipeline integration).
+Last activity: 2026-01-28 -- Completed 24-01-PLAN.md (RequestTimer, tokenize, ContextManager, config)
 
-Progress: [████████████░░░░░░░░] 60% v1.5 (3/5 phases complete: 21, 22, 23; phases 24-25 remaining)
+Progress: [█████████████░░░░░░░] 65% v1.5 (3/5 phases complete + 24 in progress; phase 25 remaining)
 
 ## Performance Metrics
 
@@ -101,8 +101,8 @@ Previous milestones:
 
 - Voice latency still 15-30s -- v1.5 Quick Wins + TTS overhaul will address
 - ~~TTS reliability ~70% -- Piper fallback (Phase 22) will push to 99%+~~ (DONE: Phase 22, plans 01+02)
-- No conversation windowing -- context grows unbounded, slowing LLM (Phase 24)
-- No latency tracing -- can't identify bottlenecks precisely (Phase 24)
+- No conversation windowing -- ContextManager built, awaiting integration (Phase 24, plan 02)
+- No latency tracing -- RequestTimer built, awaiting integration (Phase 24, plan 02)
 - ~~Health endpoint is liveness-only -- no component-level status~~ (DONE: Phase 21, plan 01)
 
 ### Blockers/Concerns
@@ -111,15 +111,15 @@ Previous milestones:
 - Piper TTS Docker image adds ~500MB to deployment footprint
 - Opus codec requires browser support (all modern browsers support it, Safari has edge cases)
 - CPU contention risk: 20 threads shared between llama-server (16), XTTS (14 Docker limit), Proxmox
-- Qwen tokenizer endpoint availability unclear for accurate token counting
+- Qwen tokenizer endpoint availability unclear for accurate token counting (fallback to char/4 implemented)
 
 ## Session Continuity
 
-Last session: 2026-01-27
-Stopped at: Phase 23 complete and verified
+Last session: 2026-01-28
+Stopped at: Completed 24-01-PLAN.md
 Resume file: None
 
 **Next steps:**
-1. Plan Phase 24 (Observability & Context Management)
-2. Execute Phase 24
+1. Execute Plan 24-02 (wire timing + context into live chat pipeline)
+2. Complete Phase 24
 3. Continue through Phase 25
