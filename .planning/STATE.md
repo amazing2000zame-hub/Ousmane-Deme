@@ -23,12 +23,13 @@
 
 **Milestone:** v1.6 Smart Home Intelligence
 **Phase:** 26 - Face Recognition Foundation
-**Plan:** 2 plans created, ready for execution
-**Status:** PLANNED
+**Plan:** 1 of 2 complete
+**Status:** In progress
+**Last activity:** 2026-01-29 - Completed 26-01-PLAN.md
 
 ```
-[==                            ] 5%
-Phase 26/29 | Plan 0/8 | Req 0/20
+[===                           ] 12%
+Phase 26/29 | Plan 1/8 | Req 1/20
 ```
 
 ---
@@ -37,13 +38,13 @@ Phase 26/29 | Plan 0/8 | Req 0/20
 
 | Phase | Name | Plans | Status |
 |-------|------|-------|--------|
-| 26 | Face Recognition Foundation | 2 | Planned |
+| 26 | Face Recognition Foundation | 2 | In Progress (1/2) |
 | 27 | Presence Intelligence | 2 | Pending |
 | 28 | Camera Dashboard | 2 | Pending |
 | 29 | Proactive Intelligence | 2 | Pending |
 
 **Requirements Progress:**
-- FACE: 0/5 complete
+- FACE: 1/5 complete (FACE-01: Frigate face recognition enabled)
 - PRES: 0/5 complete
 - CAM: 0/5 complete
 - ALERT: 0/5 complete
@@ -54,12 +55,12 @@ Phase 26/29 | Plan 0/8 | Req 0/20
 
 | Plan | Wave | Objective | Status |
 |------|------|-----------|--------|
-| 26-01 | 1 | Enable Frigate face recognition, extend frigate.ts client | Ready |
+| 26-01 | 1 | Enable Frigate face recognition, extend frigate.ts client | Complete |
 | 26-02 | 2 | Add 3 MCP tools (whos_at_door, get_recognized_faces, get_unknown_visitors) | Ready |
 
 **Wave Structure:**
-- Wave 1: 26-01 (independent, no dependencies)
-- Wave 2: 26-02 (depends on 26-01 for frigate.ts extensions)
+- Wave 1: 26-01 (independent, no dependencies) - COMPLETE
+- Wave 2: 26-02 (depends on 26-01 for frigate.ts extensions) - Ready to execute
 
 ---
 
@@ -67,9 +68,9 @@ Phase 26/29 | Plan 0/8 | Req 0/20
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 0 |
-| Requirements delivered | 0 |
-| Lines of code | 0 |
+| Plans completed | 1 |
+| Requirements delivered | 1 |
+| Lines of code | ~70 (frigate.ts extensions) |
 | Test coverage | N/A |
 
 ---
@@ -86,15 +87,18 @@ Phase 26/29 | Plan 0/8 | Req 0/20
 | MSE streaming via go2rtc | Lower latency than HLS, built into Frigate | 2026-01-29 |
 | 5s poll interval for events | Balances latency vs API load | 2026-01-29 |
 | model_size: small for face recognition | CPU-only inference on agent1, no GPU | 2026-01-29 |
+| recognition_threshold: 0.8 | Balance accuracy vs false positives | 2026-01-29 |
 
 ### Technical Notes
 
-- Frigate 0.16.4 running on agent1:5000 with face_recognition config present but disabled
-- frigate.ts client already has `FrigateEvent.sub_label` field ready for face data
+- Frigate 0.16.4 running on agent1:5000 with face_recognition ENABLED (model_size: small)
+- frigate.ts client extended with parseFaceSubLabel(), getFaceLibrary(), getRecentFaceEvents()
+- FrigateEvent.sub_label now typed as `string | [string, number] | null`
 - 2 cameras: front_door (192.168.1.204), side_house (192.168.1.27)
 - go2rtc built into Frigate at ports 8555/1984
 - Existing tools: get_who_is_home, query_nvr_detections, get_camera_snapshot, scan_network_devices
-- sub_label format from Frigate: `["PersonName", 0.92]` (name + confidence array)
+- Face library currently empty (no enrolled faces yet)
+- /api/faces returns face library data
 
 ### Blockers
 
@@ -103,7 +107,9 @@ None currently.
 ### TODO
 
 - [x] Start Phase 26 planning with `/gsd:plan-phase 26`
-- [ ] Execute Phase 26 with `/gsd:execute-phase 26`
+- [x] Execute 26-01: Enable Frigate face recognition
+- [ ] Execute 26-02: Add face recognition MCP tools
+- [ ] Continue to Phase 27: Presence Intelligence
 
 ---
 
@@ -115,16 +121,18 @@ None currently.
 - Verified Frigate 0.16.4 capabilities
 - Created v1.6 roadmap with 4 phases (26-29)
 - Defined 20 requirements across 4 categories
+- Planned Phase 26: Face Recognition Foundation
 
 ### This Session
-- Planned Phase 26: Face Recognition Foundation
-- Created 26-01-PLAN.md (Frigate config + frigate.ts extension)
-- Created 26-02-PLAN.md (3 new MCP tools)
+- Executed 26-01-PLAN.md
+- Enabled Frigate face recognition (model_size: small)
+- Extended frigate.ts with face recognition parsing functions
+- Verified integration working
 
-### Next Session
-- Execute Phase 26 plans
-- Enable Frigate face recognition
-- Test face recognition queries
+### Next Steps
+- Execute 26-02-PLAN.md (3 MCP tools for face queries)
+- Enroll faces in Frigate library for testing
+- Continue to Phase 27
 
 ---
 
@@ -132,16 +140,16 @@ None currently.
 
 ```bash
 # View plans
-cat /root/.planning/phases/26-face-recognition-foundation/26-01-PLAN.md
+cat /root/.planning/phases/26-face-recognition-foundation/26-01-SUMMARY.md
 cat /root/.planning/phases/26-face-recognition-foundation/26-02-PLAN.md
 
-# Execute phase
-/gsd:execute-phase 26
-
-# Check Frigate status
-curl -s http://192.168.1.61:5000/api/version
+# Check Frigate face recognition
 curl -s http://192.168.1.61:5000/api/config | jq '.face_recognition'
+curl -s http://192.168.1.61:5000/api/faces
 
 # Check Frigate events
 curl -s "http://192.168.1.61:5000/api/events?label=person&limit=5" | jq
+
+# Build backend
+cd /root/jarvis-backend && npm run build
 ```
