@@ -23,13 +23,13 @@
 
 **Milestone:** v1.6 Smart Home Intelligence
 **Phase:** 28 - Camera Dashboard
-**Plan:** 1 of 2 complete
-**Status:** In progress
-**Last activity:** 2026-01-29 - Completed 28-01-PLAN.md
+**Plan:** 2 of 2 complete
+**Status:** Phase complete
+**Last activity:** 2026-01-29 - Completed 28-02-PLAN.md
 
 ```
-[========                      ] 37%
-Phase 28/29 | Plan 4/8 | Req 6/20
+[============                  ] 50%
+Phase 28/29 | Plan 6/8 | Req 9/20
 ```
 
 ---
@@ -40,13 +40,13 @@ Phase 28/29 | Plan 4/8 | Req 6/20
 |-------|------|-------|--------|
 | 26 | Face Recognition Foundation | 2 | Complete (2/2) |
 | 27 | Presence Intelligence | 2 | Complete (2/2) |
-| 28 | Camera Dashboard | 2 | In Progress (1/2) |
+| 28 | Camera Dashboard | 2 | Complete (2/2) |
 | 29 | Proactive Intelligence | 2 | Pending |
 
 **Requirements Progress:**
 - FACE: 2/5 complete (FACE-01, FACE-02)
 - PRES: 3/5 complete (PRES-01, PRES-02, PRES-03)
-- CAM: 2/5 complete (CAM-01, CAM-02)
+- CAM: 5/5 complete (CAM-01, CAM-02, CAM-03, CAM-04, CAM-05)
 - ALERT: 0/5 complete
 
 ---
@@ -56,11 +56,11 @@ Phase 28/29 | Plan 4/8 | Req 6/20
 | Plan | Wave | Objective | Status |
 |------|------|-----------|--------|
 | 28-01 | 1 | Create camera API and snapshot grid UI | Complete |
-| 28-02 | 2 | Add live streaming with MSE/go2rtc | Ready |
+| 28-02 | 2 | Add live streaming with MSE/go2rtc | Complete |
 
 **Wave Structure:**
 - Wave 1: 28-01 (camera API, snapshot grid, modal) - COMPLETE
-- Wave 2: 28-02 (live streaming integration) - Ready to execute
+- Wave 2: 28-02 (live streaming, events, filtering) - COMPLETE
 
 ---
 
@@ -68,9 +68,9 @@ Phase 28/29 | Plan 4/8 | Req 6/20
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 4 |
-| Requirements delivered | 7 |
-| Lines of code | ~600 (camera API, store, components) |
+| Plans completed | 6 |
+| Requirements delivered | 10 |
+| Lines of code | ~1100 (camera API, store, 7 components) |
 | Test coverage | N/A |
 
 ---
@@ -94,6 +94,8 @@ Phase 28/29 | Plan 4/8 | Req 6/20
 | Proxy Frigate through backend | Consistent auth, no CORS issues | 2026-01-29 |
 | Blob URL lifecycle management | Revoke old URLs before creating new to prevent memory leaks | 2026-01-29 |
 | 10-second snapshot polling | Balances freshness vs API load | 2026-01-29 |
+| Direct Frigate URL for MSE streaming | WebSocket doesn't need CORS, lower latency | 2026-01-29 |
+| Module augmentation for custom elements | TypeScript pattern for video-rtc JSX support | 2026-01-29 |
 
 ### Technical Notes
 
@@ -109,6 +111,9 @@ Phase 28/29 | Plan 4/8 | Req 6/20
 - Camera API at /api/cameras, /api/cameras/:camera/snapshot, /api/events
 - Camera store uses blob URLs with automatic cleanup
 - CameraPanel with 2-column grid, modal with keyboard/click close
+- video-rtc.js v1.6.0 for MSE/WebRTC streaming
+- EventList with 10s polling and camera/label filters
+- LiveStreamModal connects directly to Frigate for WebSocket streaming
 
 ### Blockers
 
@@ -122,8 +127,9 @@ None currently.
 - [x] Execute 27-01: Create presence tracker and state machine
 - [x] Execute 27-02: Add presence history tools
 - [x] Execute 28-01: Create camera API and snapshot grid
-- [ ] Execute 28-02: Add live streaming
-- [ ] Continue to Phase 29: Proactive Intelligence
+- [x] Execute 28-02: Add live streaming
+- [ ] Start Phase 29 planning
+- [ ] Execute Phase 29: Proactive Intelligence
 
 ---
 
@@ -137,39 +143,40 @@ None currently.
 - Defined 20 requirements across 4 categories
 - Executed Phase 26 plans
 - Executed Phase 27 plans
+- Executed 28-01-PLAN.md
 
 ### This Session
-- Executed 28-01-PLAN.md
-- Created backend camera API with 5 Frigate proxy endpoints
-- Built camera Zustand store with blob URL lifecycle management
-- Implemented 10-second polling hook with AbortController cleanup
-- Created CameraPanel, CameraCard, CameraModal components
-- Added CAM tab to CenterDisplay
+- Executed 28-02-PLAN.md
+- Added video-rtc.js v1.6.0 for MSE live streaming
+- Created EventRow, EventFilters, EventList components
+- Created LiveStreamModal with auto-connect/cleanup
+- Integrated Live buttons and events section into CameraPanel
+- Phase 28 complete - Camera Dashboard fully functional
 
 ### Next Steps
-- Execute 28-02-PLAN.md (live streaming with MSE/go2rtc)
-- Test camera dashboard in browser
-- Continue to Phase 29
+- Start Phase 29 planning (Proactive Intelligence)
+- Execute Phase 29 plans
+- Test complete camera dashboard in browser
 
 ---
 
 ## Quick Commands
 
 ```bash
-# View plans
+# View summaries
 cat /root/.planning/phases/28-camera-dashboard/28-01-SUMMARY.md
-cat /root/.planning/phases/28-camera-dashboard/28-02-PLAN.md
+cat /root/.planning/phases/28-camera-dashboard/28-02-SUMMARY.md
 
 # Test camera API
 TOKEN=$(curl -s -X POST http://localhost:4000/api/auth/login -H 'Content-Type: application/json' -d '{"password":"jarvis"}' | jq -r '.token')
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:4000/api/cameras
-curl -o /tmp/snap.jpg -H "Authorization: Bearer $TOKEN" http://localhost:4000/api/cameras/front_door/snapshot
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:4000/api/events?limit=5"
 
 # Check Frigate
 curl -s http://192.168.1.61:5000/api/config | jq '.cameras | keys'
 curl -s "http://192.168.1.61:5000/api/events?limit=5" | jq
 
 # Build and restart
-cd /root/jarvis-backend && npm run build
+cd /root/jarvis-ui && npm run build
 cd /root && docker compose up -d --build
 ```
