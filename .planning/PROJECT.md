@@ -22,21 +22,6 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - PVE firewall enabled cluster-wide
 - Samba/NFS storage shares operational
 - Wake-on-LAN for all nodes
-
-### Active
-
-- [ ] Voice retraining with proper JARVIS video sources for improved voice quality -- v1.3
-- [ ] File import/download -- JARVIS can import and download files to the server -- v1.3
-- [ ] Project read/browse access -- JARVIS can pull, read, and browse projects on the server -- v1.3
-- [ ] Project discussion & improvements -- JARVIS can analyze projects and suggest improvements -- v1.3
-- [ ] Streaming voice pipeline -- text and voice arrive simultaneously (<4s first audio) -- v1.4
-- [ ] Chat rendering performance -- eliminate UI jank during streaming (~2 updates/sec) -- v1.4
-- [ ] Backend data caching -- reduce duplicate Proxmox API calls by 50%+ -- v1.4
-- [ ] Dashboard rendering performance -- granular updates, memoization, idle optimization -- v1.4
-- [ ] Theme consistency & visual polish -- unified color tokens, layout fixes, glow standardization -- v1.4
-
-### Validated
-
 - eDEX-UI / Iron Man style dashboard with 3-column layout -- v1.0
 - Live Proxmox cluster status (nodes, VMs, containers, resources) -- v1.0
 - Jarvis activity panel (status, feed, chat interface) -- v1.0
@@ -55,41 +40,63 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - E2E testing infrastructure (64 unit tests) -- v1.1
 - JARVIS voice engine (XTTS v2 + ElevenLabs + OpenAI TTS, STT, audio visualizer) -- v1.2
 - Voice-aware personality tuning -- v1.2
+- File operations (download, copy, transfer) with SSRF protection -- v1.3
+- Project intelligence (browse, read, search, analyze 24 indexed projects) -- v1.3
+- Code analysis with multi-turn discussion -- v1.3
+- Streaming voice pipeline (<4s first audio) -- v1.4
+- Chat rendering performance (RAF batching, memoization) -- v1.4
+- Backend data caching (Proxmox API, system prompt, session history) -- v1.4
+- Dashboard rendering performance (granular stores, idle optimization) -- v1.4
+- Theme consistency (unified color tokens, glow standardization) -- v1.4
+- TTS reliability 99%+ via Piper fallback -- v1.5
+- Parallel TTS synthesis with disk-persistent cache -- v1.5
+- Opus audio codec for smaller payloads -- v1.5
+- Conversation sliding window with context summarization -- v1.5
+- Latency tracing pipeline -- v1.5
+- Chat virtualization for 100+ messages -- v1.5
+
+### Active
+
+- [ ] Frigate NVR integration (events, snapshots, recordings, live feeds) -- v1.6
+- [ ] RTSP camera access for any network camera -- v1.6
+- [ ] Face recognition with photo upload + camera learning -- v1.6
+- [ ] Face database for 5-10 household members -- v1.6
+- [ ] Unknown face logging with UI review workflow -- v1.6
+- [ ] Presence timeline (arrivals, departures, searchable history) -- v1.6
+- [ ] Dashboard panel showing faces and presence activity -- v1.6
+- [ ] MCP tools for presence/camera queries -- v1.6
 
 ### Out of Scope
 
-- Face / user recognition -- future feature
 - Predictive maintenance / anomaly detection -- future, needs data collection first
 - Multi-user permissions -- single operator for now
-- Smart home integration -- Proxmox cluster focus only for v1
 - Mobile native app -- responsive web handles mobile
+- Home Assistant integration -- not deployed yet, Frigate-only for now
 
-## Current Milestone: v1.5 Optimization & Latency Reduction
+## Current Milestone: v1.6 Smart Home Intelligence
 
-**Goal:** Reduce JARVIS voice latency to 2-4s first-audio, achieve 99%+ TTS reliability via Piper fallback, and cut overall response latency 50-70% through parallel TTS, Opus audio codec, conversation windowing, latency tracing, and health monitoring.
+**Goal:** Give JARVIS eyes -- camera integration, face recognition, and presence tracking so JARVIS can answer "who's home?" with a searchable activity timeline.
 
 **Target features:**
-- Quick wins -- TTS cache expansion (200+ entries), sentence detection tuning, TTS health check with auto-restart, SQLite WAL mode
-- Piper TTS fallback -- deploy Piper as fast CPU TTS (10-20x faster than XTTS), 3-second timeout triggers fallback
-- Parallel TTS -- fire 2-3 sentences concurrently, reorder on frontend by index
-- Opus audio codec -- replace WAV with Opus for 10x smaller transfer, faster delivery
-- Pre-warm TTS cache -- common JARVIS phrases cached at startup for instant playback
-- Conversation sliding window -- keep last 20-30 messages in full, summarize older context
-- Latency tracing pipeline -- timestamps at each stage (t0 message → t5 audio plays)
-- Health dashboard endpoint -- /api/health returning backend, TTS, LLM, Proxmox connectivity status
-- Web Worker audio decoding -- move AudioContext decoding off main thread
-- Chat history virtualization -- react-window for long conversations
+- Frigate API integration for events, snapshots, recordings, and live feeds
+- RTSP camera access for any network camera (front_door, side_house on agent1)
+- Face recognition with dual input: upload reference photos + learn from camera feeds
+- Face database supporting 5-10 household members with embeddings
+- Unknown face logging -- store for later UI review, no immediate notifications
+- Presence timeline -- full searchable history ("When did John leave yesterday?")
+- Dashboard panel showing known faces and presence activity timeline
+- MCP tools: query presence, get camera snapshots, search timeline
 
-**Previous milestone (v1.4):** Performance & Reliability -- Phases 16-20 (streaming voice, chat rendering, backend caching, dashboard perf, theme polish)
+**Previous milestone (v1.5):** Optimization & Latency Reduction -- Phases 21-25 (TTS reliability, parallel synthesis, Opus codec, context management, chat virtualization)
 
-## Current State (v1.0 shipped 2026-01-26)
+## Current State (v1.5 shipped 2026-01-28)
 
-- **Backend**: 6,196 LOC TypeScript -- Express 5, Socket.IO, MCP SDK, better-sqlite3, Drizzle ORM
-- **Frontend**: 4,393 LOC TypeScript/TSX + 209 LOC CSS -- React 19, Vite 6, Tailwind v4, Zustand, xterm.js
-- **Source files**: 93 across backend and frontend
-- **Git commits**: 75
+- **Backend**: ~7,500 LOC TypeScript -- Express 5, Socket.IO, MCP SDK, better-sqlite3, Drizzle ORM
+- **Frontend**: ~5,500 LOC TypeScript/TSX + CSS -- React 19, Vite 6, Tailwind v4, Zustand, xterm.js
+- **Source files**: ~110 across backend and frontend
+- **Git commits**: 100+
 - **Tech stack**: Node.js 22, React 19, Socket.IO 4, Claude API, Qwen 2.5 7B, SQLite, Docker
-- **Deployment**: Not yet deployed to management VM (code on Home node at /root/jarvis-backend and /root/jarvis-ui)
+- **Deployment**: Home node (/root/jarvis-backend, /root/jarvis-ui)
 
 ## Context
 
@@ -97,25 +104,33 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 
 | Node | IP | Role | CPUs | RAM |
 |------|-----|------|------|-----|
-| Home | 192.168.1.50 | Cluster master, llama-server, NFS/Samba | 20 | 24 GB |
+| Home | 192.168.1.50 | Cluster master, llama-server, NFS/Samba, Jarvis backend | 20 | 24 GB |
 | pve | 192.168.1.74 | Compute + NAS, Samba, FileBrowser | 6 | 31 GB |
-| agent1 | 192.168.1.61 | Compute, Jarvis RPC, email agent, cluster agents | 14 | 31 GB |
+| agent1 | 192.168.1.61 | Compute, Frigate NVR, email agent, cluster agents | 14 | 31 GB |
 | agent | 192.168.1.62 | Lightweight utility | 2 | 4 GB |
 
-**Management VM (192.168.1.65)** on agent1: Docker host running Homepage, Guacamole, Portainer, Uptime Kuma, Grafana, Prometheus, Nginx Proxy Manager, code-server, and more. This is where Jarvis 3.1 will be deployed.
+### Camera Infrastructure (NEW for v1.6)
 
-### Existing Jarvis v3.0
+| Camera | Node | IP | Credentials |
+|--------|------|-----|-------------|
+| front_door | agent1 (Frigate) | 192.168.1.204:8554/ch1 | 223:602 |
+| side_house | agent1 (Frigate) | 192.168.1.27:8554/ch1 | 619:681 |
+
+**Frigate NVR:**
+- Running on agent1 (192.168.1.61:5000)
+- 8 CPU threads for detection
+- Recording 24/7 to NAS (4.5TB at //192.168.1.50/ExternalHDD/frigate/)
+- 30-day retention, 60-day for alerts/detections
+- Objects tracked: person, car, dog, cat
+
+### Existing Jarvis Components
 
 - llama-server on Home (port 8080) -- OpenAI-compatible API
-- rpc-server on agent1 (port 50052) -- distributed compute backend
-- Open WebUI on management VM (port 3003) -- current chat interface
-- Shell agent (CLI + Open WebUI function) -- executes commands on cluster nodes
+- Jarvis backend on Home (port 4000) -- Express + Socket.IO
+- Jarvis frontend on Home (port 3004) -- React dashboard
+- jarvis-tts on Home -- XTTS v2 + Piper fallback
+- Open WebUI on management VM (port 3003) -- alternate chat interface
 - Model: Qwen 2.5 7B Instruct Q4_K_M (4.4GB)
-
-### Existing UI Scaffold
-
-- `jarvis-ui/` directory on Home node with React + Vite + TypeScript setup
-- Has `useJarvisChat.ts` hook and `jarvisApi.ts` service stub
 
 ### Existing Monitoring
 
@@ -126,29 +141,27 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 
 ## Constraints
 
-- **Deployment**: Management VM (192.168.1.65) -- Docker containers, 8GB RAM allocated
-- **LLM Local**: Qwen 2.5 7B on Home node -- ~6.5 tokens/sec generation, 4096 context
+- **Deployment**: Home node (192.168.1.50) -- Docker containers
+- **LLM Local**: Qwen 2.5 7B on Home node -- ~27-52 tokens/sec generation
 - **LLM Cloud**: Claude API -- requires internet, usage-based cost
 - **Network**: Flat 192.168.1.0/24 LAN, no VLANs, all inter-node via SSH
-- **Storage**: Proxmox API for cluster data, SSH for node-level commands
+- **Storage**: 4.5TB NAS for camera recordings, SQLite for face data
 - **Security**: PVE firewall enabled, key-only SSH, all traffic LAN-only
-- **Frontend**: React + TypeScript (existing scaffold in jarvis-ui/)
+- **Face Recognition**: CPU-based (no GPU), must handle 5-10 faces efficiently
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Hybrid LLM (Claude + Qwen) | Claude for complex reasoning, Qwen for fast routine ops | Confirmed -- Claude-only in Phase 3, hybrid in Phase 5 |
-| MCP protocol for tool layer | Standard protocol, works with Claude natively, extensible | Confirmed -- MCP SDK v1.25+ with Express middleware |
-| Management VM deployment | Already the management hub, Docker ready, good resource balance | Confirmed -- 2 containers (frontend Nginx + backend Node.js) |
-| Iron Man JARVIS personality | User's core vision -- not just functional, experiential | Confirmed -- eDEX-UI aesthetic, 3 visual modes |
-| React + TypeScript frontend | Existing scaffold, rich ecosystem for complex UI | Confirmed -- React 19 + Vite 6 + Tailwind v4 |
-| SQLite + markdown for memory | SQLite for structured events, markdown for LLM context injection | Confirmed -- better-sqlite3 + Drizzle ORM |
-| Act + report autonomy model | Fix problems automatically, report after -- availability first | Confirmed -- 5-level autonomy model with runbooks |
-| Text-only for v1 | TTS deferred, focus on core dashboard + AI actions | Confirmed -- Voice planned for v1.2 Phase 11 |
-| Express 5 backend | MCP SDK has official Express middleware adapter | Confirmed -- Phase 1 |
-| Modular monolith architecture | Single Node.js process, 6 clean modules, no microservices | Confirmed -- research HIGH confidence |
-| Safety-first Phase 1 | CRITICAL pitfalls must be architectural, not retrofitted | Confirmed -- dependency DAG + command allowlist |
+| Hybrid LLM (Claude + Qwen) | Claude for complex reasoning, Qwen for fast routine ops | ✓ Good |
+| MCP protocol for tool layer | Standard protocol, works with Claude natively, extensible | ✓ Good |
+| Iron Man JARVIS personality | User's core vision -- not just functional, experiential | ✓ Good |
+| React + TypeScript frontend | Existing scaffold, rich ecosystem for complex UI | ✓ Good |
+| SQLite + markdown for memory | SQLite for structured events, markdown for LLM context injection | ✓ Good |
+| Modular monolith architecture | Single Node.js process, clean modules, no microservices | ✓ Good |
+| Piper TTS fallback | 99%+ reliability, <500ms synthesis when XTTS slow | ✓ Good |
+| Frigate for NVR | Already deployed, HTTP API, object detection built-in | — Pending |
+| Face embeddings in SQLite | Simple, no new database, vector similarity via cosine | — Pending |
 
 ---
-*Last updated: 2026-01-27 after v1.5 milestone started*
+*Last updated: 2026-01-29 after v1.6 milestone started*

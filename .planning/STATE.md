@@ -2,96 +2,61 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-01-27)
+See: .planning/PROJECT.md (updated 2026-01-29)
 
 **Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Milestone v1.5 -- Optimization & Latency Reduction
+**Current focus:** Milestone v1.6 -- Smart Home Intelligence
 
 ## Current Position
 
-Milestone: v1.5 Optimization & Latency Reduction
-Phase: 24 -- Observability & Context Management (COMPLETE)
-Plan: 02 of 02 complete
-Status: Phase 24 complete. Ready for Phase 25 (Chat Virtualization).
-Last activity: 2026-01-28 -- Completed 24-02-PLAN.md (timing instrumentation + context manager integration)
+Milestone: v1.6 Smart Home Intelligence
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-01-29 — Milestone v1.6 started
 
-Progress: [████████████████░░░░] 80% v1.5 (4/5 phases complete: 21, 22, 23, 24; phase 25 remaining)
+Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.6 (0/? phases)
 
 ## Performance Metrics
 
-**Velocity (from v1.0-v1.4):**
-- Total plans completed: 48
-- Average duration: 4.8 min
-- Phases shipped: 23
-- Milestones shipped: 5 (v1.0, v1.1, v1.2, v1.3, v1.4)
+**Velocity (from v1.0-v1.5):**
+- Total plans completed: 52
+- Average duration: ~5 min
+- Phases shipped: 25
+- Milestones shipped: 6 (v1.0, v1.1, v1.2, v1.3, v1.4, v1.5)
 
 ## Accumulated Context
 
-### Key Decisions (v1.5)
+### Key Decisions (v1.6)
+
+- Frigate NVR already deployed on agent1 (192.168.1.61:5000) with 2 cameras
+- Camera recordings on NAS at //192.168.1.50/ExternalHDD/frigate/ (4.5TB, 30-day retention)
+- Face recognition will use dual input: uploaded photos + camera-learned faces
+- Unknown faces logged for later review (no immediate notifications)
+- Presence timeline is full searchable history ("When did John leave yesterday?")
+- Dashboard panel for faces + activity timeline (not just chat queries)
+- No Home Assistant integration -- Frigate only
+- Face database scoped for 5-10 household members
+- CPU-based face recognition (no GPU available)
+
+### Key Decisions (v1.5 - carried forward)
 
 - Piper TTS deployed as fast fallback alongside XTTS (3-second timeout triggers Piper)
-- Phase 4 items (GPU TTS, distributed architecture, VLAN, ML router) deferred to v1.6+
-- Optimization guide from /root/PNfj.docx is primary source document
-- Focus: 5 phases (Quick Wins, TTS Fallback, Parallel+Opus, Observability+Context, Chat Virtualization)
-- Zero new npm backend dependencies; one new Docker container (Piper TTS)
 - XTTS v2 cannot parallelize (batch_size=1 "wontfix") -- CPU affinity is highest-impact optimization
-- Opus encoding optional/configurable -- adds latency on LAN, only useful for remote access
-- Web Worker audio decoding DEFERRED (AudioContext not available in Workers)
-- @tanstack/react-virtual chosen over react-window for chat virtualization
-- Never mix TTS engines within a single response (voice consistency enforcement)
 - Bounded to max 2 concurrent TTS workers to avoid CPU starvation of LLM
 - Conversation summarization must preserve structured context (VMIDs, IPs, paths)
 - 3-second XTTS timeout balances quality vs latency; 30s recovery interval prevents hammering
-- Engine lock scoped per-response (handleSend), resets automatically for XTTS recovery
-- Sequential XTTS-then-Piper racing, not parallel, to avoid CPU contention
 - Gapless playback uses source.start(startAt) clock scheduling, not onended chaining
-- Pre-decode next buffer during playback to eliminate async decode latency
-- Clock (nextStartTime) resets on session start/stop/finalize to prevent stale scheduling
-- decodeAudioData handles WAV and OGG Opus natively -- no format-specific decoder needed
-- Disk cache stores WAV only (not Opus) -- re-encode on emission is cheaper than dual formats
-- SHA-256 of normalized text as cache filename -- filesystem-safe, collision-resistant
-- cpuset pinning: XTTS cores 0-3, Piper 4-5, backend 6-9 (llama-server uses OS scheduler on all)
-- FFmpeg installed in backend container via apt-get (not npm) -- zero new npm dependencies maintained
-- Disk cache writes fire-and-forget to avoid blocking TTS response path
-- Disk cache promote-on-hit: disk reads write back to in-memory LRU for instant repeat access
-- Engine lock safe across parallel workers due to JS single-threaded event loop (no mutex)
-- Opus encoding per-emission, not cached (WAV on disk, Opus re-encoded each time)
-- Pre-warm 12 common phrases with 10s startup delay for XTTS container readiness
-- Dual state management: ContextManager for LLM context + sessionHistoryCache for memory extraction (backward compat)
-- char/4 estimation for system prompt token budgets (rough but sufficient for per-request budget allocation)
-- DB history seeds context manager only on first session message (cache presence indicates already seeded)
+- @tanstack/react-virtual chosen over react-window for chat virtualization
 
 ### Key Decisions (v1.4 - carried forward)
 
-- Streaming voice pipeline targets <4s first-audio (vs current 15-30s)
+- Streaming voice pipeline targets <4s first-audio
 - Sentence boundaries detected during LLM streaming, TTS per-sentence
 - Audio delivered as Socket.IO binary events (not WebRTC)
-- Chat token appending redesigned to O(1) with separate streaming content state
-- requestAnimationFrame batching for token accumulation (~2 updates/sec)
 - Shared Proxmox API cache with TTL (5s nodes, 15s storage)
-- Temperature polling parallelized with Promise.allSettled
-- System prompt cluster summary cached 30s between messages
-- Session history cached in-memory per socket (not re-read from DB)
-- Memory access tracking batched into single SQLite transaction
-- Granular cluster store updates (diff-based, stable references)
 - React.memo for NodeCard, VMCard, ChatMessage, EventRow
-- SVG filters hoisted outside render (static, created once)
-- AudioVisualizer: 30fps during playback, 0fps when idle
-- Motion library lazy-loaded (saves ~40KB gzipped)
-- prefers-reduced-motion support for accessibility
 - All hardcoded colors replaced with theme tokens
-- Glow effects standardized to sm/md/lg intensity tokens
-
-### Key Decisions (v1.3 - carried forward)
-
-- File operations use SSH to remote nodes (not file agents on each node)
-- Project intelligence queries existing registry on agent1 (not a new index)
-- Code analysis uses Claude via existing agentic loop (not AST parsing)
-- Voice training orchestrates existing TTS container scripts via docker exec
-- Zero new npm dependencies -- Node.js 22 built-ins handle all requirements
-- Voice retrained with 64 clips from 3 YouTube/video sources (vs 10 poor clips before)
-- Fine-tuned GPT decoder: 441M params, 6 epochs, 384 steps, loss 6.95->5.1
-- Speaker embedding recomputed with fine-tuned conditioning encoder
 
 Previous milestones:
 - v1.0 MVP (Phases 1-6): Full dashboard + AI + monitoring + safety
@@ -99,29 +64,26 @@ Previous milestones:
 - v1.2 JARVIS Voice (Phase 11): TTS/STT with XTTS v2, ElevenLabs, OpenAI
 - v1.3 File Ops & Intelligence (Phases 12-15): File ops, project tools, code analysis, voice retraining
 - v1.4 Performance & Reliability (Phases 16-20): Streaming voice, chat rendering, backend caching, dashboard perf, theme polish
+- v1.5 Optimization & Latency Reduction (Phases 21-25): TTS fallback, parallel synthesis, Opus codec, context management, chat virtualization
 
 ### Pending Todos
 
-- Voice latency still 15-30s -- v1.5 Quick Wins + TTS overhaul will address
-- ~~TTS reliability ~70% -- Piper fallback (Phase 22) will push to 99%+~~ (DONE: Phase 22, plans 01+02)
-- ~~No conversation windowing -- ContextManager built, awaiting integration (Phase 24, plan 02)~~ (DONE: Phase 24, plan 02)
-- ~~No latency tracing -- RequestTimer built, awaiting integration (Phase 24, plan 02)~~ (DONE: Phase 24, plan 02)
-- ~~Health endpoint is liveness-only -- no component-level status~~ (DONE: Phase 21, plan 01)
+- None for v1.6 yet
 
 ### Blockers/Concerns
 
-- Home node disk usage should stay under 80% (currently ~52%)
-- Piper TTS Docker image adds ~500MB to deployment footprint
-- Opus codec requires browser support (all modern browsers support it, Safari has edge cases)
-- CPU contention risk: 20 threads shared between llama-server (16), XTTS (14 Docker limit), Proxmox
-- Qwen tokenizer endpoint availability unclear for accurate token counting (fallback to char/4 implemented)
+- CPU contention risk: Home node (20 threads) shared between llama-server, XTTS, Piper, and potentially face recognition
+- Face recognition library selection -- need CPU-efficient option (face-api.js, deepface, or insightface)
+- Frigate API authentication -- need to verify if Frigate requires auth or is open on LAN
+- Camera credential security -- RTSP credentials in config need protection
 
 ## Session Continuity
 
-Last session: 2026-01-28
-Stopped at: Completed 24-02-PLAN.md (Phase 24 complete)
+Last session: 2026-01-29
+Stopped at: Milestone v1.6 started, ready for research
 Resume file: None
 
 **Next steps:**
-1. Plan and execute Phase 25 (Chat Virtualization)
-2. Complete v1.5 milestone
+1. Research domain ecosystem for face recognition, camera integration, presence tracking
+2. Define requirements
+3. Create roadmap with phases
