@@ -50,6 +50,14 @@ const ENTITY_PATTERNS = [
   /\b(node status|cluster status|node temp|temperature)\b/i,
   /\b(vm|vms|container|containers|lxc|qemu)\b/i,
   /\b(docker|portainer|nginx|guacamole)\b/i,
+  // Smart home / Camera / Presence (Phase 26-28)
+  /\b(camera|cameras|snapshot|live\s*stream|frigate|nvr|detection|detections)\b/i,
+  /\b(driveway|front.?door|side.?house|doorbell|yard)\b/i,
+  /\b(car|cars|vehicle|person|people|visitor|visitors|package)\b/i,
+  /\bwho('s|s|\s+is)\s*(home|at\s*(the\s*)?(door|front))\b/i,
+  /\b(anyone|somebody|someone)\s*(home|there|at)\b/i,
+  /\b(presence|arrived|left|away|home)\b/i,
+  /\b(thermostat|ecobee|lock|unlock|door\s*lock)\b/i,
 ];
 
 // ---- Stage 2 refinement: query keywords that pair with entities ----
