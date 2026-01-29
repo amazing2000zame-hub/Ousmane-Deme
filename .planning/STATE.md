@@ -22,14 +22,14 @@
 ## Current Position
 
 **Milestone:** v1.6 Smart Home Intelligence
-**Phase:** 26 - Face Recognition Foundation
+**Phase:** 27 - Presence Intelligence
 **Plan:** 1 of 2 complete
 **Status:** In progress
-**Last activity:** 2026-01-29 - Completed 26-01-PLAN.md
+**Last activity:** 2026-01-29 - Completed 27-01-PLAN.md
 
 ```
-[===                           ] 12%
-Phase 26/29 | Plan 1/8 | Req 1/20
+[=====                         ] 25%
+Phase 27/29 | Plan 2/8 | Req 4/20
 ```
 
 ---
@@ -38,29 +38,29 @@ Phase 26/29 | Plan 1/8 | Req 1/20
 
 | Phase | Name | Plans | Status |
 |-------|------|-------|--------|
-| 26 | Face Recognition Foundation | 2 | In Progress (1/2) |
-| 27 | Presence Intelligence | 2 | Pending |
+| 26 | Face Recognition Foundation | 2 | Complete (2/2) |
+| 27 | Presence Intelligence | 2 | In Progress (1/2) |
 | 28 | Camera Dashboard | 2 | Pending |
 | 29 | Proactive Intelligence | 2 | Pending |
 
 **Requirements Progress:**
-- FACE: 1/5 complete (FACE-01: Frigate face recognition enabled)
-- PRES: 0/5 complete
+- FACE: 2/5 complete (FACE-01, FACE-02)
+- PRES: 3/5 complete (PRES-01, PRES-02, PRES-03)
 - CAM: 0/5 complete
 - ALERT: 0/5 complete
 
 ---
 
-## Phase 26 Plans
+## Phase 27 Plans
 
 | Plan | Wave | Objective | Status |
 |------|------|-----------|--------|
-| 26-01 | 1 | Enable Frigate face recognition, extend frigate.ts client | Complete |
-| 26-02 | 2 | Add 3 MCP tools (whos_at_door, get_recognized_faces, get_unknown_visitors) | Ready |
+| 27-01 | 1 | Create presence_logs table, 5-state tracker, enhance get_who_is_home | Complete |
+| 27-02 | 2 | Add presence history tools (get_presence_history, get_arrival_times) | Ready |
 
 **Wave Structure:**
-- Wave 1: 26-01 (independent, no dependencies) - COMPLETE
-- Wave 2: 26-02 (depends on 26-01 for frigate.ts extensions) - Ready to execute
+- Wave 1: 27-01 (depends on 26-01, 26-02 for frigate integration) - COMPLETE
+- Wave 2: 27-02 (depends on 27-01 for presence_logs table) - Ready to execute
 
 ---
 
@@ -68,9 +68,9 @@ Phase 26/29 | Plan 1/8 | Req 1/20
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 1 |
-| Requirements delivered | 1 |
-| Lines of code | ~70 (frigate.ts extensions) |
+| Plans completed | 2 |
+| Requirements delivered | 5 |
+| Lines of code | ~370 (presence module, smarthome.ts) |
 | Test coverage | N/A |
 
 ---
@@ -88,6 +88,9 @@ Phase 26/29 | Plan 1/8 | Req 1/20
 | 5s poll interval for events | Balances latency vs API load | 2026-01-29 |
 | model_size: small for face recognition | CPU-only inference on agent1, no GPU | 2026-01-29 |
 | recognition_threshold: 0.8 | Balance accuracy vs false positives | 2026-01-29 |
+| 6-state presence machine | unknown, home, away, just_arrived, just_left, extended_away | 2026-01-29 |
+| 10-minute hysteresis timers | Prevents WiFi flapping from causing spurious events | 2026-01-29 |
+| Multi-signal fusion | Network + face recognition for reliable presence | 2026-01-29 |
 
 ### Technical Notes
 
@@ -96,9 +99,10 @@ Phase 26/29 | Plan 1/8 | Req 1/20
 - FrigateEvent.sub_label now typed as `string | [string, number] | null`
 - 2 cameras: front_door (192.168.1.204), side_house (192.168.1.27)
 - go2rtc built into Frigate at ports 8555/1984
-- Existing tools: get_who_is_home, query_nvr_detections, get_camera_snapshot, scan_network_devices
+- PresenceTracker singleton in presence/tracker.ts
+- presence_logs table with indexes on person_id, timestamp, new_state
+- get_who_is_home now returns state-aware presence data
 - Face library currently empty (no enrolled faces yet)
-- /api/faces returns face library data
 
 ### Blockers
 
@@ -108,8 +112,10 @@ None currently.
 
 - [x] Start Phase 26 planning with `/gsd:plan-phase 26`
 - [x] Execute 26-01: Enable Frigate face recognition
-- [ ] Execute 26-02: Add face recognition MCP tools
-- [ ] Continue to Phase 27: Presence Intelligence
+- [x] Execute 26-02: Add face recognition MCP tools
+- [x] Execute 27-01: Create presence tracker and state machine
+- [ ] Execute 27-02: Add presence history tools
+- [ ] Continue to Phase 28: Camera Dashboard
 
 ---
 
@@ -121,18 +127,18 @@ None currently.
 - Verified Frigate 0.16.4 capabilities
 - Created v1.6 roadmap with 4 phases (26-29)
 - Defined 20 requirements across 4 categories
-- Planned Phase 26: Face Recognition Foundation
+- Executed Phase 26 plans
 
 ### This Session
-- Executed 26-01-PLAN.md
-- Enabled Frigate face recognition (model_size: small)
-- Extended frigate.ts with face recognition parsing functions
-- Verified integration working
+- Executed 27-01-PLAN.md
+- Created presence_logs SQLite table with schema and migration
+- Implemented 5-state PresenceTracker with 10-minute hysteresis
+- Enhanced get_who_is_home with multi-signal fusion
 
 ### Next Steps
-- Execute 26-02-PLAN.md (3 MCP tools for face queries)
+- Execute 27-02-PLAN.md (presence history tools)
 - Enroll faces in Frigate library for testing
-- Continue to Phase 27
+- Continue to Phase 28
 
 ---
 
@@ -140,8 +146,8 @@ None currently.
 
 ```bash
 # View plans
-cat /root/.planning/phases/26-face-recognition-foundation/26-01-SUMMARY.md
-cat /root/.planning/phases/26-face-recognition-foundation/26-02-PLAN.md
+cat /root/.planning/phases/27-presence-intelligence/27-01-SUMMARY.md
+cat /root/.planning/phases/27-presence-intelligence/27-02-PLAN.md
 
 # Check Frigate face recognition
 curl -s http://192.168.1.61:5000/api/config | jq '.face_recognition'
