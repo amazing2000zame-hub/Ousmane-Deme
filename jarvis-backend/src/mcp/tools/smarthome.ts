@@ -15,80 +15,74 @@ import * as ha from '../../clients/homeassistant.js';
 import * as frigate from '../../clients/frigate.js';
 import { execOnNodeByName } from '../../clients/ssh.js';
 import { config } from '../../config.js';
+import { getPresenceTracker } from '../../presence/tracker.js';
+import { PresenceState } from '../../presence/types.js';
 
 /**
  * Register all 12 smart home tools on the MCP server.
  */
 export function registerSmartHomeTools(server: McpServer): void {
 
-  // 1. get_who_is_home -- combined presence detection (network + camera)
+  // 1. get_who_is_home -- combined presence detection with state machine
   server.tool(
     'get_who_is_home',
-    'Detect who is currently home using network presence (phone detection) and camera AI (car detection)',
+    'Detect who is currently home using network presence, camera face recognition, and presence state tracking',
     {},
     async () => {
       try {
+        const tracker = getPresenceTracker();
+
+        // Run a fresh evaluation to ensure data is current
+        await tracker.evaluatePresence();
+
+        const states = tracker.getCurrentStates();
+
         const results: {
-          networkPresence: Array<{ name: string; owner: string; ip: string; method: string }>;
-          cameraDetections: Array<{ camera: string; label: string; time: string; method: string }>;
+          people: Array<{
+            name: string;
+            state: string;
+            since: string;
+            lastNetworkSeen: string | null;
+            lastCameraSeen: string | null;
+          }>;
           summary: string;
         } = {
-          networkPresence: [],
-          cameraDetections: [],
+          people: [],
           summary: '',
         };
 
-        // Network-based presence via arp-scan
-        try {
-          const scanResult = await execOnNodeByName('Home', 'arp-scan -l --interface=vmbr0 2>/dev/null', 15000);
-          const presenceDevices = config.presenceDevices || [];
-
-          for (const device of presenceDevices) {
-            if (scanResult.stdout.toLowerCase().includes(device.mac.toLowerCase())) {
-              results.networkPresence.push({
-                name: device.name,
-                owner: device.owner,
-                ip: device.ip || 'detected',
-                method: 'network',
-              });
-            }
-          }
-        } catch (scanErr) {
-          // Network scan failed but we can still check cameras
-          console.error('Network scan failed:', scanErr);
+        for (const person of states) {
+          results.people.push({
+            name: person.name,
+            state: person.state,
+            since: person.stateChangedAt.toISOString(),
+            lastNetworkSeen: person.lastNetworkSeen?.toISOString() ?? null,
+            lastCameraSeen: person.lastCameraSeen?.toISOString() ?? null,
+          });
         }
 
-        // Camera-based presence (cars detected recently)
-        try {
-          const carCheck = await frigate.checkForCars(15);
-          if (carCheck.carsDetected) {
-            const recentCars = await frigate.getRecentDetections('car', 3);
-            for (const event of recentCars) {
-              results.cameraDetections.push({
-                camera: event.camera,
-                label: 'car',
-                time: new Date(event.start_time * 1000).toLocaleString(),
-                method: 'camera_ai',
-              });
-            }
+        // Build human-readable summary
+        const home = states.filter(p =>
+          p.state === PresenceState.HOME || p.state === PresenceState.JUST_ARRIVED
+        );
+        const away = states.filter(p =>
+          p.state === PresenceState.AWAY ||
+          p.state === PresenceState.EXTENDED_AWAY ||
+          p.state === PresenceState.JUST_LEFT
+        );
+
+        if (home.length > 0) {
+          const names = home.map(p => p.name);
+          results.summary = `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} home`;
+          if (away.length > 0) {
+            results.summary += `. ${away.map(p => p.name).join(', ')} ${away.length === 1 ? 'is' : 'are'} away`;
           }
-        } catch (camErr) {
-          // Camera detection failed but we have network results
-          console.error('Camera detection failed:', camErr);
-        }
-
-        // Build summary
-        const owners = [...new Set(results.networkPresence.map((p) => p.owner))];
-        const carCameras = [...new Set(results.cameraDetections.map((d) => d.camera))];
-
-        if (owners.length > 0 && carCameras.length > 0) {
-          results.summary = `${owners.join(', ')} detected on network. Cars seen on: ${carCameras.join(', ')}`;
-        } else if (owners.length > 0) {
-          results.summary = `${owners.join(', ')} detected on network (phones connected)`;
-        } else if (carCameras.length > 0) {
-          results.summary = `No phones detected but cars seen on: ${carCameras.join(', ')}`;
+        } else if (away.length > 0) {
+          results.summary = `No one is home. ${away.map(p => p.name).join(', ')} ${away.length === 1 ? 'is' : 'are'} away`;
+        } else if (states.length > 0) {
+          results.summary = `Presence status unknown for ${states.map(p => p.name).join(', ')}`;
         } else {
-          results.summary = 'No one appears to be home (no devices or cars detected)';
+          results.summary = 'No people configured for presence tracking';
         }
 
         return {
