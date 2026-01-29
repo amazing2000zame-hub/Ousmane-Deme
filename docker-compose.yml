@@ -11,7 +11,7 @@ services:
     security_opt:
       - apparmor:unconfined
     stop_grace_period: 15s
-    cpuset: "6-9"
+    cpuset: "0-19"
     ports:
       - "4000:4000"
     volumes:
@@ -43,7 +43,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "8"
           memory: 2G
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -98,7 +98,7 @@ services:
     restart: unless-stopped
     security_opt:
       - apparmor:unconfined
-    cpuset: "0-3"
+    cpuset: "0-13"
     volumes:
       - /opt/jarvis-tts/voices:/voices:ro
       - /opt/jarvis-tts/models:/models
@@ -116,10 +116,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "14"
           memory: 16G
         reservations:
-          cpus: "4"
+          cpus: "6"
           memory: 4G
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/health')"]
@@ -134,31 +134,34 @@ services:
         max-file: "3"
 
   jarvis-piper:
-    image: rhasspy/wyoming-piper:latest
+    image: artibex/piper-http:latest
     container_name: jarvis-piper
     restart: unless-stopped
-    cpuset: "4-5"
+    security_opt:
+      - apparmor:unconfined
+    cpuset: "14-19"
     ports:
       - "5000:5000"
     volumes:
-      - piper-voices:/data
-    command: --voice en_US-hfc_male-medium
+      - piper-voices:/app/voices
+    environment:
+      - VOICE=en_US-hfc_male-medium
     networks:
       - jarvis-net
     deploy:
       resources:
         limits:
-          cpus: "2"
-          memory: 512M
+          cpus: "6"
+          memory: 1G
         reservations:
-          cpus: "1"
+          cpus: "2"
           memory: 256M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/?text=test"]
+      test: ["CMD", "curl", "-sf", "-X", "POST", "-H", "Content-Type: text/plain", "-d", "test", "http://localhost:5000/"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     logging:
       driver: json-file
       options:
