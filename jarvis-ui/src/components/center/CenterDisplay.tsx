@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { ActivityFeed } from './ActivityFeed';
 import { ChatPanel } from './ChatPanel';
 import { GlobeHUD } from './GlobeHUD';
+import { CameraPanel } from '../camera/CameraPanel';
 import { useVoiceStore } from '../../stores/voice';
 
-type CenterView = 'hud' | 'feed' | 'chat';
+type CenterView = 'hud' | 'feed' | 'chat' | 'cam';
 
 /**
  * CenterDisplay -- split view with Iron Man-style Globe HUD above
@@ -23,7 +24,7 @@ export function CenterDisplay() {
       {/* Header with view tabs */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-jarvis-amber/10 bg-jarvis-bg-panel shrink-0">
         <span className="font-display text-jarvis-amber-dim text-xs tracking-wider uppercase">
-          JARVIS {view === 'hud' ? 'HUD' : view === 'feed' ? 'ACTIVITY' : 'CHAT'}
+          JARVIS {view === 'hud' ? 'HUD' : view === 'feed' ? 'ACTIVITY' : view === 'chat' ? 'CHAT' : 'CAMERAS'}
         </span>
 
         <div className="flex items-center gap-2">
@@ -68,7 +69,7 @@ export function CenterDisplay() {
 
           {/* View tabs */}
           <div className="flex gap-0.5">
-            {(['hud', 'feed', 'chat'] as const).map((v) => (
+            {(['hud', 'feed', 'chat', 'cam'] as const).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -90,6 +91,8 @@ export function CenterDisplay() {
       <div className="flex-1 min-h-0 overflow-y-auto">
         {view === 'chat' ? (
           <ChatPanel />
+        ) : view === 'cam' ? (
+          <CameraPanel />
         ) : view === 'hud' ? (
           <div className="flex flex-col">
             {/* Globe HUD */}
