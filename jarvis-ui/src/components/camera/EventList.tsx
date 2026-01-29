@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { EventRow } from './EventRow';
 import { EventFilters } from './EventFilters';
 import { useCameraStore, type FrigateEvent } from '../../stores/camera';
+import { useAuthStore } from '../../stores/auth';
 
 interface EventListProps {
   maxEvents?: number;
@@ -18,12 +19,15 @@ export function EventList({
   pollInterval = 10000,
 }: EventListProps) {
   const cameras = useCameraStore((s) => s.cameras);
+  const token = useAuthStore((s) => s.token);
   const [events, setEvents] = useState<FrigateEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [cameraFilter, setCameraFilter] = useState<string | null>(null);
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
 
   const fetchEvents = useCallback(async () => {
+    if (!token) return;
+
     const params = new URLSearchParams();
     params.set('limit', String(maxEvents));
     params.set('has_snapshot', '1');
@@ -31,7 +35,9 @@ export function EventList({
     if (labelFilter) params.set('label', labelFilter);
 
     try {
-      const res = await fetch(`/api/events?${params}`);
+      const res = await fetch(`/api/events?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.ok) {
         const data = await res.json();
         setEvents(data);
@@ -41,7 +47,7 @@ export function EventList({
     } finally {
       setLoading(false);
     }
-  }, [maxEvents, cameraFilter, labelFilter]);
+  }, [token, maxEvents, cameraFilter, labelFilter]);
 
   // Initial fetch + polling
   useEffect(() => {
