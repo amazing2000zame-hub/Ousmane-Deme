@@ -3,6 +3,7 @@ import type { Socket } from 'socket.io-client';
 import { createEventsSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useClusterStore } from '../stores/cluster';
+import { useCameraStore } from '../stores/camera';
 import { getMonitorStatus, getRecentEvents } from '../services/api';
 import type { JarvisEvent } from '../types/events';
 
@@ -43,6 +44,11 @@ export function useEventsSocket(): void {
       addEvent(data);
     }
 
+    function onShowLiveFeed(data: { camera: string; timestamp: string }) {
+      console.log('[Events] Received show_live_feed:', data.camera);
+      useCameraStore.getState().openLiveModal(data.camera);
+    }
+
     function onConnect() {
       // Fetch initial monitor status on socket connection
       getMonitorStatus(token!).then(setMonitorStatus).catch(() => {});
@@ -59,6 +65,7 @@ export function useEventsSocket(): void {
 
     socket.on('event', onEvent);
     socket.on('alert', onAlert);
+    socket.on('show_live_feed', onShowLiveFeed);
     socket.on('connect', onConnect);
     socket.on('connect_error', onConnectError);
 
@@ -67,6 +74,7 @@ export function useEventsSocket(): void {
     return () => {
       socket.off('event', onEvent);
       socket.off('alert', onAlert);
+      socket.off('show_live_feed', onShowLiveFeed);
       socket.off('connect', onConnect);
       socket.off('connect_error', onConnectError);
       socket.disconnect();

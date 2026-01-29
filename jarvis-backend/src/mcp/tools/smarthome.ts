@@ -1,10 +1,10 @@
 /**
- * 12 smart home control tools for presence detection, thermostat, locks, cameras, and face recognition.
+ * 13 smart home control tools for presence detection, thermostat, locks, cameras, and face recognition.
  *
  * Safety tiers:
  *   GREEN: get_who_is_home, get_thermostat_status, get_lock_status,
  *          get_camera_snapshot, query_nvr_detections, scan_network_devices,
- *          whos_at_door, get_recognized_faces, get_unknown_visitors
+ *          whos_at_door, get_recognized_faces, get_unknown_visitors, show_live_feed
  *   YELLOW: set_thermostat
  *   RED: lock_door, unlock_door
  */
@@ -675,6 +675,50 @@ export function registerSmartHomeTools(server: McpServer): void {
                 ? 'No unknown visitors detected'
                 : `${unknownEvents.length} person detection(s) without face recognition`,
             }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // 13. show_live_feed -- open live camera stream in the dashboard
+  server.tool(
+    'show_live_feed',
+    'Open a live camera feed in the dashboard UI. Use when user asks to see, view, or bring up a camera stream.',
+    {
+      camera: z.string().describe('Camera name (e.g., "front_door", "side_house")'),
+    },
+    async ({ camera }) => {
+      try {
+        // Validate camera exists (getCameras returns string[])
+        const cameras = await frigate.getCameras();
+
+        if (!cameras.includes(camera)) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Camera "${camera}" not found. Available cameras: ${cameras.join(', ')}`,
+            }],
+            isError: true,
+          };
+        }
+
+        // Lazy import to avoid circular dependency with index.ts
+        const { eventsNs } = await import('../../index.js');
+        eventsNs.emit('show_live_feed', {
+          camera,
+          timestamp: new Date().toISOString(),
+        });
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Opening ${camera} live feed in the dashboard.`,
           }],
         };
       } catch (err) {

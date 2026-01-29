@@ -609,5 +609,157 @@ export function getClaudeTools(): Anthropic.Tool[] {
         required: [],
       },
     },
+
+    // -----------------------------------------------------------------------
+    // Phase 25: Smart Home Tools
+    // -----------------------------------------------------------------------
+    {
+      name: 'get_who_is_home',
+      description:
+        'Detect who is currently home using network presence (phone detection) and camera AI (car detection). Use when the user asks "is anyone home?", "who\'s home?", "are we alone?", "check if someone is home", or wants to check occupancy. Combines network scanning for known phones with Frigate NVR car detection.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'scan_network_devices',
+      description:
+        'Scan the network for all connected devices (phones, laptops, etc.). Use when the user asks "what devices are connected?", "show me all devices on the network", or wants a full network scan. Returns device IPs, MAC addresses, and marks known family devices.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'get_thermostat_status',
+      description:
+        'Get current thermostat status including temperature, humidity, and HVAC mode. Use when the user asks "what\'s the temperature?", "is the AC on?", "how warm is it?", "check the thermostat", or wants to know the current climate settings.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'set_thermostat',
+      description:
+        'Set thermostat temperature or change HVAC mode (heat, cool, auto, off). Use when the user says "set temperature to 72", "turn on the AC", "switch to heat mode", "make it warmer", "cool down the house", or wants to adjust climate settings.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          temperature: {
+            type: 'number',
+            description: 'Target temperature in Fahrenheit (50-90)',
+          },
+          mode: {
+            type: 'string',
+            enum: ['heat', 'cool', 'heat_cool', 'off', 'auto'],
+            description: 'HVAC mode to set',
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'get_lock_status',
+      description:
+        'Get the current status of all door locks (locked/unlocked). Use when the user asks "are the doors locked?", "check the locks", "is the front door secure?", "lock status", or wants to verify home security.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'lock_door',
+      description:
+        'Lock a specific door. REQUIRES USER CONFIRMATION. Use when the user says "lock the front door", "secure the house", "lock up", or explicitly asks to lock a door.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          lockName: {
+            type: 'string',
+            description: 'Door lock name or entity ID (e.g., "front_door", "back_door", "lock.front_door")',
+          },
+        },
+        required: ['lockName'],
+      },
+    },
+    {
+      name: 'unlock_door',
+      description:
+        'Unlock a specific door. REQUIRES USER CONFIRMATION. Use when the user says "unlock the front door", "let me in", "open the door", or explicitly asks to unlock a door.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          lockName: {
+            type: 'string',
+            description: 'Door lock name or entity ID (e.g., "front_door", "back_door", "lock.front_door")',
+          },
+        },
+        required: ['lockName'],
+      },
+    },
+    {
+      name: 'get_camera_snapshot',
+      description:
+        'Get a snapshot image from a security camera. Use when the user asks "show me the driveway", "what\'s on the front camera?", "check the backyard camera", or wants to see a live camera view.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          camera: {
+            type: 'string',
+            description: 'Camera name (e.g., "driveway", "front_door", "backyard", "garage")',
+          },
+        },
+        required: ['camera'],
+      },
+    },
+    {
+      name: 'query_nvr_detections',
+      description:
+        'Query recent AI object detections from security cameras (cars, people, packages, pets). Use when the user asks "any cars in the driveway?", "has anyone been outside?", "any deliveries today?", "show me recent detections", "were there any visitors?", or wants to check security camera activity.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          camera: {
+            type: 'string',
+            description: 'Filter by camera name (optional)',
+          },
+          objectType: {
+            type: 'string',
+            enum: ['person', 'car', 'package', 'dog', 'cat'],
+            description: 'Filter by object type (optional)',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of results (default: 20)',
+          },
+          withinMinutes: {
+            type: 'number',
+            description: 'Only show detections within last N minutes (optional)',
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'show_live_feed',
+      description:
+        "Open a live camera feed in the dashboard UI. Use when the user asks to see, view, show, or bring up a camera stream (e.g., 'show me the front door', 'let me see the driveway camera', 'bring up the side house feed').",
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          camera: {
+            type: 'string',
+            description: 'Camera name (e.g., "front_door", "side_house")',
+          },
+        },
+        required: ['camera'],
+      },
+    },
   ];
 }

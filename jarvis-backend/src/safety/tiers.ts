@@ -102,6 +102,9 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   get_recognized_faces: ActionTier.GREEN,
   get_unknown_visitors: ActionTier.GREEN,
 
+  // GREEN -- UI interaction (no side effects)
+  show_live_feed: ActionTier.GREEN,
+
   // YELLOW -- thermostat control (logged, non-destructive)
   set_thermostat: ActionTier.YELLOW,
 
