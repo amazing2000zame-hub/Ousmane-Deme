@@ -1,20 +1,23 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { VariableSizeList as List } from 'react-window';
 import { useChatSocket } from '../../hooks/useChatSocket';
 import { useChatStore } from '../../stores/chat';
 import { useVoiceStore } from '../../stores/voice';
 import { useVoice } from '../../hooks/useVoice';
-import { wasProgressiveUsedForSession, resetProgressiveUsed } from '../../audio/progressive-queue';
+import { useMessageHeights } from '../../hooks/useMessageHeights';
+import { useSmoothScroll } from '../../hooks/useSmoothScroll';
+import { wasProgressiveUsedForSession, resetProgressiveUsed, isProgressiveActive } from '../../audio/progressive-queue';
 import { ChatInput } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
 import { AudioVisualizer } from './AudioVisualizer';
+import { PipelineProgress } from './PipelineProgress';
 
 /**
- * Main chat interface -- message list with auto-scroll and text input.
- * Connects to the backend /chat namespace via useChatSocket hook.
- * Integrates TTS voice playback with auto-play on response completion.
- *
- * PERF-09/10: Uses streamingContent for O(1) streaming display,
- * React.memo ChatMessage for selective re-renders, and throttled auto-scroll.
+ * Main chat interface with virtualized message list for smooth scrolling through 100+ messages.
+ * Uses react-window VariableSizeList to render only visible messages.
+ * 
+ * Phase 25 (Chat Virtualization): Replaced flat list with virtual scrolling while preserving
+ * all existing functionality (auto-scroll, streaming, manual scroll detection, voice integration).
  */
 export function ChatPanel() {
   const { sendMessage, confirmTool } = useChatSocket();
@@ -22,14 +25,22 @@ export function ChatPanel() {
   const isStreaming = useChatStore((s) => s.isStreaming);
   const streamingMessageId = useChatStore((s) => s.streamingMessageId);
   const streamingContent = useChatStore((s) => s.streamingContent);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Virtual scrolling refs and state
+  const listRef = useRef<List>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(600);
+  
   const prevStreamingRef = useRef(false);
 
   const voiceEnabled = useVoiceStore((s) => s.enabled);
   const autoPlay = useVoiceStore((s) => s.autoPlay);
   const isPlaying = useVoiceStore((s) => s.isPlaying);
   const { speak, stop } = useVoice();
+
+  // Virtualization hooks
+  const messageHeights = useMessageHeights();
+  const { scrollToItem } = useSmoothScroll(listRef);
 
   const handleConfirm = useCallback(
     (toolUseId: string) => confirmTool(toolUseId, true),
@@ -43,7 +54,6 @@ export function ChatPanel() {
   const handleSpeak = useCallback(
     (text: string, messageId: string) => {
       const state = useVoiceStore.getState();
-      // If this message is already playing, stop it
       if (state.isPlaying && state.playingMessageId === messageId) {
         stop();
       } else {
@@ -53,41 +63,43 @@ export function ChatPanel() {
     [speak, stop],
   );
 
-  // PERF-10: Track if user has scrolled up manually
   const userScrolledUpRef = useRef(false);
 
-  const handleScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    userScrolledUpRef.current = !atBottom;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setContainerHeight(entry.contentRect.height);
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
   }, []);
 
-  // PERF-10: Auto-scroll — fires on new messages and streaming content updates (~2/sec via RAF),
-  // but respects manual scroll-up
   useEffect(() => {
-    if (!userScrolledUpRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!userScrolledUpRef.current && listRef.current && messages.length > 0) {
+      scrollToItem(messages.length - 1, 'end');
     }
-  }, [messages.length, streamingContent]);
+  }, [messages.length, streamingContent, scrollToItem]);
 
-  // Auto-play TTS when streaming stops (response complete).
-  // PERF-04: Skip monolithic speak if the streaming voice pipeline already
-  // delivered audio progressively during this response.
   useEffect(() => {
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isStreaming;
 
     if (wasStreaming && !isStreaming && voiceEnabled && autoPlay) {
-      // If progressive audio was used (even if already finalized), skip
-      // monolithic speak — the dual-track pipeline already handled playback.
       if (wasProgressiveUsedForSession()) {
         resetProgressiveUsed();
         return;
       }
 
-      // Fallback: monolithic speak for the complete response
-      // (only runs when voiceMode wasn't active during streaming)
+      if (isProgressiveActive()) {
+        return;
+      }
+
       const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
       if (lastAssistant?.content) {
         speak(lastAssistant.content, lastAssistant.id);
@@ -95,19 +107,62 @@ export function ChatPanel() {
     }
   }, [isStreaming, voiceEnabled, autoPlay, messages, speak]);
 
+  const Row = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const message = messages[index];
+    const isStreamingMessage = message.id === streamingMessageId;
+    
+    return (
+      <div
+        style={style}
+        data-message-id={message.id}
+        ref={(el) => {
+          if (el) {
+            const rect = el.getBoundingClientRect();
+            const height = rect.height;
+            const currentHeight = messageHeights.get(message.id);
+            
+            if (Math.abs(height - currentHeight) > 5) {
+              messageHeights.set(message.id, height);
+              listRef.current?.resetAfterIndex(index);
+            }
+          }
+        }}
+      >
+        <ChatMessage
+          message={message}
+          displayContent={isStreamingMessage ? streamingContent : undefined}
+          onConfirm={handleConfirm}
+          onDeny={handleDeny}
+          onSpeak={handleSpeak}
+        />
+      </div>
+    );
+  }, [messages, streamingMessageId, streamingContent, messageHeights, handleConfirm, handleDeny, handleSpeak]);
+
+  const getItemSize = useCallback((index: number) => {
+    return messageHeights.estimate(messages[index]);
+  }, [messages, messageHeights]);
+
+  const handleScroll = useCallback((info: { scrollDirection: 'forward' | 'backward'; scrollOffset: number; scrollUpdateWasRequested: boolean }) => {
+    if (!info.scrollUpdateWasRequested) {
+      const list = listRef.current;
+      if (list) {
+        const listState = (list as any).state;
+        const { scrollOffset } = listState;
+        const scrollHeight = (list as any)._getEstimatedTotalSize?.() || 0;
+        const atBottom = scrollHeight - scrollOffset - containerHeight < 100;
+        userScrolledUpRef.current = !atBottom;
+      }
+    }
+  }, [containerHeight]);
+
   return (
     <div className="flex flex-col h-full">
-      {/* Audio visualizer bar (shown when playing) */}
       {voiceEnabled && isPlaying && (
         <AudioVisualizer />
       )}
 
-      {/* Messages area */}
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto px-3 py-3"
-      >
+      <div ref={containerRef} className="flex-1 min-h-0">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <span className="font-display text-jarvis-text-dim text-sm tracking-wider">
@@ -115,23 +170,23 @@ export function ChatPanel() {
             </span>
           </div>
         ) : (
-          <>
-            {messages.map((msg) => (
-              <ChatMessage
-                key={msg.id}
-                message={msg}
-                displayContent={msg.id === streamingMessageId ? streamingContent : undefined}
-                onConfirm={handleConfirm}
-                onDeny={handleDeny}
-                onSpeak={handleSpeak}
-              />
-            ))}
-            <div ref={messagesEndRef} />
-          </>
+          <List
+            ref={listRef}
+            height={containerHeight}
+            itemCount={messages.length}
+            itemSize={getItemSize}
+            width="100%"
+            overscanCount={5}
+            onScroll={handleScroll}
+            className="px-3 py-3"
+          >
+            {Row}
+          </List>
         )}
       </div>
 
-      {/* Input area */}
+      <PipelineProgress />
+
       <ChatInput onSend={sendMessage} disabled={isStreaming} />
     </div>
   );
