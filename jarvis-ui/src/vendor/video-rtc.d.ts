@@ -3,7 +3,9 @@
  * @see https://github.com/AlexxIT/go2rtc
  */
 
-declare global {
+import 'react';
+
+declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
       'video-rtc': React.DetailedHTMLProps<
@@ -35,5 +37,3 @@ export interface VideoRTCElement extends HTMLElement {
   play(): void;
   send(msg: object): void;
 }
-
-export {};
