@@ -1,89 +1,147 @@
-# Project State
+# Jarvis 3.1 Project State
+
+**Last Updated:** 2026-01-29
+**Current Milestone:** v1.6 Smart Home Intelligence
+
+---
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-01-29)
+**Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
 
-**Core value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
-**Current focus:** Milestone v1.6 -- Smart Home Intelligence
+**Current Focus:** Give JARVIS eyes -- camera face recognition, presence tracking, and proactive alerts
+
+**Active Files:**
+- `/root/.planning/milestones/v1.6-ROADMAP.md` - Current roadmap
+- `/root/.planning/REQUIREMENTS-v1.6.md` - v1.6 requirements
+- `/root/.planning/research/FEATURES.md` - Feature research
+- `/root/.planning/research/ARCHITECTURE.md` - Architecture decisions
+
+---
 
 ## Current Position
 
-Milestone: v1.6 Smart Home Intelligence
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-01-29 — Milestone v1.6 started
+**Milestone:** v1.6 Smart Home Intelligence
+**Phase:** 26 - Face Recognition Foundation
+**Plan:** 2 plans created, ready for execution
+**Status:** PLANNED
 
-Progress: [░░░░░░░░░░░░░░░░░░░░] 0% v1.6 (0/? phases)
+```
+[==                            ] 5%
+Phase 26/29 | Plan 0/8 | Req 0/20
+```
+
+---
+
+## Milestone Progress
+
+| Phase | Name | Plans | Status |
+|-------|------|-------|--------|
+| 26 | Face Recognition Foundation | 2 | Planned |
+| 27 | Presence Intelligence | 2 | Pending |
+| 28 | Camera Dashboard | 2 | Pending |
+| 29 | Proactive Intelligence | 2 | Pending |
+
+**Requirements Progress:**
+- FACE: 0/5 complete
+- PRES: 0/5 complete
+- CAM: 0/5 complete
+- ALERT: 0/5 complete
+
+---
+
+## Phase 26 Plans
+
+| Plan | Wave | Objective | Status |
+|------|------|-----------|--------|
+| 26-01 | 1 | Enable Frigate face recognition, extend frigate.ts client | Ready |
+| 26-02 | 2 | Add 3 MCP tools (whos_at_door, get_recognized_faces, get_unknown_visitors) | Ready |
+
+**Wave Structure:**
+- Wave 1: 26-01 (independent, no dependencies)
+- Wave 2: 26-02 (depends on 26-01 for frigate.ts extensions)
+
+---
 
 ## Performance Metrics
 
-**Velocity (from v1.0-v1.5):**
-- Total plans completed: 52
-- Average duration: ~5 min
-- Phases shipped: 25
-- Milestones shipped: 6 (v1.0, v1.1, v1.2, v1.3, v1.4, v1.5)
+| Metric | Value |
+|--------|-------|
+| Plans completed | 0 |
+| Requirements delivered | 0 |
+| Lines of code | 0 |
+| Test coverage | N/A |
+
+---
 
 ## Accumulated Context
 
-### Key Decisions (v1.6)
+### Key Decisions
 
-- Frigate NVR already deployed on agent1 (192.168.1.61:5000) with 2 cameras
-- Camera recordings on NAS at //192.168.1.50/ExternalHDD/frigate/ (4.5TB, 30-day retention)
-- Face recognition will use dual input: uploaded photos + camera-learned faces
-- Unknown faces logged for later review (no immediate notifications)
-- Presence timeline is full searchable history ("When did John leave yesterday?")
-- Dashboard panel for faces + activity timeline (not just chat queries)
-- No Home Assistant integration -- Frigate only
-- Face database scoped for 5-10 household members
-- CPU-based face recognition (no GPU available)
+| Decision | Rationale | Date |
+|----------|-----------|------|
+| Use Frigate native face recognition | Avoids duplicating ML, leverages optimized FaceNet | 2026-01-29 |
+| HTTP polling over MQTT initially | Simpler setup, MQTT deferred to v1.7 | 2026-01-29 |
+| SQLite for presence logs | Extends existing schema, single backup | 2026-01-29 |
+| MSE streaming via go2rtc | Lower latency than HLS, built into Frigate | 2026-01-29 |
+| 5s poll interval for events | Balances latency vs API load | 2026-01-29 |
+| model_size: small for face recognition | CPU-only inference on agent1, no GPU | 2026-01-29 |
 
-### Key Decisions (v1.5 - carried forward)
+### Technical Notes
 
-- Piper TTS deployed as fast fallback alongside XTTS (3-second timeout triggers Piper)
-- XTTS v2 cannot parallelize (batch_size=1 "wontfix") -- CPU affinity is highest-impact optimization
-- Bounded to max 2 concurrent TTS workers to avoid CPU starvation of LLM
-- Conversation summarization must preserve structured context (VMIDs, IPs, paths)
-- 3-second XTTS timeout balances quality vs latency; 30s recovery interval prevents hammering
-- Gapless playback uses source.start(startAt) clock scheduling, not onended chaining
-- @tanstack/react-virtual chosen over react-window for chat virtualization
+- Frigate 0.16.4 running on agent1:5000 with face_recognition config present but disabled
+- frigate.ts client already has `FrigateEvent.sub_label` field ready for face data
+- 2 cameras: front_door (192.168.1.204), side_house (192.168.1.27)
+- go2rtc built into Frigate at ports 8555/1984
+- Existing tools: get_who_is_home, query_nvr_detections, get_camera_snapshot, scan_network_devices
+- sub_label format from Frigate: `["PersonName", 0.92]` (name + confidence array)
 
-### Key Decisions (v1.4 - carried forward)
+### Blockers
 
-- Streaming voice pipeline targets <4s first-audio
-- Sentence boundaries detected during LLM streaming, TTS per-sentence
-- Audio delivered as Socket.IO binary events (not WebRTC)
-- Shared Proxmox API cache with TTL (5s nodes, 15s storage)
-- React.memo for NodeCard, VMCard, ChatMessage, EventRow
-- All hardcoded colors replaced with theme tokens
+None currently.
 
-Previous milestones:
-- v1.0 MVP (Phases 1-6): Full dashboard + AI + monitoring + safety
-- v1.1 Hybrid Intelligence (Phases 7-10): Hybrid LLM, memory, Docker, testing
-- v1.2 JARVIS Voice (Phase 11): TTS/STT with XTTS v2, ElevenLabs, OpenAI
-- v1.3 File Ops & Intelligence (Phases 12-15): File ops, project tools, code analysis, voice retraining
-- v1.4 Performance & Reliability (Phases 16-20): Streaming voice, chat rendering, backend caching, dashboard perf, theme polish
-- v1.5 Optimization & Latency Reduction (Phases 21-25): TTS fallback, parallel synthesis, Opus codec, context management, chat virtualization
+### TODO
 
-### Pending Todos
+- [x] Start Phase 26 planning with `/gsd:plan-phase 26`
+- [ ] Execute Phase 26 with `/gsd:execute-phase 26`
 
-- None for v1.6 yet
-
-### Blockers/Concerns
-
-- CPU contention risk: Home node (20 threads) shared between llama-server, XTTS, Piper, and potentially face recognition
-- Face recognition library selection -- need CPU-efficient option (face-api.js, deepface, or insightface)
-- Frigate API authentication -- need to verify if Frigate requires auth or is open on LAN
-- Camera credential security -- RTSP credentials in config need protection
+---
 
 ## Session Continuity
 
-Last session: 2026-01-29
-Stopped at: Milestone v1.6 started, ready for research
-Resume file: None
+### Previous Session
+- Completed research phase
+- Created FEATURES.md and ARCHITECTURE.md
+- Verified Frigate 0.16.4 capabilities
+- Created v1.6 roadmap with 4 phases (26-29)
+- Defined 20 requirements across 4 categories
 
-**Next steps:**
-1. Research domain ecosystem for face recognition, camera integration, presence tracking
-2. Define requirements
-3. Create roadmap with phases
+### This Session
+- Planned Phase 26: Face Recognition Foundation
+- Created 26-01-PLAN.md (Frigate config + frigate.ts extension)
+- Created 26-02-PLAN.md (3 new MCP tools)
+
+### Next Session
+- Execute Phase 26 plans
+- Enable Frigate face recognition
+- Test face recognition queries
+
+---
+
+## Quick Commands
+
+```bash
+# View plans
+cat /root/.planning/phases/26-face-recognition-foundation/26-01-PLAN.md
+cat /root/.planning/phases/26-face-recognition-foundation/26-02-PLAN.md
+
+# Execute phase
+/gsd:execute-phase 26
+
+# Check Frigate status
+curl -s http://192.168.1.61:5000/api/version
+curl -s http://192.168.1.61:5000/api/config | jq '.face_recognition'
+
+# Check Frigate events
+curl -s "http://192.168.1.61:5000/api/events?label=person&limit=5" | jq
+```
