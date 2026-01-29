@@ -132,5 +132,23 @@ export async function runMigrations(): Promise<void> {
     sqlite.exec(`ALTER TABLE conversations ADD COLUMN cost_usd TEXT;`);
   } catch { /* column already exists */ }
 
+  // Phase 27: Presence logs table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS presence_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+      person_id TEXT NOT NULL,
+      person_name TEXT NOT NULL,
+      previous_state TEXT,
+      new_state TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      trigger_details TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_presence_person ON presence_logs(person_id);
+    CREATE INDEX IF NOT EXISTS idx_presence_timestamp ON presence_logs(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_presence_state ON presence_logs(new_state);
+  `);
+
   console.log('Database migrations applied (direct SQL)');
 }

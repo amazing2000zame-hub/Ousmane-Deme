@@ -92,3 +92,17 @@ export const autonomyActions = sqliteTable('autonomy_actions', {
   escalated: integer('escalated', { mode: 'boolean' }).notNull().default(false),
   emailSent: integer('email_sent', { mode: 'boolean' }).notNull().default(false),
 });
+
+// ---------------------------------------------------------------------------
+// Presence Logs -- arrival/departure event history (Phase 27)
+// ---------------------------------------------------------------------------
+export const presenceLogs = sqliteTable('presence_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  timestamp: text('timestamp').notNull().default(sql`(datetime('now'))`),
+  personId: text('person_id').notNull(),        // Matches config.presenceDevices MAC
+  personName: text('person_name').notNull(),    // Display name from config
+  previousState: text('previous_state'),        // null on first log
+  newState: text('new_state').notNull(),        // PresenceState enum value
+  trigger: text('trigger').notNull(),           // 'network' | 'face' | 'timer' | 'manual'
+  triggerDetails: text('trigger_details'),      // JSON: { camera, eventId, mac, etc }
+});
