@@ -22,14 +22,14 @@
 ## Current Position
 
 **Milestone:** v1.6 Smart Home Intelligence
-**Phase:** 27 - Presence Intelligence
+**Phase:** 28 - Camera Dashboard
 **Plan:** 1 of 2 complete
 **Status:** In progress
-**Last activity:** 2026-01-29 - Completed 27-01-PLAN.md
+**Last activity:** 2026-01-29 - Completed 28-01-PLAN.md
 
 ```
-[=====                         ] 25%
-Phase 27/29 | Plan 2/8 | Req 4/20
+[========                      ] 37%
+Phase 28/29 | Plan 4/8 | Req 6/20
 ```
 
 ---
@@ -39,28 +39,28 @@ Phase 27/29 | Plan 2/8 | Req 4/20
 | Phase | Name | Plans | Status |
 |-------|------|-------|--------|
 | 26 | Face Recognition Foundation | 2 | Complete (2/2) |
-| 27 | Presence Intelligence | 2 | In Progress (1/2) |
-| 28 | Camera Dashboard | 2 | Pending |
+| 27 | Presence Intelligence | 2 | Complete (2/2) |
+| 28 | Camera Dashboard | 2 | In Progress (1/2) |
 | 29 | Proactive Intelligence | 2 | Pending |
 
 **Requirements Progress:**
 - FACE: 2/5 complete (FACE-01, FACE-02)
 - PRES: 3/5 complete (PRES-01, PRES-02, PRES-03)
-- CAM: 0/5 complete
+- CAM: 2/5 complete (CAM-01, CAM-02)
 - ALERT: 0/5 complete
 
 ---
 
-## Phase 27 Plans
+## Phase 28 Plans
 
 | Plan | Wave | Objective | Status |
 |------|------|-----------|--------|
-| 27-01 | 1 | Create presence_logs table, 5-state tracker, enhance get_who_is_home | Complete |
-| 27-02 | 2 | Add presence history tools (get_presence_history, get_arrival_times) | Ready |
+| 28-01 | 1 | Create camera API and snapshot grid UI | Complete |
+| 28-02 | 2 | Add live streaming with MSE/go2rtc | Ready |
 
 **Wave Structure:**
-- Wave 1: 27-01 (depends on 26-01, 26-02 for frigate integration) - COMPLETE
-- Wave 2: 27-02 (depends on 27-01 for presence_logs table) - Ready to execute
+- Wave 1: 28-01 (camera API, snapshot grid, modal) - COMPLETE
+- Wave 2: 28-02 (live streaming integration) - Ready to execute
 
 ---
 
@@ -68,9 +68,9 @@ Phase 27/29 | Plan 2/8 | Req 4/20
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 2 |
-| Requirements delivered | 5 |
-| Lines of code | ~370 (presence module, smarthome.ts) |
+| Plans completed | 4 |
+| Requirements delivered | 7 |
+| Lines of code | ~600 (camera API, store, components) |
 | Test coverage | N/A |
 
 ---
@@ -91,6 +91,9 @@ Phase 27/29 | Plan 2/8 | Req 4/20
 | 6-state presence machine | unknown, home, away, just_arrived, just_left, extended_away | 2026-01-29 |
 | 10-minute hysteresis timers | Prevents WiFi flapping from causing spurious events | 2026-01-29 |
 | Multi-signal fusion | Network + face recognition for reliable presence | 2026-01-29 |
+| Proxy Frigate through backend | Consistent auth, no CORS issues | 2026-01-29 |
+| Blob URL lifecycle management | Revoke old URLs before creating new to prevent memory leaks | 2026-01-29 |
+| 10-second snapshot polling | Balances freshness vs API load | 2026-01-29 |
 
 ### Technical Notes
 
@@ -103,6 +106,9 @@ Phase 27/29 | Plan 2/8 | Req 4/20
 - presence_logs table with indexes on person_id, timestamp, new_state
 - get_who_is_home now returns state-aware presence data
 - Face library currently empty (no enrolled faces yet)
+- Camera API at /api/cameras, /api/cameras/:camera/snapshot, /api/events
+- Camera store uses blob URLs with automatic cleanup
+- CameraPanel with 2-column grid, modal with keyboard/click close
 
 ### Blockers
 
@@ -114,8 +120,10 @@ None currently.
 - [x] Execute 26-01: Enable Frigate face recognition
 - [x] Execute 26-02: Add face recognition MCP tools
 - [x] Execute 27-01: Create presence tracker and state machine
-- [ ] Execute 27-02: Add presence history tools
-- [ ] Continue to Phase 28: Camera Dashboard
+- [x] Execute 27-02: Add presence history tools
+- [x] Execute 28-01: Create camera API and snapshot grid
+- [ ] Execute 28-02: Add live streaming
+- [ ] Continue to Phase 29: Proactive Intelligence
 
 ---
 
@@ -128,17 +136,20 @@ None currently.
 - Created v1.6 roadmap with 4 phases (26-29)
 - Defined 20 requirements across 4 categories
 - Executed Phase 26 plans
+- Executed Phase 27 plans
 
 ### This Session
-- Executed 27-01-PLAN.md
-- Created presence_logs SQLite table with schema and migration
-- Implemented 5-state PresenceTracker with 10-minute hysteresis
-- Enhanced get_who_is_home with multi-signal fusion
+- Executed 28-01-PLAN.md
+- Created backend camera API with 5 Frigate proxy endpoints
+- Built camera Zustand store with blob URL lifecycle management
+- Implemented 10-second polling hook with AbortController cleanup
+- Created CameraPanel, CameraCard, CameraModal components
+- Added CAM tab to CenterDisplay
 
 ### Next Steps
-- Execute 27-02-PLAN.md (presence history tools)
-- Enroll faces in Frigate library for testing
-- Continue to Phase 28
+- Execute 28-02-PLAN.md (live streaming with MSE/go2rtc)
+- Test camera dashboard in browser
+- Continue to Phase 29
 
 ---
 
@@ -146,16 +157,19 @@ None currently.
 
 ```bash
 # View plans
-cat /root/.planning/phases/27-presence-intelligence/27-01-SUMMARY.md
-cat /root/.planning/phases/27-presence-intelligence/27-02-PLAN.md
+cat /root/.planning/phases/28-camera-dashboard/28-01-SUMMARY.md
+cat /root/.planning/phases/28-camera-dashboard/28-02-PLAN.md
 
-# Check Frigate face recognition
-curl -s http://192.168.1.61:5000/api/config | jq '.face_recognition'
-curl -s http://192.168.1.61:5000/api/faces
+# Test camera API
+TOKEN=$(curl -s -X POST http://localhost:4000/api/auth/login -H 'Content-Type: application/json' -d '{"password":"jarvis"}' | jq -r '.token')
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:4000/api/cameras
+curl -o /tmp/snap.jpg -H "Authorization: Bearer $TOKEN" http://localhost:4000/api/cameras/front_door/snapshot
 
-# Check Frigate events
-curl -s "http://192.168.1.61:5000/api/events?label=person&limit=5" | jq
+# Check Frigate
+curl -s http://192.168.1.61:5000/api/config | jq '.cameras | keys'
+curl -s "http://192.168.1.61:5000/api/events?limit=5" | jq
 
-# Build backend
+# Build and restart
 cd /root/jarvis-backend && npm run build
+cd /root && docker compose up -d --build
 ```
