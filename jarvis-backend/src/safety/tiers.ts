@@ -86,6 +86,28 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
 
   // BLACK -- always blocked destructive operations
   reboot_node: ActionTier.BLACK,
+
+  // Phase 25: Smart Home Tools
+
+  // GREEN -- read-only smart home
+  get_who_is_home: ActionTier.GREEN,
+  scan_network_devices: ActionTier.GREEN,
+  get_thermostat_status: ActionTier.GREEN,
+  get_lock_status: ActionTier.GREEN,
+  get_camera_snapshot: ActionTier.GREEN,
+  query_nvr_detections: ActionTier.GREEN,
+
+  // GREEN -- face recognition queries (Phase 26)
+  whos_at_door: ActionTier.GREEN,
+  get_recognized_faces: ActionTier.GREEN,
+  get_unknown_visitors: ActionTier.GREEN,
+
+  // YELLOW -- thermostat control (logged, non-destructive)
+  set_thermostat: ActionTier.YELLOW,
+
+  // RED -- door lock control (requires confirmation for security)
+  lock_door: ActionTier.RED,
+  unlock_door: ActionTier.RED,
 };
 
 // ---------------------------------------------------------------------------
