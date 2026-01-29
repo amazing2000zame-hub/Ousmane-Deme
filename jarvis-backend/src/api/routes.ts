@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import type { Namespace } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import { healthRouter } from './health.js';
+import { cameraRouter } from './camera.js';
 import { authMiddleware, handleLogin } from '../auth/jwt.js';
 import { memoryStore } from '../db/memory.js';
 import { executeTool, getToolList } from '../mcp/server.js';
@@ -17,6 +18,9 @@ router.post('/api/auth/login', handleLogin);
 
 // Auth middleware for all other /api/* routes
 router.use('/api', authMiddleware);
+
+// Camera API routes (proxies Frigate endpoints)
+router.use('/api', cameraRouter);
 
 // ---------------------------------------------------------------------------
 // Memory API -- events, preferences (all protected by auth middleware above)
