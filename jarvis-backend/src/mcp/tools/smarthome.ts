@@ -1,9 +1,10 @@
 /**
- * 8 smart home control tools for presence detection, thermostat, locks, and cameras.
+ * 12 smart home control tools for presence detection, thermostat, locks, cameras, and face recognition.
  *
  * Safety tiers:
  *   GREEN: get_who_is_home, get_thermostat_status, get_lock_status,
- *          get_camera_snapshot, query_nvr_detections, scan_network_devices
+ *          get_camera_snapshot, query_nvr_detections, scan_network_devices,
+ *          whos_at_door, get_recognized_faces, get_unknown_visitors
  *   YELLOW: set_thermostat
  *   RED: lock_door, unlock_door
  */
@@ -16,7 +17,7 @@ import { execOnNodeByName } from '../../clients/ssh.js';
 import { config } from '../../config.js';
 
 /**
- * Register all 8 smart home tools on the MCP server.
+ * Register all 12 smart home tools on the MCP server.
  */
 export function registerSmartHomeTools(server: McpServer): void {
 
@@ -544,6 +545,141 @@ export function registerSmartHomeTools(server: McpServer): void {
               summary,
               visitors,
               lookbackMinutes,
+            }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // 11. get_recognized_faces -- list all face events with recognized names
+  server.tool(
+    'get_recognized_faces',
+    'Get recent events where a face was recognized (identified by name)',
+    {
+      camera: z.string().optional().describe('Filter by camera name'),
+      name: z.string().optional().describe('Filter by person name'),
+      limit: z.number().min(1).max(50).optional().describe('Max results (default: 20)'),
+      withinMinutes: z.number().min(1).max(1440).optional().describe('Look back N minutes (default: 60)'),
+    },
+    async ({ camera, name, limit, withinMinutes }) => {
+      try {
+        const lookbackMinutes = withinMinutes ?? 60;
+        const after = Math.floor(Date.now() / 1000) - lookbackMinutes * 60;
+
+        const events = await frigate.getEvents({
+          camera,
+          label: 'person',
+          after,
+          limit: limit ?? 20,
+          has_snapshot: true,
+        });
+
+        // Filter to only events with face recognition
+        const recognizedEvents = events
+          .map((e) => {
+            const face = frigate.parseFaceSubLabel(e.sub_label);
+            return { event: e, face };
+          })
+          .filter((r) => r.face.name !== null)
+          .filter((r) => !name || r.face.name?.toLowerCase() === name.toLowerCase());
+
+        const formatted = recognizedEvents.map((r) => ({
+          name: r.face.name,
+          confidence: r.face.confidence ? `${(r.face.confidence * 100).toFixed(0)}%` : 'N/A',
+          camera: r.event.camera,
+          time: new Date(r.event.start_time * 1000).toLocaleString(),
+          eventId: r.event.id,
+          hasSnapshot: r.event.has_snapshot,
+          hasClip: r.event.has_clip,
+        }));
+
+        // Group by name for summary
+        const byName: Record<string, number> = {};
+        for (const e of formatted) {
+          byName[e.name!] = (byName[e.name!] || 0) + 1;
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              totalRecognized: formatted.length,
+              summary: byName,
+              events: formatted,
+              lookbackMinutes,
+            }, null, 2),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // 12. get_unknown_visitors -- query person events without face recognition
+  server.tool(
+    'get_unknown_visitors',
+    'Get recent person detections where no face was recognized (unknown visitors)',
+    {
+      camera: z.string().optional().describe('Filter by camera name'),
+      limit: z.number().min(1).max(50).optional().describe('Max results (default: 20)'),
+      withinMinutes: z.number().min(1).max(1440).optional().describe('Look back N minutes (default: 60)'),
+    },
+    async ({ camera, limit, withinMinutes }) => {
+      try {
+        const lookbackMinutes = withinMinutes ?? 60;
+        const after = Math.floor(Date.now() / 1000) - lookbackMinutes * 60;
+
+        const events = await frigate.getEvents({
+          camera,
+          label: 'person',
+          after,
+          limit: limit ?? 20,
+          has_snapshot: true,
+        });
+
+        // Filter to only events WITHOUT face recognition (sub_label is null)
+        const unknownEvents = events.filter((e) => {
+          const face = frigate.parseFaceSubLabel(e.sub_label);
+          return face.name === null;
+        });
+
+        const formatted = unknownEvents.map((e) => ({
+          camera: e.camera,
+          time: new Date(e.start_time * 1000).toLocaleString(),
+          duration: e.end_time ? `${Math.round(e.end_time - e.start_time)}s` : 'ongoing',
+          confidence: `${(e.score * 100).toFixed(1)}%`,
+          eventId: e.id,
+          hasSnapshot: e.has_snapshot,
+          hasClip: e.has_clip,
+        }));
+
+        // Group by camera for summary
+        const byCamera: Record<string, number> = {};
+        for (const e of formatted) {
+          byCamera[e.camera] = (byCamera[e.camera] || 0) + 1;
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              totalUnknown: formatted.length,
+              summary: byCamera,
+              events: formatted,
+              lookbackMinutes,
+              note: unknownEvents.length === 0
+                ? 'No unknown visitors detected'
+                : `${unknownEvents.length} person detection(s) without face recognition`,
             }, null, 2),
           }],
         };
