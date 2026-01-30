@@ -82,6 +82,9 @@ function getNextAckPhrase(): string {
 /**
  * Synthesize and send an acknowledgment phrase immediately.
  * Used to give voice feedback before long-running tool calls.
+ *
+ * Uses Piper TTS (not XTTS) for instant synthesis (<200ms).
+ * Sends via dedicated chat:acknowledge event for immediate playback.
  */
 async function sendToolAcknowledgment(
   socket: Socket,
@@ -92,17 +95,21 @@ async function sendToolAcknowledgment(
 
   const phrase = getNextAckPhrase();
   try {
-    const audio = await synthesizeSentenceWithFallback(phrase);
+    // Force Piper for instant synthesis - XTTS takes 7-15s even for short phrases
+    const audio = await synthesizeSentenceWithFallback(phrase, { engineLock: 'piper' });
     if (audio) {
-      socket.emit('chat:audio_chunk', {
+      // Use dedicated event for immediate playback (not queued with response audio)
+      socket.emit('chat:acknowledge', {
         sessionId,
-        index: -1, // Special index for acknowledgment
+        phrase,
         contentType: audio.contentType,
         audio: audio.buffer.toString('base64'),
       });
+      console.log(`[Chat] Sent acknowledgment: "${phrase}" via Piper`);
     }
-  } catch {
+  } catch (err) {
     // Non-critical, continue without acknowledgment
+    console.warn(`[Chat] Acknowledgment failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
