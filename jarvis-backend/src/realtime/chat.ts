@@ -57,6 +57,56 @@ const providers: Record<string, LLMProvider> = {
 };
 
 // ---------------------------------------------------------------------------
+// Tool acknowledgment phrases (spoken before executing tools)
+// ---------------------------------------------------------------------------
+
+const TOOL_ACK_PHRASES = [
+  'One moment, sir.',
+  'Getting that pulled up now.',
+  'Right away, sir.',
+  'Let me check on that.',
+  'Working on it.',
+];
+
+let ackPhraseIndex = 0;
+
+/**
+ * Get the next acknowledgment phrase (round-robin).
+ */
+function getNextAckPhrase(): string {
+  const phrase = TOOL_ACK_PHRASES[ackPhraseIndex];
+  ackPhraseIndex = (ackPhraseIndex + 1) % TOOL_ACK_PHRASES.length;
+  return phrase;
+}
+
+/**
+ * Synthesize and send an acknowledgment phrase immediately.
+ * Used to give voice feedback before long-running tool calls.
+ */
+async function sendToolAcknowledgment(
+  socket: Socket,
+  sessionId: string,
+  voiceMode: boolean,
+): Promise<void> {
+  if (!voiceMode || !ttsAvailable()) return;
+
+  const phrase = getNextAckPhrase();
+  try {
+    const audio = await synthesizeSentenceWithFallback(phrase);
+    if (audio) {
+      socket.emit('chat:audio_chunk', {
+        sessionId,
+        index: -1, // Special index for acknowledgment
+        contentType: audio.contentType,
+        audio: audio.buffer.toString('base64'),
+      });
+    }
+  } catch {
+    // Non-critical, continue without acknowledgment
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Types for incoming events
 // ---------------------------------------------------------------------------
 
@@ -348,7 +398,9 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
             sentenceAccumulator?.push(text);
           },
 
-          onToolUse: (toolName, toolInput, toolUseId, tier) => {
+          onToolUse: async (toolName, toolInput, toolUseId, tier) => {
+            // Send voice acknowledgment FIRST and wait for it
+            await sendToolAcknowledgment(socket, sessionId, voiceMode);
             socket.emit('chat:tool_use', { sessionId, toolName, toolInput, toolUseId, tier });
             eventsNs.emit('event', {
               id: crypto.randomUUID(),
@@ -522,7 +574,10 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
             socket.emit('chat:token', { sessionId, text });
           },
 
-          onToolUse: (toolName, toolInput, toolUseId, tier) => {
+          onToolUse: async (toolName, toolInput, toolUseId, tier) => {
+            // Note: voiceMode not available in confirmation flow, default to false
+            // (voice acknowledgment was already sent during the original request)
+            await sendToolAcknowledgment(socket, sessionId, false);
             socket.emit('chat:tool_use', { sessionId, toolName, toolInput, toolUseId, tier });
             eventsNs.emit('event', {
               id: crypto.randomUUID(),

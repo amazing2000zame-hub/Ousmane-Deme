@@ -20,12 +20,64 @@ import { getToolTier, ActionTier } from '../safety/tiers.js';
 import { config } from '../config.js';
 
 // ---------------------------------------------------------------------------
+// Tool execution timeout
+// ---------------------------------------------------------------------------
+
+/** Maximum time (ms) for any tool to execute. Most tools complete in <30s.
+ *  This timeout prevents hung tools from blocking conversations indefinitely. */
+const TOOL_TIMEOUT_MS = 60_000;
+
+/**
+ * Execute a tool with timeout protection.
+ * Returns a user-friendly error message on timeout instead of hanging.
+ */
+async function executeToolWithTimeout(
+  name: string,
+  args: Record<string, unknown>,
+  source: 'llm' | 'monitor' | 'user' | 'api' = 'llm',
+  overrideActive: boolean = false,
+): Promise<{
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  blocked?: boolean;
+  reason?: string;
+  tier?: string;
+}> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Tool "${name}" timed out after ${TOOL_TIMEOUT_MS / 1000} seconds. The operation may still be running in the background.`));
+    }, TOOL_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([
+      executeTool(name, args, source, overrideActive),
+      timeoutPromise,
+    ]);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const isTimeout = errorMessage.includes('timed out');
+
+    return {
+      content: [{
+        type: 'text',
+        text: isTimeout
+          ? `I'm sorry, the ${name} operation took too long (over 60 seconds) and was cancelled. This might indicate the service is unresponsive. You can try again or ask me to check the service status.`
+          : `Tool "${name}" failed: ${errorMessage}`,
+      }],
+      isError: true,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface StreamCallbacks {
   onTextDelta: (text: string) => void;
-  onToolUse: (toolName: string, toolInput: Record<string, unknown>, toolUseId: string, tier: string) => void;
+  /** Called before tool execution. Can be async to allow acknowledgment audio to be sent first. */
+  onToolUse: (toolName: string, toolInput: Record<string, unknown>, toolUseId: string, tier: string) => void | Promise<void>;
   onToolResult: (toolUseId: string, result: string, isError: boolean) => void;
   onConfirmationNeeded: (toolName: string, toolInput: Record<string, unknown>, toolUseId: string, tier: string) => void;
   onBlocked: (toolName: string, reason: string, tier: string) => void;
@@ -168,10 +220,11 @@ export async function runAgenticLoop(
         }
 
         // Auto-execute (GREEN/YELLOW, or elevated RED/BLACK with override)
-        callbacks.onToolUse(block.name, block.input as Record<string, unknown>, block.id, tierStr);
+        // Await onToolUse to allow acknowledgment audio to be sent first
+        await callbacks.onToolUse(block.name, block.input as Record<string, unknown>, block.id, tierStr);
 
         try {
-          const toolResult = await executeTool(
+          const toolResult = await executeToolWithTimeout(
             block.name,
             block.input as Record<string, unknown>,
             'llm',
