@@ -4,11 +4,13 @@ import { createChatSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useChatStore } from '../stores/chat';
 import { useVoiceStore } from '../stores/voice';
+import { useMetricsStore } from '../stores/metrics';
 import {
   startProgressiveSession,
   queueAudioChunk,
   markStreamDone,
   stopProgressive,
+  playAcknowledgmentImmediate,
 } from '../audio/progressive-queue';
 
 /** crypto.randomUUID() requires secure context (HTTPS). Fallback for HTTP. */
@@ -55,6 +57,12 @@ export function useChatSocket(): ChatSocketActions {
 
     // --- Named handlers for all /chat events ---
 
+    function onStage(data: { sessionId: string; stage: string; detail: string }) {
+      void data.sessionId;
+      const store = useChatStore.getState();
+      store.setPipelineStage(data.stage as 'routing' | 'thinking' | 'synthesizing', data.detail);
+    }
+
     function onToken(data: { sessionId: string; text: string }) {
       void data.sessionId;
       tokenBuffer += data.text;
@@ -73,13 +81,16 @@ export function useChatSocket(): ChatSocketActions {
       void data.sessionId;
       // Flush pending tokens before tool call so text order is preserved
       if (tokenBuffer) flushTokens();
-      useChatStore.getState().addToolCall({
+      const store = useChatStore.getState();
+      store.addToolCall({
         name: data.toolName,
         input: data.toolInput,
         toolUseId: data.toolUseId,
         status: 'executing',
         tier: data.tier,
       });
+      // Pipeline: mark executing with tool name
+      store.setPipelineStage('executing', data.toolName);
     }
 
     function onToolResult(data: {
@@ -89,11 +100,14 @@ export function useChatSocket(): ChatSocketActions {
       isError: boolean;
     }) {
       void data.sessionId;
-      useChatStore.getState().updateToolCall(data.toolUseId, {
+      const store = useChatStore.getState();
+      store.updateToolCall(data.toolUseId, {
         status: data.isError ? 'error' : 'done',
         result: data.result,
         isError: data.isError,
       });
+      // Pipeline: back to thinking after tool completes
+      store.setPipelineStage('thinking', '');
     }
 
     function onConfirmNeeded(data: {
@@ -148,6 +162,7 @@ export function useChatSocket(): ChatSocketActions {
     }
 
     // chat:audio_chunk — XTTS audio plays progressively as chunks arrive
+    let firstAudioChunkReceived = false;
     function onAudioChunk(data: {
       sessionId: string;
       index: number;
@@ -164,6 +179,12 @@ export function useChatSocket(): ChatSocketActions {
         if (messageId) {
           startProgressiveSession(data.sessionId, messageId);
         }
+      }
+
+      // Pipeline: mark speaking on first audio chunk
+      if (!firstAudioChunkReceived) {
+        firstAudioChunkReceived = true;
+        useChatStore.getState().setPipelineStage('speaking', '');
       }
 
       queueAudioChunk(data.sessionId, data.audio, data.contentType, data.index);
@@ -189,6 +210,7 @@ export function useChatSocket(): ChatSocketActions {
 
       // Reset progressive flag for next message
       progressiveSessionStarted = false;
+      firstAudioChunkReceived = false;
     }
 
     function onChatError(data: { sessionId: string; error: string }) {
@@ -207,7 +229,13 @@ export function useChatSocket(): ChatSocketActions {
 
       // Reset progressive state on error
       progressiveSessionStarted = false;
+      firstAudioChunkReceived = false;
       stopProgressive();
+    }
+
+    function onTiming(data: { sessionId: string; timing: any }) {
+      const metricsStore = useMetricsStore.getState();
+      metricsStore.addTiming(data.sessionId, data.timing);
     }
 
     function onConnectError(err: Error) {
@@ -217,16 +245,53 @@ export function useChatSocket(): ChatSocketActions {
       }
     }
 
+    // Handle inline camera display in chat
+    function onShowLiveFeed(data: { camera: string; timestamp: string }) {
+      console.log('[Chat] Received show_live_feed:', data.camera);
+      useChatStore.getState().setInlineCamera(data);
+    }
+
+    // Handle closing inline camera
+    function onCloseLiveFeed() {
+      console.log('[Chat] Received close_live_feed');
+      useChatStore.getState().clearInlineCamera();
+    }
+
+    // Handle voice acknowledgment (plays immediately before tool execution)
+    function onAcknowledge(data: {
+      sessionId: string;
+      phrase: string;
+      contentType: string;
+      audio: string;  // base64 encoded
+    }) {
+      console.log('[Chat] Received acknowledgment:', data.phrase);
+
+      // Decode base64 to ArrayBuffer
+      const binaryString = atob(data.audio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // Play immediately, don't wait
+      playAcknowledgmentImmediate(bytes.buffer, data.contentType);
+    }
+
+    socket.on('chat:stage', onStage);
     socket.on('chat:token', onToken);
     socket.on('chat:tool_use', onToolUse);
     socket.on('chat:tool_result', onToolResult);
     socket.on('chat:confirm_needed', onConfirmNeeded);
     socket.on('chat:blocked', onBlocked);
     socket.on('chat:done', onDone);
+    socket.on('chat:timing', onTiming);
     socket.on('chat:error', onChatError);
     socket.on('chat:sentence', onSentence);
     socket.on('chat:audio_chunk', onAudioChunk);
     socket.on('chat:audio_done', onAudioDone);
+    socket.on('chat:show_live_feed', onShowLiveFeed);
+    socket.on('chat:close_live_feed', onCloseLiveFeed);
+    socket.on('chat:acknowledge', onAcknowledge);
     socket.on('connect_error', onConnectError);
 
     socket.connect();
@@ -245,16 +310,21 @@ export function useChatSocket(): ChatSocketActions {
       // Stop progressive playback on cleanup
       stopProgressive();
 
+      socket.off('chat:stage', onStage);
       socket.off('chat:token', onToken);
       socket.off('chat:tool_use', onToolUse);
       socket.off('chat:tool_result', onToolResult);
       socket.off('chat:confirm_needed', onConfirmNeeded);
       socket.off('chat:blocked', onBlocked);
       socket.off('chat:done', onDone);
+      socket.off('chat:timing', onTiming);
       socket.off('chat:error', onChatError);
       socket.off('chat:sentence', onSentence);
       socket.off('chat:audio_chunk', onAudioChunk);
       socket.off('chat:audio_done', onAudioDone);
+      socket.off('chat:show_live_feed', onShowLiveFeed);
+      socket.off('chat:close_live_feed', onCloseLiveFeed);
+      socket.off('chat:acknowledge', onAcknowledge);
       socket.off('connect_error', onConnectError);
       socket.disconnect();
       socketRef.current = null;
