@@ -25,7 +25,7 @@
 **Phase:** 28 - Camera Dashboard
 **Plan:** 2 of 2 complete
 **Status:** Phase complete
-**Last activity:** 2026-01-29 - Completed 28-02-PLAN.md
+**Last activity:** 2026-01-30 - Completed quick task 001: Move LLM to agent1 CPU
 
 ```
 [============                  ] 50%
@@ -120,6 +120,12 @@ Phase 28/29 | Plan 6/8 | Req 9/20
 ### Blockers
 
 None currently.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 001 | Move LLM to agent1 CPU to free GPU for XTTS voice | 2026-01-30 | 7a1f849 | [001-move-llm-to-agent1-cpu-to-free-gpu-for-x](./quick/001-move-llm-to-agent1-cpu-to-free-gpu-for-x/) |
 
 ### TODO
 
