@@ -311,10 +311,11 @@ export async function resumeAfterConfirmation(
 
   if (confirmed) {
     try {
-      const toolResult = await executeTool(
+      const toolResult = await executeToolWithTimeout(
         pending.toolName,
         { ...pending.toolInput, confirmed: true },
         'llm',
+        false, // overrideActive - confirmed RED tier doesn't need override
       );
 
       resultText = toolResult.content
