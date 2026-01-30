@@ -36,8 +36,8 @@ export function ToolStatusCard({ name, status, result, isError }: ToolStatusCard
   const hasPreview = result && status === 'done' && !isError;
 
   return (
-    <div className="my-1 bg-jarvis-bg-card/30 border border-jarvis-amber/5 rounded px-2 py-1">
-      <div className="flex items-center gap-1.5">
+    <div className="my-1 bg-jarvis-bg-card/30 border border-jarvis-amber/5 rounded px-2 py-1 overflow-hidden">
+      <div className="flex items-center gap-1.5 min-w-0">
         <span className={dotClass} />
         <span className="text-[10px] font-mono text-jarvis-text-dim truncate max-w-[140px]">
           {name}
@@ -58,7 +58,7 @@ export function ToolStatusCard({ name, status, result, isError }: ToolStatusCard
         </p>
       )}
       {hasPreview && expanded && (
-        <pre className="text-[10px] font-mono text-jarvis-text-muted mt-1 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+        <pre className="text-[10px] font-mono text-jarvis-text-muted mt-1 whitespace-pre-wrap break-all max-w-full max-h-40 overflow-y-auto overflow-x-auto">
           {result}
         </pre>
       )}
