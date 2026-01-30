@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-01-30
 **Current Milestone:** v1.6 Smart Home Intelligence
 
 ---
@@ -99,6 +99,8 @@ Phase 28/29 | Plan 6/8 | Req 9/20
 
 ### Technical Notes
 
+- **LLM moved to agent1 CPU** (192.168.1.61:8080) - frees RTX 4050 for XTTS
+- XTTS now running on GPU with finetuned JARVIS voice (2847 MiB VRAM)
 - Frigate 0.16.4 running on agent1:5000 with face_recognition ENABLED (model_size: small)
 - frigate.ts client extended with parseFaceSubLabel(), getFaceLibrary(), getRecentFaceEvents()
 - FrigateEvent.sub_label now typed as `string | [string, number] | null`
@@ -152,6 +154,7 @@ None currently.
 - Created LiveStreamModal with auto-connect/cleanup
 - Integrated Live buttons and events section into CameraPanel
 - Phase 28 complete - Camera Dashboard fully functional
+- **Quick Task 001:** Moved LLM to agent1 CPU, freed GPU for XTTS voice synthesis
 
 ### Next Steps
 - Start Phase 29 planning (Proactive Intelligence)
