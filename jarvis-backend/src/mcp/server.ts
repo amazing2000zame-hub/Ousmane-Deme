@@ -20,6 +20,18 @@ import { registerFileTools } from './tools/files.js';
 import { registerTransferTools } from './tools/transfer.js';
 import { registerProjectTools } from './tools/projects.js';
 import { registerVoiceTools } from './tools/voice.js';
+import { registerSmartHomeTools } from './tools/smarthome.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Format milliseconds as human-readable duration */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -104,6 +116,7 @@ registerFileTools(mcpServer);
 registerTransferTools(mcpServer);
 registerProjectTools(mcpServer);
 registerVoiceTools(mcpServer);
+registerSmartHomeTools(mcpServer);
 
 // ---------------------------------------------------------------------------
 // executeTool -- the single entry point for all tool invocations
@@ -196,10 +209,12 @@ export async function executeTool(
   try {
     result = await handler(sanitizedArgs);
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[MCP] Tool execution error: ${name} - ${errorMsg}`);
     result = {
       content: [{
         type: 'text',
-        text: `Tool "${name}" execution failed: ${err instanceof Error ? err.message : String(err)}`,
+        text: `Tool "${name}" execution failed: ${errorMsg}`,
       }],
       isError: true,
     };
@@ -214,7 +229,7 @@ export async function executeTool(
       type: 'action',
       severity: result.isError ? 'error' : 'info',
       source: source === 'llm' ? 'jarvis' : source === 'monitor' ? 'system' : 'user',
-      summary: `${result.isError ? 'FAILED' : 'OK'}: ${name} (${safety.tier}) [${durationMs}ms]`,
+      summary: `${result.isError ? 'FAILED' : 'OK'}: ${name} (${safety.tier}) [${formatDuration(durationMs)}]`,
       details: JSON.stringify({
         tool: name,
         args: sanitizedArgs,
@@ -226,6 +241,11 @@ export async function executeTool(
     });
   } catch {
     // Never crash on logging failure
+  }
+
+  // Warn about slow tools (over 10 seconds)
+  if (durationMs > 10_000) {
+    console.warn(`[MCP] Slow tool execution: ${name} took ${formatDuration(durationMs)}`);
   }
 
   // Step 6: Return result with tier info
