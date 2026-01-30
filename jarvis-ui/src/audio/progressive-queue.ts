@@ -272,3 +272,40 @@ function finalize(): void {
   useVoiceStore.getState().setPlaying(false, null);
   useVoiceStore.getState().setAnalyserNode(null);
 }
+
+// ---------------------------------------------------------------------------
+// Acknowledgment playback -- immediate, non-queued
+// ---------------------------------------------------------------------------
+
+/**
+ * Play acknowledgment audio immediately, bypassing the progressive queue.
+ * Used for tool acknowledgments that must play before any response audio.
+ * Does NOT interfere with progressive sessions - uses same AudioContext.
+ */
+export async function playAcknowledgmentImmediate(
+  audioData: ArrayBuffer,
+  contentType: string,
+): Promise<void> {
+  const voiceState = useVoiceStore.getState();
+  if (!voiceState.enabled || !voiceState.autoPlay) return;
+
+  try {
+    const { ctx, gainNode } = getSharedAudioContext();
+    const volume = voiceState.volume;
+    gainNode.gain.value = volume;
+
+    // Decode the audio buffer
+    const audioBuffer = await ctx.decodeAudioData(audioData.slice(0));
+
+    // Create and play source immediately
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(gainNode);
+    source.start(0); // Play NOW, not scheduled
+
+    // Don't wait for playback to complete - fire and forget
+    console.log(`[ProgressiveAudio] Playing acknowledgment immediately (${contentType})`);
+  } catch (err) {
+    console.warn('[ProgressiveAudio] Failed to play acknowledgment:', err);
+  }
+}
