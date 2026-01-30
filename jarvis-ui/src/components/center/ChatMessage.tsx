@@ -1,11 +1,13 @@
 import { memo } from 'react';
 import type { ChatMessage as ChatMessageType, ToolCall } from '../../stores/chat';
+import { useChatStore } from '../../stores/chat';
 import { useVoiceStore } from '../../stores/voice';
 import { BlockedCard } from './BlockedCard';
 import { ConfirmCard } from './ConfirmCard';
 import { ToolStatusCard } from './ToolStatusCard';
 import { ProviderBadge } from './ProviderBadge';
 import { VoicePlayButton } from './VoicePlayButton';
+import { InlineCameraCard } from './InlineCameraCard';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -131,6 +133,14 @@ export const ChatMessage = memo(function ChatMessage({
               />
             ))}
           </div>
+        )}
+
+        {/* Inline camera feed */}
+        {message.inlineCamera && (
+          <InlineCameraCard
+            camera={message.inlineCamera.camera}
+            onClose={() => useChatStore.getState().clearInlineCamera()}
+          />
         )}
       </div>
     </div>
