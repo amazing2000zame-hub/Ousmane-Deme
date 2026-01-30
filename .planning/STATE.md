@@ -23,13 +23,13 @@
 
 **Milestone:** v1.6 Smart Home Intelligence
 **Phase:** 30 - MCP Reliability & Voice Acknowledgment
-**Plan:** 1 of 2 complete
-**Status:** In progress
-**Last activity:** 2026-01-30 - Completed 30-01: Voice acknowledgment timing fix
+**Plan:** 2 of 2 complete
+**Status:** Phase complete
+**Last activity:** 2026-01-30 - Completed 30-02: MCP tool timeout guards
 
 ```
-[=============                 ] 55%
-Phase 30/30 | Plan 7/8 | Req 9/20
+[===============               ] 60%
+Phase 30/30 | Plan 8/8 | Req 9/20
 ```
 
 ---
@@ -42,7 +42,7 @@ Phase 30/30 | Plan 7/8 | Req 9/20
 | 27 | Presence Intelligence | 2 | Complete (2/2) |
 | 28 | Camera Dashboard | 2 | Complete (2/2) |
 | 29 | Proactive Intelligence | 2 | Pending |
-| 30 | MCP Reliability & Voice Ack | 2 | In Progress (1/2) |
+| 30 | MCP Reliability & Voice Ack | 2 | Complete (2/2) |
 
 **Requirements Progress:**
 - FACE: 2/5 complete (FACE-01, FACE-02)
@@ -57,10 +57,10 @@ Phase 30/30 | Plan 7/8 | Req 9/20
 | Plan | Wave | Objective | Status |
 |------|------|-----------|--------|
 | 30-01 | 1 | Voice acknowledgment timing fix | Complete |
-| 30-02 | 1 | MCP tool timeout guards | Pending |
+| 30-02 | 1 | MCP tool timeout guards | Complete |
 
 **Wave Structure:**
-- Wave 1: 30-01 (voice ack), 30-02 (tool timeouts) - IN PROGRESS
+- Wave 1: 30-01 (voice ack), 30-02 (tool timeouts) - COMPLETE
 
 ---
 
@@ -68,9 +68,9 @@ Phase 30/30 | Plan 7/8 | Req 9/20
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 7 |
+| Plans completed | 8 |
 | Requirements delivered | 10 |
-| Lines of code | ~1150 |
+| Lines of code | ~1200 |
 | Test coverage | N/A |
 
 ---
@@ -98,6 +98,8 @@ Phase 30/30 | Plan 7/8 | Req 9/20
 | Module augmentation for custom elements | TypeScript pattern for video-rtc JSX support | 2026-01-29 |
 | Dedicated chat:acknowledge event | Bypasses progressive queue for instant playback | 2026-01-30 |
 | Force Piper TTS for acknowledgments | <200ms synthesis vs 7-15s XTTS | 2026-01-30 |
+| 60-second tool timeout | Long enough for slow ops, catches hung tools | 2026-01-30 |
+| 10-second slow tool warning | Alerts operators without false positives | 2026-01-30 |
 
 ### Technical Notes
 
@@ -121,6 +123,8 @@ Phase 30/30 | Plan 7/8 | Req 9/20
 - LiveStreamModal connects directly to Frigate for WebSocket streaming
 - **Voice acknowledgments use dedicated chat:acknowledge event**
 - **playAcknowledgmentImmediate() bypasses progressive queue**
+- **executeToolWithTimeout() wraps all tool calls with 60s timeout**
+- **formatDuration() for human-readable time in logs**
 
 ### Blockers
 
@@ -142,7 +146,7 @@ None currently.
 - [x] Execute 28-01: Create camera API and snapshot grid
 - [x] Execute 28-02: Add live streaming
 - [x] Execute 30-01: Voice acknowledgment timing fix
-- [ ] Execute 30-02: MCP tool timeout guards
+- [x] Execute 30-02: MCP tool timeout guards
 - [ ] Start Phase 29 planning (Proactive Intelligence)
 - [ ] Execute Phase 29 plans
 
@@ -165,11 +169,16 @@ None currently.
 - Created chat:acknowledge Socket.IO event handler
 - Backend now forces Piper TTS for acknowledgments
 - Acknowledgments now play BEFORE tool execution
+- **Executed 30-02-PLAN.md (MCP tool timeout guards)**
+- **Added executeToolWithTimeout() with 60-second timeout**
+- **All tool calls now protected from hanging indefinitely**
+- **Slow tool warnings (>10s) added to console logging**
+- **Phase 30 complete**
 
 ### Next Steps
-- Execute 30-02: MCP tool timeout guards
-- Test voice acknowledgments with actual tool calls
 - Start Phase 29 planning (Proactive Intelligence)
+- Execute Phase 29 plans
+- Test voice acknowledgments with actual tool calls
 
 ---
 
@@ -178,6 +187,7 @@ None currently.
 ```bash
 # View summaries
 cat /root/.planning/phases/30-mcp-reliability-voice-ack/30-01-SUMMARY.md
+cat /root/.planning/phases/30-mcp-reliability-voice-ack/30-02-SUMMARY.md
 
 # Test voice acknowledgment (enable voice mode, ask a tool question)
 # Open http://192.168.1.50:3004, enable voice, ask "What's the cluster status?"
