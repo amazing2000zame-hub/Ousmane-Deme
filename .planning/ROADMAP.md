@@ -11,7 +11,9 @@ Jarvis 3.1 v1.1 transforms the working v1.0 prototype into a production-ready AI
 - **v1.2 JARVIS Voice & Personality** - Phase 11 (shipped 2026-01-26)
 - **v1.3 File Operations & Project Intelligence** - Phases 12-15 (shipped 2026-01-27)
 - **v1.4 Performance & Reliability** - Phases 16-20 (shipped 2026-01-27)
-- **v1.5 Optimization & Latency Reduction** - Phases 21-25 (in progress)
+- **v1.5 Optimization & Latency Reduction** - Phases 21-25 (shipped 2026-01-28)
+- **v1.6 Smart Home Intelligence** - Phases 26-30 (shipped 2026-01-30)
+- **v1.7 UI Polish & Camera Integration** - Phase 31+ (in progress)
 
 ## Phases
 
@@ -273,9 +275,8 @@ Phases 16, 17, 18, 19 are largely independent and could run in parallel if neede
 
 </details>
 
----
-
-### v1.5 Optimization & Latency Reduction (Phases 21-25)
+<details>
+<summary>v1.5 Optimization & Latency Reduction (Phases 21-25) - SHIPPED 2026-01-28</summary>
 
 **Milestone Goal:** Push Jarvis TTS reliability from ~70% to 99%+ via Piper TTS fallback, reduce voice synthesis overhead through bounded parallelism and disk-persistent caching, add optional Opus encoding for remote access, implement conversation context windowing to prevent unbounded growth, and add latency tracing to measure every optimization. All changes target zero new npm dependencies (backend) and one new Docker container (Piper TTS).
 
@@ -295,13 +296,8 @@ Phases 16, 17, 18, 19 are largely independent and could run in parallel if neede
 **Goal**: Users experience faster database interactions and JARVIS speaks more reliably on short sentences, while operators gain component-level health visibility to diagnose issues
 **Depends on**: Phase 20 (v1.4 complete)
 **Requirements**: BACK-01, PERF-01, PERF-04, OBS-02
-**Success Criteria** (what must be TRUE when this phase completes):
-  1. User can hit /api/health and see individual status for each component (TTS engines, LLM, Proxmox API, database) with up/down state and response times
-  2. User notices JARVIS no longer skips speaking short phrases like "Yes" or "Done" that were previously below the sentence length threshold
-  3. TTS cache holds 200+ entries with engine-specific keys so XTTS and Piper cached audio never collide
-  4. If the TTS container becomes unresponsive, the health check detects failure and triggers an automatic container restart attempt
+**Status**: Complete
 
-**Plans:** 1 plan
 Plans:
 - [x] 21-01-PLAN.md -- SQLite PRAGMAs, TTS cache/restart, sentence tuning, component health endpoint
 
@@ -309,12 +305,6 @@ Plans:
 **Goal**: Users hear JARVIS speak on every response with 99%+ reliability because a fast Piper TTS fallback activates automatically when XTTS is slow or unhealthy
 **Depends on**: Phase 21 (health endpoint and sentence tuning must exist for health-aware routing)
 **Requirements**: TTS-01, TTS-02, TTS-03, TTS-04
-**Success Criteria** (what must be TRUE when this phase completes):
-  1. User hears audio on every JARVIS response -- if XTTS synthesizes within 3 seconds the custom JARVIS voice plays; if not, a Piper voice plays within 200ms instead of silence
-  2. User never hears a mid-response voice change -- if XTTS fails on any sentence, all remaining sentences in that response use Piper consistently
-  3. When XTTS container is stopped or crashed, JARVIS continues speaking immediately using Piper without any user intervention
-  4. When XTTS recovers from failure, subsequent responses automatically resume using the JARVIS voice without requiring a restart
-
 **Status**: Complete (5 commits: 546489d, d44a88b, 4bf6f69, 583f7bd, 7e4f254)
 
 Plans:
@@ -325,12 +315,6 @@ Plans:
 **Goal**: Users experience faster multi-sentence responses through bounded parallel TTS synthesis, and remote users get 8-10x smaller audio payloads via optional Opus encoding
 **Depends on**: Phase 22 (Piper fallback must exist so parallel worker failures degrade gracefully)
 **Requirements**: PERF-02, PERF-03, AUDIO-01
-**Success Criteria** (what must be TRUE when this phase completes):
-  1. Multi-sentence JARVIS responses play noticeably faster because up to 2 sentences synthesize concurrently instead of serially
-  2. TTS cache persists across container restarts -- restarting the backend container does not lose cached audio, and common JARVIS phrases ("Certainly, sir", "Right away", "Systems nominal") are pre-warmed at startup
-  3. When Opus encoding is enabled via config flag, audio payloads transmitted over Socket.IO are 8-10x smaller than WAV, verified by observing network transfer sizes
-  4. LLM inference speed (tokens/sec) does not degrade more than 10% when parallel TTS is active, confirmed by latency tracing (Phase 24)
-
 **Status**: Complete (6 commits: b7353d9, 6b1c51e, d92684d, f4271ae, 9b7413b, aec47db)
 
 Plans:
@@ -342,11 +326,6 @@ Plans:
 **Goal**: Operators can trace exactly where time is spent in every request, and users benefit from smarter context management that keeps conversations coherent without overflowing the LLM context window
 **Depends on**: Phase 23 (tracing should measure the optimized pipeline, not the baseline; context window is independent but sequenced here for delivery)
 **Requirements**: OBS-01, BACK-02
-**Success Criteria** (what must be TRUE when this phase completes):
-  1. Every chat response includes a timing breakdown showing milliseconds spent at each pipeline stage (message received, LLM start, first token, TTS queued, TTS complete, audio delivered) visible in logs or debug UI
-  2. Conversations longer than 20-30 messages automatically summarize older context in the background using Qwen, keeping the full recent window plus a compressed summary of earlier discussion
-  3. Tool call context (VMIDs, IPs, file paths, error messages) survives summarization -- a user who discussed a specific VM 40 messages ago can reference it and JARVIS still knows the VMID
-
 **Status**: Complete (6 commits: db2fd38, d8fbbe2, c2fc320, b77db65, d0031fc, b24f338)
 
 Plans:
@@ -357,21 +336,44 @@ Plans:
 **Goal**: Users can scroll through long chat histories (100+ messages) without UI lag or frame drops
 **Depends on**: None (independent of backend phases, but sequenced last as lowest priority)
 **Requirements**: UI-01
+**Status**: Complete
+
+Plans:
+- [x] 25-01-PLAN.md -- Chat virtualization with dynamic height measurement
+
+</details>
+
+<details>
+<summary>v1.6 Smart Home Intelligence (Phases 26-30) - SHIPPED 2026-01-30</summary>
+
+**Milestone Goal:** Integrate Frigate NVR for face recognition and camera intelligence, add presence tracking with state machine, build camera dashboard with live streaming, and improve MCP tool reliability.
+
+#### Phases 26-30: Face Recognition, Presence, Camera Dashboard, MCP Reliability
+**Status**: Complete (Phases 26-30 all complete)
+
+</details>
+
+---
+
+### v1.7 UI Polish & Camera Integration (Phase 31+)
+
+**Milestone Goal:** Fix UI layout issues, polish camera integration, and ensure responsive dashboard works reliably.
+
+#### Phase 31: Web UI Redesign
+**Goal**: Fix Web UI layout issues and create a polished, responsive dashboard that works reliably
+**Depends on**: None (independent UI work)
+**Status**: Planning complete
+
 **Success Criteria** (what must be TRUE when this phase completes):
-  1. User can scroll smoothly through a conversation with 100+ messages without visible frame drops or scroll jank
-  2. Variable-height messages (short text, long code blocks, tool outputs) render correctly without layout shifts or overlapping content
-  3. New messages arriving during active scrolling do not cause the scroll position to jump unexpectedly -- auto-scroll only engages when the user is already at the bottom
+1. Dashboard loads reliably without layout glitches or broken components
+2. Chat panel displays inline camera feeds correctly when requested
+3. UI is responsive on desktop and tablet (primary use cases)
+4. Tool outputs render cleanly without breaking layout
+5. Camera feed can be dismissed by clicking off or voice command
 
-**Phase Dependencies:**
-```
-Phase 21 (Quick Wins) <- v1.4 complete, establishes baseline
-Phase 22 (Piper Fallback) <- Phase 21 (needs health endpoint for health-aware routing)
-Phase 23 (Parallel TTS + Opus) <- Phase 22 (needs fallback for graceful degradation)
-Phase 24 (Observability + Context) <- Phase 23 (traces optimized pipeline)
-Phase 25 (Chat Virtualization) <- independent, lowest priority, sequenced last
-```
-
-Phases 21-24 form a sequential dependency chain. Phase 25 is independent and can execute at any point but is lowest priority.
+Plans:
+- [ ] 31-01-PLAN.md -- Camera dismissal (wire close handler, add tool to Claude, update system prompt)
+- [ ] 31-02-PLAN.md -- Connection timeout and responsive layout audit
 
 ---
 
@@ -396,8 +398,9 @@ Phases 21-24 form a sequential dependency chain. Phase 25 is independent and can
 **Phase 23 (Parallel TTS + Opus):** PERF-02, PERF-03, AUDIO-01
 **Phase 24 (Observability & Context Management):** OBS-01, BACK-02
 **Phase 25 (Frontend -- Chat Virtualization):** UI-01
+**Phase 31 (Web UI Redesign):** UI-02 (camera dismissal), UI-03 (connection timeout)
 
-Total requirements: 114 (55 v1.0-v1.2 + 18 v1.3 + 27 v1.4 + 14 v1.5)
+Total requirements: 116 (114 v1.0-v1.5 + 2 v1.7)
 
 ---
 
@@ -410,14 +413,12 @@ Total requirements: 114 (55 v1.0-v1.2 + 18 v1.3 + 27 v1.4 + 14 v1.5)
 - No regressions in existing functionality
 - Phase SUMMARY.md created documenting what was built
 
-**Milestone-level DoD (v1.5):**
-- All 5 phases complete (21-25)
-- TTS reliability at 99%+ (Piper fallback handles all XTTS failures)
-- /api/health returns component-level status for all subsystems
-- Latency tracing shows per-request timing breakdown
-- Conversation sliding window prevents context overflow
-- Chat virtualization handles 100+ messages smoothly
-- No regressions in existing v1.0-v1.4 functionality
+**Milestone-level DoD (v1.7):**
+- Phase 31 complete
+- Camera dismissal works via click and voice
+- Responsive layout verified at all breakpoints
+- Connection timeout prevents infinite loading states
+- No regressions in existing v1.0-v1.6 functionality
 
 ---
 
@@ -435,7 +436,7 @@ Total requirements: 114 (55 v1.0-v1.2 + 18 v1.3 + 27 v1.4 + 14 v1.5)
 ## Progress
 
 **Execution Order:**
-Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent but sequenced last.
+Phase 31 is independent and can execute immediately.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -463,7 +464,9 @@ Phases 21-24 execute sequentially (dependency chain). Phase 25 is independent bu
 | 23. Parallel TTS + Opus | v1.5 | 3/3 | Complete | 2026-01-27 |
 | 24. Observability & Context | v1.5 | 2/2 | Complete | 2026-01-28 |
 | 25. Chat Virtualization | v1.5 | 1/1 | Complete | 2026-01-28 |
+| 26-30. Smart Home Intelligence | v1.6 | 8/8 | Complete | 2026-01-30 |
+| 31. Web UI Redesign | v1.7 | 0/2 | Planning | - |
 
 ---
 
-Last updated: 2026-01-28 (Phase 25 complete -- chat virtualization, v1.5 SHIPPED)
+Last updated: 2026-01-30 (Phase 31 planned -- Web UI Redesign)
