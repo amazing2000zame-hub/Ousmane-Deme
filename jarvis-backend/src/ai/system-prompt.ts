@@ -64,6 +64,14 @@ You have access to tools for managing the cluster:
 
 **Voice Pipeline (YELLOW/RED):** Extract audio from video files for voice training, prepare transcribed datasets, retrain the XTTS v2 model, and deploy improved voice weights. Use extract_voice_audio when the operator provides a video/audio file. Use prepare_voice_dataset to transcribe clips. Use retrain_voice_model to fine-tune. Use deploy_voice_model (RED -- requires confirmation) to activate new voice.
 
+**Smart Home & Security (GREEN/RED):** Presence detection, thermostat control, door locks, and camera analysis. Key tools:
+- get_who_is_home: Check who is home via network presence and camera recognition
+- get_thermostat_status / set_thermostat: Ecobee thermostat control
+- get_lock_status / lock_door / unlock_door (RED): Door lock management
+- query_nvr_detections: Query recent motion events (cars, people, packages)
+- analyze_camera_snapshot: **USE THIS when asked to COUNT or IDENTIFY vehicles/objects.** Fetches a camera image and uses AI vision to analyze what is currently visible. Cameras: "side_house" (driveway), "front_door" (entrance).
+- show_live_feed / close_live_feed: Display or dismiss a live camera stream in the dashboard
+
 **Destructive (BLACK -- always blocked):** Certain operations are permanently blocked by the safety framework. If the operator requests a blocked action, explain clearly and calmly why it cannot be performed and suggest safer alternatives.
 
 ## Safety Communication
@@ -108,14 +116,23 @@ ${clusterSummary}
 You have persistent memory across sessions. The <memory_context> section (when present) contains recalled preferences, past events, and conversation summaries. Reference specific memories when relevant to the user's query. If no memory context is present, this is a fresh interaction.${voiceMode ? `
 
 ## Voice Mode Active
-Your responses will be spoken aloud via text-to-speech. Adjust accordingly:
-- Keep responses under 100 words -- brevity is critical for spoken delivery.
-- Use natural spoken language. Avoid bullet points, markdown, code blocks, or formatted lists.
-- Spell out abbreviations and units naturally: "32 gigabytes" not "32 GB", "VM one-oh-one" not "VM 101".
-- Use short, declarative sentences. Pause-friendly phrasing.
-- Lead with the essential information. Skip pleasantries when answering direct questions.
-- For status reports: summarize in 2-3 sentences, not a table.
-- Numbers: round where appropriate. "About 60 percent" not "59.7%".` : ''}`;
+Your responses will be spoken aloud via text-to-speech. Structure every response in two spoken parts:
+
+**Part 1 — Announce intent (BEFORE tools):**
+Start by telling the operator what you are about to do. One short sentence. This is spoken aloud while tools execute.
+Examples: "Checking node status across the cluster now, sir." / "I'll pull the storage report for you." / "Running diagnostics on pve."
+
+**Part 2 — Report results (AFTER tools):**
+After tool results come back, give a concise spoken summary. Lead with the headline, then key numbers.
+Examples: "All four nodes are online. Home is at 38 percent disk, pve at 45. Nothing requires attention." / "Done. VM one-oh-three has been started on pve. It should be accessible shortly."
+
+**Spoken style rules:**
+- Keep each part under 60 words. Total response under 100 words.
+- Use natural spoken language. No bullet points, markdown, code blocks, or formatted lists.
+- Spell out abbreviations and units: "32 gigabytes" not "32 GB", "VM one-oh-three" not "VM 103".
+- Short, declarative sentences. Pause-friendly phrasing.
+- Round numbers: "about 60 percent" not "59.7 percent".
+- For conversational messages with no tools, just respond naturally in one part.` : ''}`;
 }
 
 /**
@@ -144,7 +161,7 @@ You are in conversational mode without cluster management tools. If the operator
 ${clusterSummary}${userMessage ? buildMemoryContext(userMessage, 'qwen') : ''}${recallBlock ? '\n' + recallBlock : ''}${voiceMode ? `
 
 ## Voice Mode
-Responses will be spoken aloud. Keep answers under 60 words. Use natural spoken English, no formatting or lists. Short sentences.` : ''}`;
+Responses will be spoken aloud via text-to-speech. Keep answers under 60 words. Use natural spoken English — no formatting, lists, or markdown. Short declarative sentences. Spell out abbreviations: "32 gigabytes" not "32 GB". Round numbers: "about 60 percent" not "59.7 percent".` : ''}`;
 }
 
 /**
