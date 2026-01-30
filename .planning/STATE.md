@@ -1,7 +1,7 @@
 # Jarvis 3.1 Project State
 
 **Last Updated:** 2026-01-30
-**Current Milestone:** v1.6 Smart Home Intelligence
+**Current Milestone:** v1.7 UI Polish & Camera Integration
 
 ---
 
@@ -9,7 +9,7 @@
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
 
-**Current Focus:** Web UI redesign and camera dismissal improvements
+**Current Focus:** UI polish complete, investigating voice playback issue
 
 **Active Files:**
 - `/root/.planning/milestones/v1.6-ROADMAP.md` - Current roadmap
@@ -21,15 +21,15 @@
 
 ## Current Position
 
-**Milestone:** v1.6 Smart Home Intelligence
+**Milestone:** v1.7 UI Polish & Camera Integration
 **Phase:** 31 - Web UI Redesign
-**Plan:** 1 of ? complete
-**Status:** In progress
-**Last activity:** 2026-01-30 - Completed 31-01: Camera dismissal wiring
+**Plan:** 2 of 2 complete
+**Status:** Phase complete
+**Last activity:** 2026-01-30 - Completed 31-02: Connection timeout and layout polish
 
 ```
-[===============               ] 60%
-Phase 31/31 | Plan 9/? | Req 9/20
+[==============                ] 50%
+Phase 31/31 | Plan 10/10 | Req 11/20
 ```
 
 ---
@@ -43,7 +43,7 @@ Phase 31/31 | Plan 9/? | Req 9/20
 | 28 | Camera Dashboard | 2 | Complete (2/2) |
 | 29 | Proactive Intelligence | 2 | Pending |
 | 30 | MCP Reliability & Voice Ack | 2 | Complete (2/2) |
-| 31 | Web UI Redesign | ? | In progress (1/?) |
+| 31 | Web UI Redesign | 2 | Complete (2/2) |
 
 **Requirements Progress:**
 - FACE: 2/5 complete (FACE-01, FACE-02)

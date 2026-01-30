@@ -362,7 +362,7 @@ Plans:
 #### Phase 31: Web UI Redesign
 **Goal**: Fix Web UI layout issues and create a polished, responsive dashboard that works reliably
 **Depends on**: None (independent UI work)
-**Status**: Planning complete
+**Status**: Complete (2026-01-30)
 
 **Success Criteria** (what must be TRUE when this phase completes):
 1. Dashboard loads reliably without layout glitches or broken components
@@ -372,8 +372,8 @@ Plans:
 5. Camera feed can be dismissed by clicking off or voice command
 
 Plans:
-- [ ] 31-01-PLAN.md -- Camera dismissal (wire close handler, add tool to Claude, update system prompt)
-- [ ] 31-02-PLAN.md -- Connection timeout and responsive layout audit
+- [x] 31-01-PLAN.md -- Camera dismissal (wire close handler, add tool to Claude, update system prompt)
+- [x] 31-02-PLAN.md -- Connection timeout and responsive layout audit
 
 ---
 
