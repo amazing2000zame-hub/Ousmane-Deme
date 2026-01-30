@@ -9,7 +9,7 @@
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
 
-**Current Focus:** Give JARVIS eyes -- camera face recognition, presence tracking, and proactive alerts
+**Current Focus:** MCP reliability improvements and voice acknowledgment timing fixes
 
 **Active Files:**
 - `/root/.planning/milestones/v1.6-ROADMAP.md` - Current roadmap
@@ -22,14 +22,14 @@
 ## Current Position
 
 **Milestone:** v1.6 Smart Home Intelligence
-**Phase:** 28 - Camera Dashboard
-**Plan:** 2 of 2 complete
-**Status:** Phase complete
-**Last activity:** 2026-01-30 - Completed quick task 001: Move LLM to agent1 CPU
+**Phase:** 30 - MCP Reliability & Voice Acknowledgment
+**Plan:** 1 of 2 complete
+**Status:** In progress
+**Last activity:** 2026-01-30 - Completed 30-01: Voice acknowledgment timing fix
 
 ```
-[============                  ] 50%
-Phase 28/29 | Plan 6/8 | Req 9/20
+[=============                 ] 55%
+Phase 30/30 | Plan 7/8 | Req 9/20
 ```
 
 ---
@@ -42,6 +42,7 @@ Phase 28/29 | Plan 6/8 | Req 9/20
 | 27 | Presence Intelligence | 2 | Complete (2/2) |
 | 28 | Camera Dashboard | 2 | Complete (2/2) |
 | 29 | Proactive Intelligence | 2 | Pending |
+| 30 | MCP Reliability & Voice Ack | 2 | In Progress (1/2) |
 
 **Requirements Progress:**
 - FACE: 2/5 complete (FACE-01, FACE-02)
@@ -51,16 +52,15 @@ Phase 28/29 | Plan 6/8 | Req 9/20
 
 ---
 
-## Phase 28 Plans
+## Phase 30 Plans
 
 | Plan | Wave | Objective | Status |
 |------|------|-----------|--------|
-| 28-01 | 1 | Create camera API and snapshot grid UI | Complete |
-| 28-02 | 2 | Add live streaming with MSE/go2rtc | Complete |
+| 30-01 | 1 | Voice acknowledgment timing fix | Complete |
+| 30-02 | 1 | MCP tool timeout guards | Pending |
 
 **Wave Structure:**
-- Wave 1: 28-01 (camera API, snapshot grid, modal) - COMPLETE
-- Wave 2: 28-02 (live streaming, events, filtering) - COMPLETE
+- Wave 1: 30-01 (voice ack), 30-02 (tool timeouts) - IN PROGRESS
 
 ---
 
@@ -68,9 +68,9 @@ Phase 28/29 | Plan 6/8 | Req 9/20
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 6 |
+| Plans completed | 7 |
 | Requirements delivered | 10 |
-| Lines of code | ~1100 (camera API, store, 7 components) |
+| Lines of code | ~1150 |
 | Test coverage | N/A |
 
 ---
@@ -96,11 +96,14 @@ Phase 28/29 | Plan 6/8 | Req 9/20
 | 10-second snapshot polling | Balances freshness vs API load | 2026-01-29 |
 | Direct Frigate URL for MSE streaming | WebSocket doesn't need CORS, lower latency | 2026-01-29 |
 | Module augmentation for custom elements | TypeScript pattern for video-rtc JSX support | 2026-01-29 |
+| Dedicated chat:acknowledge event | Bypasses progressive queue for instant playback | 2026-01-30 |
+| Force Piper TTS for acknowledgments | <200ms synthesis vs 7-15s XTTS | 2026-01-30 |
 
 ### Technical Notes
 
-- **LLM moved to agent1 CPU** (192.168.1.61:8080) - frees RTX 4050 for XTTS
+- **LLM moved to Home node CPU** (192.168.1.50:8080) - frees RTX 4050 for XTTS
 - XTTS now running on GPU with finetuned JARVIS voice (2847 MiB VRAM)
+- Piper TTS fallback available for instant synthesis (<200ms)
 - Frigate 0.16.4 running on agent1:5000 with face_recognition ENABLED (model_size: small)
 - frigate.ts client extended with parseFaceSubLabel(), getFaceLibrary(), getRecentFaceEvents()
 - FrigateEvent.sub_label now typed as `string | [string, number] | null`
@@ -116,6 +119,8 @@ Phase 28/29 | Plan 6/8 | Req 9/20
 - video-rtc.js v1.6.0 for MSE/WebRTC streaming
 - EventList with 10s polling and camera/label filters
 - LiveStreamModal connects directly to Frigate for WebSocket streaming
+- **Voice acknowledgments use dedicated chat:acknowledge event**
+- **playAcknowledgmentImmediate() bypasses progressive queue**
 
 ### Blockers
 
@@ -136,8 +141,10 @@ None currently.
 - [x] Execute 27-02: Add presence history tools
 - [x] Execute 28-01: Create camera API and snapshot grid
 - [x] Execute 28-02: Add live streaming
-- [ ] Start Phase 29 planning
-- [ ] Execute Phase 29: Proactive Intelligence
+- [x] Execute 30-01: Voice acknowledgment timing fix
+- [ ] Execute 30-02: MCP tool timeout guards
+- [ ] Start Phase 29 planning (Proactive Intelligence)
+- [ ] Execute Phase 29 plans
 
 ---
 
@@ -149,23 +156,20 @@ None currently.
 - Verified Frigate 0.16.4 capabilities
 - Created v1.6 roadmap with 4 phases (26-29)
 - Defined 20 requirements across 4 categories
-- Executed Phase 26 plans
-- Executed Phase 27 plans
-- Executed 28-01-PLAN.md
+- Executed Phase 26-28 plans
+- Phase 28 complete - Camera Dashboard fully functional
 
 ### This Session
-- Executed 28-02-PLAN.md
-- Added video-rtc.js v1.6.0 for MSE live streaming
-- Created EventRow, EventFilters, EventList components
-- Created LiveStreamModal with auto-connect/cleanup
-- Integrated Live buttons and events section into CameraPanel
-- Phase 28 complete - Camera Dashboard fully functional
-- **Quick Task 001:** Moved LLM to agent1 CPU, freed GPU for XTTS voice synthesis
+- Executed 30-01-PLAN.md (Voice acknowledgment timing fix)
+- Added playAcknowledgmentImmediate() function for instant audio
+- Created chat:acknowledge Socket.IO event handler
+- Backend now forces Piper TTS for acknowledgments
+- Acknowledgments now play BEFORE tool execution
 
 ### Next Steps
+- Execute 30-02: MCP tool timeout guards
+- Test voice acknowledgments with actual tool calls
 - Start Phase 29 planning (Proactive Intelligence)
-- Execute Phase 29 plans
-- Test complete camera dashboard in browser
 
 ---
 
@@ -173,13 +177,10 @@ None currently.
 
 ```bash
 # View summaries
-cat /root/.planning/phases/28-camera-dashboard/28-01-SUMMARY.md
-cat /root/.planning/phases/28-camera-dashboard/28-02-SUMMARY.md
+cat /root/.planning/phases/30-mcp-reliability-voice-ack/30-01-SUMMARY.md
 
-# Test camera API
-TOKEN=$(curl -s -X POST http://localhost:4000/api/auth/login -H 'Content-Type: application/json' -d '{"password":"jarvis"}' | jq -r '.token')
-curl -s -H "Authorization: Bearer $TOKEN" http://localhost:4000/api/cameras
-curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:4000/api/events?limit=5"
+# Test voice acknowledgment (enable voice mode, ask a tool question)
+# Open http://192.168.1.50:3004, enable voice, ask "What's the cluster status?"
 
 # Check Frigate
 curl -s http://192.168.1.61:5000/api/config | jq '.cameras | keys'
