@@ -761,5 +761,15 @@ export function getClaudeTools(): Anthropic.Tool[] {
         required: ['camera'],
       },
     },
+    {
+      name: 'close_live_feed',
+      description:
+        'Close/stop a live camera feed in the dashboard UI. Use when the user asks to stop showing, close, hide, dismiss, or turn off a camera stream. Common triggers: "close the camera", "stop showing the feed", "hide the video", "dismiss".',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+    },
   ];
 }
