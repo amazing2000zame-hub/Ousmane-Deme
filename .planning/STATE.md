@@ -9,7 +9,7 @@
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
 
-**Current Focus:** MCP reliability improvements and voice acknowledgment timing fixes
+**Current Focus:** Web UI redesign and camera dismissal improvements
 
 **Active Files:**
 - `/root/.planning/milestones/v1.6-ROADMAP.md` - Current roadmap
@@ -22,14 +22,14 @@
 ## Current Position
 
 **Milestone:** v1.6 Smart Home Intelligence
-**Phase:** 30 - MCP Reliability & Voice Acknowledgment
-**Plan:** 2 of 2 complete
-**Status:** Phase complete
-**Last activity:** 2026-01-30 - Completed 30-02: MCP tool timeout guards
+**Phase:** 31 - Web UI Redesign
+**Plan:** 1 of ? complete
+**Status:** In progress
+**Last activity:** 2026-01-30 - Completed 31-01: Camera dismissal wiring
 
 ```
 [===============               ] 60%
-Phase 30/30 | Plan 8/8 | Req 9/20
+Phase 31/31 | Plan 9/? | Req 9/20
 ```
 
 ---
@@ -43,6 +43,7 @@ Phase 30/30 | Plan 8/8 | Req 9/20
 | 28 | Camera Dashboard | 2 | Complete (2/2) |
 | 29 | Proactive Intelligence | 2 | Pending |
 | 30 | MCP Reliability & Voice Ack | 2 | Complete (2/2) |
+| 31 | Web UI Redesign | ? | In progress (1/?) |
 
 **Requirements Progress:**
 - FACE: 2/5 complete (FACE-01, FACE-02)
@@ -52,15 +53,14 @@ Phase 30/30 | Plan 8/8 | Req 9/20
 
 ---
 
-## Phase 30 Plans
+## Phase 31 Plans
 
 | Plan | Wave | Objective | Status |
 |------|------|-----------|--------|
-| 30-01 | 1 | Voice acknowledgment timing fix | Complete |
-| 30-02 | 1 | MCP tool timeout guards | Complete |
+| 31-01 | 1 | Camera dismissal wiring | Complete |
 
 **Wave Structure:**
-- Wave 1: 30-01 (voice ack), 30-02 (tool timeouts) - COMPLETE
+- Wave 1: 31-01 (camera dismissal) - COMPLETE
 
 ---
 
@@ -68,7 +68,7 @@ Phase 30/30 | Plan 8/8 | Req 9/20
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 8 |
+| Plans completed | 9 |
 | Requirements delivered | 10 |
 | Lines of code | ~1200 |
 | Test coverage | N/A |
@@ -100,6 +100,7 @@ Phase 30/30 | Plan 8/8 | Req 9/20
 | Force Piper TTS for acknowledgments | <200ms synthesis vs 7-15s XTTS | 2026-01-30 |
 | 60-second tool timeout | Long enough for slow ops, catches hung tools | 2026-01-30 |
 | 10-second slow tool warning | Alerts operators without false positives | 2026-01-30 |
+| useChatStore.getState().clearInlineCamera() for onClose | Consistent with existing store access patterns | 2026-01-30 |
 
 ### Technical Notes
 
@@ -125,6 +126,8 @@ Phase 30/30 | Plan 8/8 | Req 9/20
 - **playAcknowledgmentImmediate() bypasses progressive queue**
 - **executeToolWithTimeout() wraps all tool calls with 60s timeout**
 - **formatDuration() for human-readable time in logs**
+- **InlineCameraCard onClose now wired to clearInlineCamera()**
+- **close_live_feed Claude tool added for voice dismissal**
 
 ### Blockers
 
@@ -147,6 +150,8 @@ None currently.
 - [x] Execute 28-02: Add live streaming
 - [x] Execute 30-01: Voice acknowledgment timing fix
 - [x] Execute 30-02: MCP tool timeout guards
+- [x] Execute 31-01: Camera dismissal wiring
+- [ ] Execute remaining 31-xx plans
 - [ ] Start Phase 29 planning (Proactive Intelligence)
 - [ ] Execute Phase 29 plans
 
@@ -162,23 +167,19 @@ None currently.
 - Defined 20 requirements across 4 categories
 - Executed Phase 26-28 plans
 - Phase 28 complete - Camera Dashboard fully functional
+- Phase 30 complete - MCP reliability and voice acknowledgment timing
 
 ### This Session
-- Executed 30-01-PLAN.md (Voice acknowledgment timing fix)
-- Added playAcknowledgmentImmediate() function for instant audio
-- Created chat:acknowledge Socket.IO event handler
-- Backend now forces Piper TTS for acknowledgments
-- Acknowledgments now play BEFORE tool execution
-- **Executed 30-02-PLAN.md (MCP tool timeout guards)**
-- **Added executeToolWithTimeout() with 60-second timeout**
-- **All tool calls now protected from hanging indefinitely**
-- **Slow tool warnings (>10s) added to console logging**
-- **Phase 30 complete**
+- **Executed 31-01-PLAN.md (Camera dismissal wiring)**
+- **Wired onClose prop to InlineCameraCard in ChatMessage.tsx**
+- **Added close_live_feed to Claude tool definitions**
+- **Updated system prompt with close_live_feed guidance**
+- **Camera can now be dismissed via X button click or voice command**
 
 ### Next Steps
+- Execute remaining 31-xx plans (Web UI Redesign)
 - Start Phase 29 planning (Proactive Intelligence)
 - Execute Phase 29 plans
-- Test voice acknowledgments with actual tool calls
 
 ---
 
@@ -186,11 +187,12 @@ None currently.
 
 ```bash
 # View summaries
-cat /root/.planning/phases/30-mcp-reliability-voice-ack/30-01-SUMMARY.md
-cat /root/.planning/phases/30-mcp-reliability-voice-ack/30-02-SUMMARY.md
+cat /root/.planning/phases/31-web-ui-redesign/31-01-SUMMARY.md
 
-# Test voice acknowledgment (enable voice mode, ask a tool question)
-# Open http://192.168.1.50:3004, enable voice, ask "What's the cluster status?"
+# Test camera dismissal
+# Open http://192.168.1.50:3004
+# Ask "Show me the front door camera"
+# Click X button to dismiss, or say "Close the camera"
 
 # Check Frigate
 curl -s http://192.168.1.61:5000/api/config | jq '.cameras | keys'
