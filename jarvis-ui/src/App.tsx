@@ -8,6 +8,7 @@ import { login } from './services/api';
 import { Dashboard } from './components/layout/Dashboard';
 import { ScanLines } from './effects/ScanLines';
 import { GridBackground } from './effects/GridBackground';
+import { AlertToasterProvider } from './components/alerts/AlertNotification';
 
 /** PERF-021: Lazy-load motion/react library via BootOverlay chunk (~40KB gzipped saved from initial bundle) */
 const LazyBootOverlay = lazy(() => import('./components/boot/BootOverlay'));
@@ -132,6 +133,8 @@ function App() {
       <ScanLines />
 
       {isAuthenticated ? <AuthenticatedApp /> : <LoginForm />}
+      {/* Phase 29: Proactive alert toasts (top-right) */}
+      <AlertToasterProvider />
       <Toaster
         theme="dark"
         position="bottom-right"
