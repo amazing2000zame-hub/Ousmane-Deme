@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  homeassistant:
+    container_name: homeassistant
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      - ./homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    environment:
+      - TZ=America/New_York
+
+  scrypted:
+    container_name: scrypted
+    image: koush/scrypted
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./scrypted:/server/volume
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - SCRYPTED_WEBHOOK_UPDATE_AUTHORIZATION=Bearer CHANGE_ME_TO_RANDOM_STRING
+      - SCRYPTED_WEBHOOK_UPDATE=http://localhost:10444/v1/update
+    devices:
+      - /dev/dri:/dev/dri  # For hardware acceleration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "10"
+    labels:
+      - "com.centurylinklabs.watchtower.scope=scrypted"
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *  # 4 AM daily
+      - WATCHTOWER_SCOPE=scrypted

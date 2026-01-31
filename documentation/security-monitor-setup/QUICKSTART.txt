@@ -1,0 +1,98 @@
+╔══════════════════════════════════════════════════════════════╗
+║     SECURITY MONITOR VM - QUICK START GUIDE                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+STEP 1: CREATE VM IN PROXMOX
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+In Proxmox web interface, click "Create VM":
+
+  • Name: security-monitor
+  • OS: Ubuntu Server 24.04 LTS
+  • System: BIOS = OVMF (UEFI), Machine = q35
+  • Disk: 32GB minimum, Cache = Write back
+  • CPU: 6 cores, Type = host
+  • Memory: 8192 MB (8GB)
+  • Network: vmbr0, VirtIO
+
+Optional - Add GPU for HDMI:
+  Hardware → Add → PCI Device → Select GPU → Check "Primary GPU"
+
+
+STEP 2: INSTALL UBUNTU SERVER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Boot VM and install Ubuntu:
+
+  • Hostname: security-monitor
+  • Enable OpenSSH server
+  • Complete installation and reboot
+
+
+STEP 3: COPY FILES TO VM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+From your computer:
+
+  scp -r security-monitor-setup username@VM-IP:~/
+
+
+STEP 4: RUN SETUP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SSH into VM:
+
+  ssh username@VM-IP
+  cd ~/security-monitor-setup
+  chmod +x *.sh
+  ./master-setup.sh
+
+When prompted, choose YES for kiosk mode setup.
+
+
+STEP 5: REBOOT (if kiosk mode enabled)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  sudo reboot
+
+
+STEP 6: CONFIGURE SERVICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Access from web browser:
+
+  Home Assistant:  http://VM-IP:8123
+  Scrypted:        http://VM-IP:10443
+
+Home Assistant:
+  1. Create admin account
+  2. Complete setup wizard
+
+Scrypted:
+  1. Create admin account
+  2. Plugins → Install Plugins → Search "Ring" → Install
+  3. Configure Ring with your credentials
+  4. Your Ring cameras and door locks will appear
+
+Home Assistant + Scrypted Integration:
+  1. In Home Assistant: Settings → Devices & Services
+  2. Add Integration → Search "Scrypted"
+  3. Enter: http://localhost:10443
+  4. Ring devices now available in Home Assistant!
+
+
+TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Check container status:
+  cd ~/security-system
+  docker-compose ps
+  docker-compose logs -f
+
+Restart containers:
+  cd ~/security-system
+  docker-compose restart
+
+
+SUPPORT LINKS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Home Assistant: https://www.home-assistant.io/docs/
+Scrypted:       https://docs.scrypted.app/
+Ring Plugin:    https://github.com/koush/scrypted/wiki/Ring
+
+╔══════════════════════════════════════════════════════════════╗
+║  Read README.md for detailed instructions and configuration  ║
+╚══════════════════════════════════════════════════════════════╝

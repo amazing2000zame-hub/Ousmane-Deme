@@ -1,0 +1,256 @@
+╔══════════════════════════════════════════════════════════════╗
+║   SECURITY MONITOR - UBUNTU DESKTOP INSTALLATION GUIDE       ║
+╚══════════════════════════════════════════════════════════════╝
+
+Your VM is already created and running!
+
+VM Details:
+  • VM ID: 100
+  • Name: security-monitor
+  • CPU: 6 cores
+  • RAM: 8 GB
+  • Disk: 64 GB
+  • Status: RUNNING
+
+
+STEP 1: INSTALL UBUNTU DESKTOP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. In Proxmox web interface:
+   - Click VM "100 (security-monitor)"
+   - Click "Console" button
+
+2. In the Ubuntu installer:
+
+   Welcome Screen:
+   • Select language → Click "Install Ubuntu"
+
+   Keyboard Layout:
+   • Choose your keyboard layout
+
+   Updates and Other Software:
+   • Choose "Normal installation"
+   • ✓ Check "Download updates while installing Ubuntu"
+   • ✓ Check "Install third-party software for graphics..."
+
+   Installation Type:
+   • Choose "Erase disk and install Ubuntu"
+   • Click "Install Now" → "Continue"
+
+   Where Are You:
+   • Select your timezone
+
+   Who Are You:
+   • Your name: (your choice)
+   • Your computer's name: security-monitor
+   • Pick a username: (your choice - remember this!)
+   • Choose a password: (strong password - remember this!)
+   • ✓ IMPORTANT: Check "Log in automatically"
+        (This enables kiosk mode to work on boot)
+
+3. Wait for installation (10-15 minutes)
+
+4. Click "Restart Now"
+
+5. When prompted "Please remove the installation medium",
+   just press ENTER (Proxmox handles this automatically)
+
+
+STEP 2: FIRST BOOT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Ubuntu Desktop will load automatically (since auto-login is enabled)
+
+Skip or complete the Ubuntu welcome screens:
+  • Online Accounts: Skip
+  • Livepatch: Skip or set up (optional)
+  • Help Improve Ubuntu: Choose your preference
+  • Privacy: Choose your preference
+  • Ready to Go: Click "Done"
+
+
+STEP 3: PREPARE FOR SETUP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Open Terminal:
+   • Press Ctrl+Alt+T
+   • Or click Activities → Search "Terminal"
+
+2. Get IP address:
+   ip a | grep inet
+
+   Look for something like: 192.168.1.x or 10.0.0.x
+   (Write this down - you'll need it!)
+
+3. Update system and install SSH:
+   sudo apt update && sudo apt upgrade -y
+   sudo apt install openssh-server -y
+
+   This allows you to copy files and work remotely.
+
+
+STEP 4: COPY SETUP FILES TO VM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+From your Proxmox host or another computer with the setup files:
+
+scp -r /root/security-monitor-setup username@VM-IP:~/
+
+Replace:
+  • username = the username you created during Ubuntu install
+  • VM-IP = the IP address from step 3
+
+Example:
+  scp -r /root/security-monitor-setup admin@192.168.1.100:~/
+
+
+STEP 5: RUN THE SETUP SCRIPT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Back in the VM terminal:
+
+1. Navigate to setup folder:
+   cd ~/security-monitor-setup
+
+2. Make scripts executable:
+   chmod +x *.sh
+
+3. Run master setup:
+   ./master-setup.sh
+
+4. Follow the prompts:
+   • Press Enter to continue
+   • When asked "Do you want to set up kiosk mode?" → Type: y
+
+5. Wait for setup to complete (5-10 minutes)
+
+
+STEP 6: REBOOT TO ACTIVATE KIOSK MODE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sudo reboot
+
+After reboot:
+  ✓ System will auto-login
+  ✓ Wait ~30 seconds for Docker to start
+  ✓ Chromium will launch in fullscreen kiosk mode
+  ✓ Home Assistant will load automatically
+
+
+STEP 7: CONFIGURE SERVICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+From another computer, open web browser:
+
+┌─────────────────────────────────────────────────────────┐
+│  HOME ASSISTANT: http://VM-IP:8123                      │
+└─────────────────────────────────────────────────────────┘
+
+  1. Create your Home Assistant account
+  2. Name your home
+  3. Set location (for weather)
+  4. Choose units (metric/imperial)
+  5. Click "Finish"
+
+┌─────────────────────────────────────────────────────────┐
+│  SCRYPTED: http://VM-IP:10443                           │
+└─────────────────────────────────────────────────────────┘
+
+  1. Create admin account
+  2. Complete setup wizard
+
+  Install Ring Plugin:
+  3. Click "Plugins" (left sidebar)
+  4. Click "Install Plugins" (top right)
+  5. Search for "Ring"
+  6. Click "Install" on Ring plugin
+  7. After install, click "Ring" in plugin list
+  8. Click "Settings"
+  9. Enter your Ring email and password
+  10. Complete 2FA if prompted
+  11. Your cameras and door locks will appear!
+
+  Connect to Home Assistant:
+  12. Back in Home Assistant
+  13. Settings → Devices & Services
+  14. Click "Add Integration" (bottom right)
+  15. Search "Scrypted"
+  16. Enter: http://localhost:10443
+  17. Click Submit
+  18. Your Ring devices are now in Home Assistant!
+
+
+STEP 8: CREATE DASHBOARD FOR MONITOR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+In Home Assistant web interface:
+
+  1. Click "Overview" (left sidebar)
+  2. Click three dots (⋮) → "Edit Dashboard"
+  3. Click "+ Add Card"
+  4. Choose card type:
+     • "Picture Entity Card" - for single camera
+     • "Picture Glance Card" - for camera with controls
+     • "Grid Card" - for multiple cameras in grid
+  5. Select your Ring camera from the entity list
+  6. Repeat for each camera
+  7. Drag cards to arrange them
+  8. Click "Done"
+
+The kiosk display will show this dashboard automatically!
+
+
+KIOSK MODE CONTROLS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Exit fullscreen:        F11
+Close browser:          Alt+F4
+Access desktop:         Alt+F4 (close browser first)
+Restart kiosk:          Reboot or re-login
+
+
+TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Kiosk not starting:
+  • Exit kiosk (F11, Alt+F4)
+  • Open Terminal
+  • Run: ~/.local/bin/start-security-monitor.sh
+  • Check for errors
+
+Containers not running:
+  cd ~/security-system
+  docker-compose ps
+  docker-compose logs -f
+
+Restart containers:
+  cd ~/security-system
+  docker-compose restart
+
+Can't access from other computers:
+  • Check firewall: sudo ufw status
+  • Allow ports: sudo ufw allow 8123/tcp
+  • Allow ports: sudo ufw allow 10443/tcp
+
+Ring cameras not showing:
+  • Check Scrypted logs: docker logs scrypted
+  • Verify Ring credentials in Scrypted settings
+  • Check Ring app on phone - ensure cameras are online
+
+
+SUPPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Documentation:
+  • Home Assistant: https://www.home-assistant.io/docs/
+  • Scrypted: https://docs.scrypted.app/
+  • Ring Plugin: https://github.com/koush/scrypted/wiki/Ring
+
+Community:
+  • Home Assistant: https://community.home-assistant.io/
+  • Scrypted Discord: https://discord.gg/DcFzmBHYGq
+
+
+╔══════════════════════════════════════════════════════════════╗
+║                   ENJOY YOUR SECURITY SYSTEM!                ║
+╚══════════════════════════════════════════════════════════════╝

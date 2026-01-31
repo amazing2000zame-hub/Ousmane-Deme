@@ -1,0 +1,57 @@
+╔═══════════════════════════════════════════════════════════════╗
+║           HOME MONITORING SYSTEM - QUICK START                ║
+╚═══════════════════════════════════════════════════════════════╝
+
+✅ SYSTEM IS READY!
+
+📍 VM IP Address: 192.168.1.60
+🔐 Root Password: Lexeiba2025
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🌐 ACCESS SCRYPTED NOW:
+
+   Open your browser and go to:
+   👉 http://192.168.1.60:11080/
+
+   Create your admin account on first login!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 NEXT STEPS:
+
+1. Install Plugins:
+   - Go to Plugins → Install Plugin
+   - Install: Ring, HomeKit, Aqara
+
+2. Connect Your Devices:
+   - Ring: Login with your Ring account
+   - HomeKit: Scan QR code with iPhone Home app
+   - Aqara: Login with Aqara account credentials
+
+3. Set Up Dashboard:
+   - Add all cameras/devices to a view
+   - Arrange in grid layout for wall display
+
+4. Restart VM to see display on HDMI:
+   qm stop 100 && qm start 100
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📁 DOCUMENTATION:
+
+   All passwords: /root/home-monitoring-project/passwords
+   Full guide:    /root/home-monitoring-project/PROJECT_SETUP.md
+   This file:     /root/home-monitoring-project/QUICK_START.txt
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 USEFUL COMMANDS:
+
+   Restart VM:       qm stop 100 && qm start 100
+   Restart Scrypted: ssh root@192.168.1.60 "docker restart scrypted"
+   View logs:        ssh root@192.168.1.60 "docker logs scrypted -f"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎉 ENJOY YOUR HOME MONITORING SYSTEM!

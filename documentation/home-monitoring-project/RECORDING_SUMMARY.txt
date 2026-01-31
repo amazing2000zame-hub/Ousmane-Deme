@@ -1,0 +1,79 @@
+╔═══════════════════════════════════════════════════════════════╗
+║      CAMERA RECORDING STORAGE - SETUP COMPLETE                ║
+╚═══════════════════════════════════════════════════════════════╝
+
+✅ USB DRIVE CONFIGURED FOR RECORDINGS
+
+📀 Storage Device
+   Device: Seagate One Touch 4.5TB USB Drive
+   Capacity: 4.6TB Total / 4.3TB Available
+   Format: exFAT
+   Location: Passed through to VM 100
+   Mount Point: /mnt/recordings
+   Auto-Mount: Enabled (persists across reboots)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📹 RECORDING CONFIGURATION
+
+   Storage Path (Docker): /recordings
+   Retention Period: 4 days (auto-delete)
+   Recording Location: /mnt/recordings/camera-recordings
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 NEXT STEPS TO ENABLE RECORDING:
+
+1. Access Scrypted NVR Setup:
+   → Open: http://192.168.1.60:11080/
+   → Go to: Plugins → Install Plugin
+   → Search: "NVR"
+   → Install: Scrypted NVR plugin
+
+2. Configure NVR Storage:
+   → Go to: Plugins → Scrypted NVR → Settings
+   → Set Storage Path: /recordings
+   → Save
+
+3. Enable Recording Per Camera:
+   → Click on each camera (Front Door, Side, etc.)
+   → Enable: NVR Extension
+   → Set Retention: 4 days
+   → Choose: Motion or Continuous recording
+   → Save
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📁 DOCUMENTATION FILES:
+
+   Complete NVR Guide:
+   /root/home-monitoring-project/NVR_RECORDING_SETUP.md
+
+   System Passwords:
+   /root/home-monitoring-project/passwords
+
+   Full Setup Guide:
+   /root/home-monitoring-project/PROJECT_SETUP.md
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔧 USEFUL COMMANDS:
+
+Check Storage Space:
+   ssh root@192.168.1.60 "df -h /mnt/recordings"
+
+View Recording Files:
+   ssh root@192.168.1.60 "ls -lh /mnt/recordings/camera-recordings/"
+
+Restart Scrypted:
+   ssh root@192.168.1.60 "docker restart scrypted"
+
+Check Scrypted Logs:
+   ssh root@192.168.1.60 "docker logs scrypted -f"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✨ SYSTEM READY FOR RECORDING!
+
+All infrastructure is in place. Complete the NVR plugin setup
+in the Scrypted web interface to start recording camera footage.
