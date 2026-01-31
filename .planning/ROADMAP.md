@@ -12,8 +12,8 @@ Jarvis 3.1 v1.1 transforms the working v1.0 prototype into a production-ready AI
 - **v1.3 File Operations & Project Intelligence** - Phases 12-15 (shipped 2026-01-27)
 - **v1.4 Performance & Reliability** - Phases 16-20 (shipped 2026-01-27)
 - **v1.5 Optimization & Latency Reduction** - Phases 21-25 (shipped 2026-01-28)
-- **v1.6 Smart Home Intelligence** - Phases 26-30 (shipped 2026-01-30)
-- **v1.7 UI Polish & Camera Integration** - Phase 31+ (in progress)
+- **v1.6 Smart Home Intelligence** - Phases 26-30 (in progress)
+- **v1.7 UI Polish & Camera Integration** - Phase 31+ (complete)
 
 ## Phases
 
@@ -344,12 +344,58 @@ Plans:
 </details>
 
 <details>
-<summary>v1.6 Smart Home Intelligence (Phases 26-30) - SHIPPED 2026-01-30</summary>
+<summary>v1.6 Smart Home Intelligence (Phases 26-30) - IN PROGRESS</summary>
 
-**Milestone Goal:** Integrate Frigate NVR for face recognition and camera intelligence, add presence tracking with state machine, build camera dashboard with live streaming, and improve MCP tool reliability.
+**Milestone Goal:** Integrate Frigate NVR for face recognition and camera intelligence, add presence tracking with state machine, build camera dashboard with live streaming, implement proactive alerts, and improve MCP tool reliability.
 
-#### Phases 26-30: Face Recognition, Presence, Camera Dashboard, MCP Reliability
-**Status**: Complete (Phases 26-30 all complete)
+#### Phase 26: Face Recognition Foundation
+**Goal**: Enable Frigate face recognition and extend frigate.ts client for face detection events
+**Status**: Complete
+
+Plans:
+- [x] 26-01-PLAN.md -- Enable face recognition in Frigate config
+- [x] 26-02-PLAN.md -- Add face recognition MCP tools
+
+#### Phase 27: Presence Intelligence
+**Goal**: Track household presence using network signals and face recognition
+**Status**: Complete
+
+Plans:
+- [x] 27-01-PLAN.md -- Create presence tracker and state machine
+- [x] 27-02-PLAN.md -- Add presence history tools
+
+#### Phase 28: Camera Dashboard
+**Goal**: Build camera snapshot grid with live streaming capability
+**Status**: Complete
+
+Plans:
+- [x] 28-01-PLAN.md -- Camera API and snapshot grid
+- [x] 28-02-PLAN.md -- Live streaming integration
+
+#### Phase 29: Proactive Alerts
+**Goal**: Real-time notifications for unknown person detection at entry cameras with optional TTS announcements
+**Depends on**: Phase 28 (camera infrastructure)
+**Requirements**: ALERT-01, ALERT-02, ALERT-03, ALERT-04, ALERT-05
+**Status**: Planning
+
+**Success Criteria** (what must be TRUE when this phase completes):
+1. Unknown person at front_door triggers notification within 10 seconds
+2. Notification shows snapshot thumbnail
+3. 5-minute cooldown prevents repeat alerts
+4. TTS announcement works when enabled
+5. "What happened while I was away?" returns event summary
+
+Plans:
+- [ ] 29-01-PLAN.md -- Backend alert monitor service (polling, cooldown, Socket.IO emission)
+- [ ] 29-02-PLAN.md -- Frontend notification component with toast and TTS
+
+#### Phase 30: MCP Reliability & Voice Acknowledgment
+**Goal**: Improve tool execution reliability with timeouts and add voice acknowledgment for tool calls
+**Status**: Complete
+
+Plans:
+- [x] 30-01-PLAN.md -- Voice acknowledgment timing fix
+- [x] 30-02-PLAN.md -- MCP tool timeout guards
 
 </details>
 
@@ -398,9 +444,10 @@ Plans:
 **Phase 23 (Parallel TTS + Opus):** PERF-02, PERF-03, AUDIO-01
 **Phase 24 (Observability & Context Management):** OBS-01, BACK-02
 **Phase 25 (Frontend -- Chat Virtualization):** UI-01
+**Phase 29 (Proactive Alerts):** ALERT-01, ALERT-02, ALERT-03, ALERT-04, ALERT-05
 **Phase 31 (Web UI Redesign):** UI-02 (camera dismissal), UI-03 (connection timeout)
 
-Total requirements: 116 (114 v1.0-v1.5 + 2 v1.7)
+Total requirements: 121 (114 v1.0-v1.5 + 5 v1.6 ALERT + 2 v1.7)
 
 ---
 
@@ -412,6 +459,14 @@ Total requirements: 116 (114 v1.0-v1.5 + 2 v1.7)
 - Success criteria verified (manual testing or automated checks)
 - No regressions in existing functionality
 - Phase SUMMARY.md created documenting what was built
+
+**Milestone-level DoD (v1.6):**
+- Phase 26-30 complete
+- Face recognition working at entry cameras
+- Presence tracking with state machine operational
+- Camera dashboard shows snapshots and live streams
+- Proactive alerts for unknown persons working
+- MCP tools have timeout guards
 
 **Milestone-level DoD (v1.7):**
 - Phase 31 complete
@@ -436,7 +491,7 @@ Total requirements: 116 (114 v1.0-v1.5 + 2 v1.7)
 ## Progress
 
 **Execution Order:**
-Phase 31 is independent and can execute immediately.
+Phase 29 depends on Phase 28 (camera infrastructure). Execute 29 before marking v1.6 complete.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -464,9 +519,13 @@ Phase 31 is independent and can execute immediately.
 | 23. Parallel TTS + Opus | v1.5 | 3/3 | Complete | 2026-01-27 |
 | 24. Observability & Context | v1.5 | 2/2 | Complete | 2026-01-28 |
 | 25. Chat Virtualization | v1.5 | 1/1 | Complete | 2026-01-28 |
-| 26-30. Smart Home Intelligence | v1.6 | 8/8 | Complete | 2026-01-30 |
-| 31. Web UI Redesign | v1.7 | 0/2 | Planning | - |
+| 26. Face Recognition | v1.6 | 2/2 | Complete | 2026-01-29 |
+| 27. Presence Intelligence | v1.6 | 2/2 | Complete | 2026-01-29 |
+| 28. Camera Dashboard | v1.6 | 2/2 | Complete | 2026-01-29 |
+| 29. Proactive Alerts | v1.6 | 0/2 | Planning | - |
+| 30. MCP Reliability | v1.6 | 2/2 | Complete | 2026-01-30 |
+| 31. Web UI Redesign | v1.7 | 2/2 | Complete | 2026-01-30 |
 
 ---
 
-Last updated: 2026-01-30 (Phase 31 planned -- Web UI Redesign)
+Last updated: 2026-01-30 (Phase 29 planned -- Proactive Alerts)
