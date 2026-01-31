@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-01-30
+**Last Updated:** 2026-01-31
 **Current Milestone:** v1.7 UI Polish & Camera Integration
 
 ---
@@ -9,7 +9,7 @@
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
 
-**Current Focus:** UI polish complete, investigating voice playback issue
+**Current Focus:** Proactive alerts complete, all phases delivered
 
 **Active Files:**
 - `/root/.planning/milestones/v1.6-ROADMAP.md` - Current roadmap
@@ -22,14 +22,14 @@
 ## Current Position
 
 **Milestone:** v1.7 UI Polish & Camera Integration
-**Phase:** 31 - Web UI Redesign
+**Phase:** 29 - Proactive Alerts
 **Plan:** 2 of 2 complete
 **Status:** Phase complete
-**Last activity:** 2026-01-30 - Completed 31-02: Connection timeout and layout polish
+**Last activity:** 2026-01-31 - Completed 29-02: Frontend alert notifications
 
 ```
-[==============                ] 50%
-Phase 31/31 | Plan 10/10 | Req 11/20
+[================              ] 55%
+Phase 29/31 | Plan 12/12 | Req 16/20
 ```
 
 ---
@@ -41,7 +41,7 @@ Phase 31/31 | Plan 10/10 | Req 11/20
 | 26 | Face Recognition Foundation | 2 | Complete (2/2) |
 | 27 | Presence Intelligence | 2 | Complete (2/2) |
 | 28 | Camera Dashboard | 2 | Complete (2/2) |
-| 29 | Proactive Intelligence | 2 | Pending |
+| 29 | Proactive Alerts | 2 | Complete (2/2) |
 | 30 | MCP Reliability & Voice Ack | 2 | Complete (2/2) |
 | 31 | Web UI Redesign | 2 | Complete (2/2) |
 
@@ -49,18 +49,20 @@ Phase 31/31 | Plan 10/10 | Req 11/20
 - FACE: 2/5 complete (FACE-01, FACE-02)
 - PRES: 3/5 complete (PRES-01, PRES-02, PRES-03)
 - CAM: 5/5 complete (CAM-01, CAM-02, CAM-03, CAM-04, CAM-05)
-- ALERT: 0/5 complete
+- ALERT: 5/5 complete (ALERT-01, ALERT-02, ALERT-03, ALERT-04, ALERT-05)
 
 ---
 
-## Phase 31 Plans
+## Phase 29 Plans
 
 | Plan | Wave | Objective | Status |
 |------|------|-----------|--------|
-| 31-01 | 1 | Camera dismissal wiring | Complete |
+| 29-01 | 1 | Backend AlertMonitor service | Complete |
+| 29-02 | 2 | Frontend notification system | Complete |
 
 **Wave Structure:**
-- Wave 1: 31-01 (camera dismissal) - COMPLETE
+- Wave 1: 29-01 (backend polling) - COMPLETE
+- Wave 2: 29-02 (frontend toasts) - COMPLETE
 
 ---
 
@@ -68,9 +70,9 @@ Phase 31/31 | Plan 10/10 | Req 11/20
 
 | Metric | Value |
 |--------|-------|
-| Plans completed | 9 |
-| Requirements delivered | 10 |
-| Lines of code | ~1200 |
+| Plans completed | 12 |
+| Requirements delivered | 15 |
+| Lines of code | ~1500 |
 | Test coverage | N/A |
 
 ---
@@ -101,6 +103,10 @@ Phase 31/31 | Plan 10/10 | Req 11/20
 | 60-second tool timeout | Long enough for slow ops, catches hung tools | 2026-01-30 |
 | 10-second slow tool warning | Alerts operators without false positives | 2026-01-30 |
 | useChatStore.getState().clearInlineCamera() for onClose | Consistent with existing store access patterns | 2026-01-30 |
+| 5-second alert poll interval | Balances detection latency vs Frigate API load | 2026-01-31 |
+| 5-minute cooldown per camera | Prevents notification spam for continuous detections | 2026-01-31 |
+| Browser SpeechSynthesis for alert TTS | Immediate playback without backend latency | 2026-01-31 |
+| Extend useEventsSocket for alerts | Avoids duplicate socket connections | 2026-01-31 |
 
 ### Technical Notes
 
@@ -128,6 +134,10 @@ Phase 31/31 | Plan 10/10 | Req 11/20
 - **formatDuration() for human-readable time in logs**
 - **InlineCameraCard onClose now wired to clearInlineCamera()**
 - **close_live_feed Claude tool added for voice dismissal**
+- **AlertMonitor polls Frigate every 5s for unknown persons**
+- **alert:notification emitted on /events namespace**
+- **Alert toasts with thumbnail in top-right, 10s auto-dismiss**
+- **50-alert history buffer in alerts Zustand store**
 
 ### Blockers
 
@@ -151,9 +161,11 @@ None currently.
 - [x] Execute 30-01: Voice acknowledgment timing fix
 - [x] Execute 30-02: MCP tool timeout guards
 - [x] Execute 31-01: Camera dismissal wiring
-- [ ] Execute remaining 31-xx plans
-- [ ] Start Phase 29 planning (Proactive Intelligence)
-- [ ] Execute Phase 29 plans
+- [x] Execute 31-02: Connection timeout and layout polish
+- [x] Execute 29-01: Backend AlertMonitor service
+- [x] Execute 29-02: Frontend alert notifications
+- [ ] Enroll faces in Frigate face library
+- [ ] Test end-to-end alert flow with unknown person
 
 ---
 
@@ -168,18 +180,23 @@ None currently.
 - Executed Phase 26-28 plans
 - Phase 28 complete - Camera Dashboard fully functional
 - Phase 30 complete - MCP reliability and voice acknowledgment timing
+- Phase 31 complete - Web UI Redesign
 
 ### This Session
-- **Executed 31-01-PLAN.md (Camera dismissal wiring)**
-- **Wired onClose prop to InlineCameraCard in ChatMessage.tsx**
-- **Added close_live_feed to Claude tool definitions**
-- **Updated system prompt with close_live_feed guidance**
-- **Camera can now be dismissed via X button click or voice command**
+- **Executed 29-01-PLAN.md (Backend AlertMonitor service)**
+  - Added alert config (pollInterval, cooldown, cameras, TTS)
+  - Created AlertMonitor with Frigate polling and cooldown dedup
+  - Wired into startup/shutdown lifecycle
+- **Executed 29-02-PLAN.md (Frontend alert notifications)**
+  - Created alerts Zustand store with 50-alert history
+  - Built AlertNotification toast with Frigate thumbnails
+  - Integrated alert:notification into useEventsSocket
+  - Added browser SpeechSynthesis for TTS announcements
 
 ### Next Steps
-- Execute remaining 31-xx plans (Web UI Redesign)
-- Start Phase 29 planning (Proactive Intelligence)
-- Execute Phase 29 plans
+- Test end-to-end alert flow with unknown person detection
+- Enroll faces in Frigate face library
+- Consider MQTT upgrade for reduced polling latency
 
 ---
 
@@ -187,18 +204,19 @@ None currently.
 
 ```bash
 # View summaries
-cat /root/.planning/phases/31-web-ui-redesign/31-01-SUMMARY.md
+cat /root/.planning/phases/29-proactive-alerts/29-01-SUMMARY.md
+cat /root/.planning/phases/29-proactive-alerts/29-02-SUMMARY.md
 
-# Test camera dismissal
-# Open http://192.168.1.50:3004
-# Ask "Show me the front door camera"
-# Click X button to dismiss, or say "Close the camera"
+# Test alert monitoring
+docker compose logs -f jarvis-backend | grep -i "alert"
 
-# Check Frigate
-curl -s http://192.168.1.61:5000/api/config | jq '.cameras | keys'
-curl -s "http://192.168.1.61:5000/api/events?limit=5" | jq
+# Check Frigate for person events
+curl -s "http://192.168.1.61:5000/api/events?label=person&limit=5" | jq
+
+# Check alert config
+docker compose exec jarvis-backend cat /app/dist/config.js | grep -i alert
 
 # Build and restart
-cd /root/jarvis-ui && npm run build
+cd /root/jarvis-backend && npm run build
 cd /root && docker compose up -d --build
 ```
