@@ -351,16 +351,115 @@ export function parseFaceSubLabel(
 }
 
 /**
- * Get list of known faces from Frigate face library.
- * Returns names of all enrolled faces.
+ * Get face library - all enrolled faces with their image counts.
+ * Frigate 0.16+ returns: { "PersonName": 5, "AnotherPerson": 3 }
  */
-export async function getFaceLibrary(): Promise<string[]> {
+export async function getFaceLibrary(): Promise<Record<string, number>> {
   try {
-    // Frigate 0.16+ face library API endpoint
-    return await frigateGet<string[]>('/face_recognition/labels');
+    return await frigateGet<Record<string, number>>('/faces');
   } catch {
-    // Fallback: return empty if face recognition not enabled or endpoint unavailable
-    return [];
+    return {};
+  }
+}
+
+/**
+ * Get face names only (for backwards compatibility).
+ */
+export async function getFaceNames(): Promise<string[]> {
+  const library = await getFaceLibrary();
+  return Object.keys(library);
+}
+
+/**
+ * Set sub_label on an event (name a person).
+ * This labels the person in a specific event.
+ *
+ * @param eventId - Event ID to label
+ * @param personName - Name of the person
+ */
+export async function setEventSubLabel(
+  eventId: string,
+  personName: string,
+): Promise<{ success: boolean; message: string }> {
+  const url = `${config.frigateUrl}/api/events/${encodeURIComponent(eventId)}/sub_label`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subLabel: personName }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { success: false, message: `Failed: ${res.status} ${body}` };
+    }
+
+    const result = await res.json() as { success: boolean; message: string };
+    return result;
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Add a face to the face library from an event's detected face.
+ * Frigate 0.16+ detects faces automatically; this trains the model.
+ *
+ * @param personName - Name of the person
+ * @param eventId - Event ID containing the face
+ */
+export async function addFaceFromEvent(
+  personName: string,
+  eventId: string,
+): Promise<{ success: boolean; message: string }> {
+  // First, set the sub_label on the event to train recognition
+  const labelResult = await setEventSubLabel(eventId, personName);
+  if (!labelResult.success) {
+    return labelResult;
+  }
+
+  return { success: true, message: `Labeled event as ${personName}` };
+}
+
+/**
+ * Delete a person from the face library.
+ */
+export async function deleteFace(personName: string): Promise<{ success: boolean; message: string }> {
+  const url = `${config.frigateUrl}/api/faces/${encodeURIComponent(personName)}`;
+
+  try {
+    const res = await fetch(url, { method: 'DELETE' });
+
+    if (!res.ok) {
+      return { success: false, message: `Failed: ${res.status}` };
+    }
+
+    return { success: true, message: `Deleted ${personName} from face library` };
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Get face recognition configuration.
+ */
+export async function getFaceConfig(): Promise<{
+  enabled: boolean;
+  model_size: string;
+  recognition_threshold: number;
+  min_area: number;
+} | null> {
+  try {
+    const config = await frigateGet<{ face_recognition?: object }>('/config');
+    return config.face_recognition as {
+      enabled: boolean;
+      model_size: string;
+      recognition_threshold: number;
+      min_area: number;
+    } | null;
+  } catch {
+    return null;
   }
 }
 

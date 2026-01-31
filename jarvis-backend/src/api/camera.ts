@@ -13,6 +13,10 @@ import {
   getEventSnapshot,
   getEventThumbnail,
   getEvents,
+  getFaceLibrary,
+  getFaceConfig,
+  addFaceFromEvent,
+  deleteFace,
 } from '../clients/frigate.js';
 
 export const cameraRouter = Router();
@@ -124,5 +128,76 @@ cameraRouter.get('/events', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Camera API] Failed to get events:', err instanceof Error ? err.message : err);
     res.status(500).json({ error: 'Failed to fetch events' });
+  }
+});
+
+// ------------------------------------------------------------------ Face Library
+
+/**
+ * GET /api/faces
+ * Returns face library with names and image counts.
+ */
+cameraRouter.get('/faces', async (_req: Request, res: Response) => {
+  try {
+    const faces = await getFaceLibrary();
+    const faceConfig = await getFaceConfig();
+    res.json({
+      faces,
+      config: faceConfig,
+      names: Object.keys(faces),
+      total: Object.keys(faces).length,
+    });
+  } catch (err) {
+    console.error('[Camera API] Failed to get face library:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Failed to fetch face library' });
+  }
+});
+
+/**
+ * POST /api/faces/:name/add
+ * Add a face from an event to a person's library.
+ * Body: { eventId: string }
+ */
+cameraRouter.post('/faces/:name/add', async (req: Request, res: Response) => {
+  const name = req.params.name as string;
+  const { eventId } = req.body as { eventId?: string };
+
+  if (!eventId) {
+    res.status(400).json({ error: 'eventId is required' });
+    return;
+  }
+
+  try {
+    const result = await addFaceFromEvent(name, eventId);
+    if (result.success) {
+      console.log(`[Face Library] Added face to ${name} from event ${eventId}`);
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (err) {
+    console.error('[Camera API] Failed to add face:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Failed to add face' });
+  }
+});
+
+/**
+ * DELETE /api/faces/:name
+ * Delete a person from the face library.
+ */
+cameraRouter.delete('/faces/:name', async (req: Request, res: Response) => {
+  const name = req.params.name as string;
+
+  try {
+    const result = await deleteFace(name);
+    if (result.success) {
+      console.log(`[Face Library] Deleted ${name} from face library`);
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (err) {
+    console.error('[Camera API] Failed to delete face:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Failed to delete face' });
   }
 });
