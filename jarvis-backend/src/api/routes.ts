@@ -16,10 +16,56 @@ const router = Router();
 router.use('/api/health', healthRouter);
 router.post('/api/auth/login', handleLogin);
 
+// Public image routes (browser <img> tags don't send auth headers)
+// These proxy to Frigate which is already on internal network only
+router.get('/api/events/:eventId/thumbnail', async (req, res) => {
+  const { getEventThumbnail } = await import('../clients/frigate.js');
+  try {
+    const buffer = await getEventThumbnail(req.params.eventId);
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=3600'); // Cache thumbnails for 1 hour
+    res.send(buffer);
+  } catch (err) {
+    console.error(`[Camera API] Failed to get thumbnail:`, err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Failed to fetch thumbnail' });
+  }
+});
+
+router.get('/api/events/:eventId/snapshot', async (req, res) => {
+  const { getEventSnapshot } = await import('../clients/frigate.js');
+  try {
+    const buffer = await getEventSnapshot(req.params.eventId);
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(buffer);
+  } catch (err) {
+    console.error(`[Camera API] Failed to get snapshot:`, err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Failed to fetch snapshot' });
+  }
+});
+
+router.get('/api/cameras/:camera/snapshot', async (req, res) => {
+  const { getCameras, getLatestSnapshot } = await import('../clients/frigate.js');
+  try {
+    const cameras = await getCameras();
+    if (!cameras.includes(req.params.camera)) {
+      res.status(404).json({ error: `Camera '${req.params.camera}' not found` });
+      return;
+    }
+    const buffer = await getLatestSnapshot(req.params.camera);
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(buffer);
+  } catch (err) {
+    console.error(`[Camera API] Failed to get camera snapshot:`, err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Failed to fetch snapshot' });
+  }
+});
+
 // Auth middleware for all other /api/* routes
 router.use('/api', authMiddleware);
 
-// Camera API routes (proxies Frigate endpoints)
+// Camera API routes (proxies Frigate endpoints - protected routes like /events list)
 router.use('/api', cameraRouter);
 
 // ---------------------------------------------------------------------------
