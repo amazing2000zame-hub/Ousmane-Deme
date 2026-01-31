@@ -257,6 +257,42 @@ export function useChatSocket(): ChatSocketActions {
       useChatStore.getState().clearInlineCamera();
     }
 
+    // Phase 32: Web browsing and video socket handlers
+    function onShowSearchResults(data: {
+      query: string;
+      results: Array<{ title: string; url: string; snippet: string; engine?: string }>;
+      timestamp: string;
+    }) {
+      console.log('[Chat] Received search results:', data.query);
+      useChatStore.getState().setSearchResults(data);
+    }
+
+    function onShowWebpage(data: { url: string; title: string; timestamp: string }) {
+      console.log('[Chat] Received show_webpage:', data.url);
+      useChatStore.getState().setInlineWebpage(data);
+    }
+
+    function onCloseWebpage() {
+      console.log('[Chat] Received close_webpage');
+      useChatStore.getState().clearInlineWebpage();
+    }
+
+    function onShowVideo(data: {
+      type: 'youtube' | 'direct';
+      videoId?: string;
+      url?: string;
+      title: string;
+      timestamp: string;
+    }) {
+      console.log('[Chat] Received show_video:', data.type, data.videoId || data.url);
+      useChatStore.getState().setInlineVideo(data);
+    }
+
+    function onCloseVideo() {
+      console.log('[Chat] Received close_video');
+      useChatStore.getState().clearInlineVideo();
+    }
+
     // Handle voice acknowledgment (plays immediately before tool execution)
     function onAcknowledge(data: {
       sessionId: string;
@@ -292,6 +328,11 @@ export function useChatSocket(): ChatSocketActions {
     socket.on('chat:show_live_feed', onShowLiveFeed);
     socket.on('chat:close_live_feed', onCloseLiveFeed);
     socket.on('chat:acknowledge', onAcknowledge);
+    socket.on('chat:show_search_results', onShowSearchResults);
+    socket.on('chat:show_webpage', onShowWebpage);
+    socket.on('chat:close_webpage', onCloseWebpage);
+    socket.on('chat:show_video', onShowVideo);
+    socket.on('chat:close_video', onCloseVideo);
     socket.on('connect_error', onConnectError);
 
     socket.connect();
@@ -325,6 +366,11 @@ export function useChatSocket(): ChatSocketActions {
       socket.off('chat:show_live_feed', onShowLiveFeed);
       socket.off('chat:close_live_feed', onCloseLiveFeed);
       socket.off('chat:acknowledge', onAcknowledge);
+      socket.off('chat:show_search_results', onShowSearchResults);
+      socket.off('chat:show_webpage', onShowWebpage);
+      socket.off('chat:close_webpage', onCloseWebpage);
+      socket.off('chat:show_video', onShowVideo);
+      socket.off('chat:close_video', onCloseVideo);
       socket.off('connect_error', onConnectError);
       socket.disconnect();
       socketRef.current = null;

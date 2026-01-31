@@ -104,6 +104,10 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
 
   // GREEN -- UI interaction (no side effects)
   show_live_feed: ActionTier.GREEN,
+  close_live_feed: ActionTier.GREEN,
+
+  // GREEN -- vision analysis (read-only, uses Claude Vision)
+  analyze_camera_snapshot: ActionTier.GREEN,
 
   // YELLOW -- thermostat control (logged, non-destructive)
   set_thermostat: ActionTier.YELLOW,
@@ -111,6 +115,19 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   // RED -- door lock control (requires confirmation for security)
   lock_door: ActionTier.RED,
   unlock_door: ActionTier.RED,
+
+  // Phase 32: Web Browsing & Video Tools
+
+  // GREEN -- web search and display (read-only)
+  web_search: ActionTier.GREEN,
+  fetch_webpage: ActionTier.GREEN,
+  open_url: ActionTier.GREEN,
+  search_youtube: ActionTier.GREEN,
+  play_youtube: ActionTier.GREEN,
+  play_video: ActionTier.GREEN,
+
+  // YELLOW -- browser launch (executes command on cluster node)
+  open_in_browser: ActionTier.YELLOW,
 };
 
 // ---------------------------------------------------------------------------

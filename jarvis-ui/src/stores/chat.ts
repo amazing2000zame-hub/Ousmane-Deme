@@ -18,6 +18,38 @@ export interface ToolCall {
   reason?: string;
 }
 
+export interface InlineCamera {
+  camera: string;
+  timestamp: string;
+}
+
+export interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  engine?: string;
+}
+
+export interface SearchResults {
+  query: string;
+  results: SearchResult[];
+  timestamp: string;
+}
+
+export interface InlineWebpage {
+  url: string;
+  title: string;
+  timestamp: string;
+}
+
+export interface InlineVideo {
+  type: 'youtube' | 'direct';
+  videoId?: string;
+  url?: string;
+  title: string;
+  timestamp: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -25,7 +57,14 @@ export interface ChatMessage {
   timestamp: number;
   toolCalls?: ToolCall[];
   provider?: 'claude' | 'qwen';
+  inlineCamera?: InlineCamera;
+  searchResults?: SearchResults;
+  inlineWebpage?: InlineWebpage;
+  inlineVideo?: InlineVideo;
 }
+
+/** Pipeline stages for the progress indicator */
+export type PipelineStage = 'idle' | 'routing' | 'thinking' | 'executing' | 'synthesizing' | 'speaking' | 'complete';
 
 interface ChatState {
   messages: ChatMessage[];
@@ -34,6 +73,10 @@ interface ChatState {
   streamingMessageId: string | null;
   /** PERF-07: Streaming text held separately — O(1) token append, no messages.map */
   streamingContent: string;
+  /** Current pipeline stage for progress indicator */
+  pipelineStage: PipelineStage;
+  /** Detail text for the current stage (e.g. provider name, tool name) */
+  pipelineDetail: string;
 
   // Actions
   sendMessage: (content: string) => void;
@@ -43,6 +86,14 @@ interface ChatState {
   addToolCall: (toolCall: ToolCall) => void;
   updateToolCall: (toolUseId: string, update: Partial<ToolCall>) => void;
   updateLastMessageProvider: (provider: 'claude' | 'qwen') => void;
+  setPipelineStage: (stage: PipelineStage, detail?: string) => void;
+  setInlineCamera: (camera: InlineCamera) => void;
+  clearInlineCamera: () => void;
+  setSearchResults: (results: SearchResults) => void;
+  setInlineWebpage: (webpage: InlineWebpage) => void;
+  clearInlineWebpage: () => void;
+  setInlineVideo: (video: InlineVideo) => void;
+  clearInlineVideo: () => void;
   clearChat: () => void;
   newSession: () => void;
 }
@@ -55,6 +106,8 @@ export const useChatStore = create<ChatState>()(
       isStreaming: false,
       streamingMessageId: null,
       streamingContent: '',
+      pipelineStage: 'idle' as PipelineStage,
+      pipelineDetail: '',
 
       sendMessage: (content) => {
         const message: ChatMessage = {
@@ -84,6 +137,8 @@ export const useChatStore = create<ChatState>()(
             isStreaming: true,
             streamingMessageId: messageId,
             streamingContent: '',
+            pipelineStage: 'routing' as PipelineStage,
+            pipelineDetail: '',
           }),
           false,
           'chat/startStreaming',
@@ -120,17 +175,23 @@ export const useChatStore = create<ChatState>()(
               isStreaming: false,
               streamingMessageId: null,
               streamingContent: '',
+              pipelineStage: 'complete' as PipelineStage,
+              pipelineDetail: '',
             }),
             false,
             'chat/stopStreaming',
           );
         } else {
           set(
-            { isStreaming: false, streamingMessageId: null, streamingContent: '' },
+            { isStreaming: false, streamingMessageId: null, streamingContent: '', pipelineStage: 'complete' as PipelineStage, pipelineDetail: '' },
             false,
             'chat/stopStreaming',
           );
         }
+        // Auto-clear pipeline after brief display
+        setTimeout(() => {
+          set({ pipelineStage: 'idle' as PipelineStage, pipelineDetail: '' }, false, 'chat/pipelineIdle');
+        }, 2000);
       },
 
       addToolCall: (toolCall) => {
@@ -187,12 +248,112 @@ export const useChatStore = create<ChatState>()(
         );
       },
 
+      setInlineCamera: (camera) => {
+        // Find the last assistant message to attach the camera to
+        const { messages, streamingMessageId } = get();
+        const targetId = streamingMessageId || messages.filter(m => m.role === 'assistant').pop()?.id;
+        if (!targetId) return;
+        set(
+          (state) => ({
+            messages: state.messages.map((m) =>
+              m.id === targetId ? { ...m, inlineCamera: camera } : m,
+            ),
+          }),
+          false,
+          'chat/setInlineCamera',
+        );
+      },
+
+      clearInlineCamera: () => {
+        set(
+          (state) => ({
+            messages: state.messages.map((m) =>
+              m.inlineCamera ? { ...m, inlineCamera: undefined } : m,
+            ),
+          }),
+          false,
+          'chat/clearInlineCamera',
+        );
+      },
+
+      setSearchResults: (results) => {
+        const { messages, streamingMessageId } = get();
+        const targetId = streamingMessageId || messages.filter(m => m.role === 'assistant').pop()?.id;
+        if (!targetId) return;
+        set(
+          (state) => ({
+            messages: state.messages.map((m) =>
+              m.id === targetId ? { ...m, searchResults: results } : m,
+            ),
+          }),
+          false,
+          'chat/setSearchResults',
+        );
+      },
+
+      setInlineWebpage: (webpage) => {
+        const { messages, streamingMessageId } = get();
+        const targetId = streamingMessageId || messages.filter(m => m.role === 'assistant').pop()?.id;
+        if (!targetId) return;
+        set(
+          (state) => ({
+            messages: state.messages.map((m) =>
+              m.id === targetId ? { ...m, inlineWebpage: webpage } : m,
+            ),
+          }),
+          false,
+          'chat/setInlineWebpage',
+        );
+      },
+
+      clearInlineWebpage: () => {
+        set(
+          (state) => ({
+            messages: state.messages.map((m) =>
+              m.inlineWebpage ? { ...m, inlineWebpage: undefined } : m,
+            ),
+          }),
+          false,
+          'chat/clearInlineWebpage',
+        );
+      },
+
+      setInlineVideo: (video) => {
+        const { messages, streamingMessageId } = get();
+        const targetId = streamingMessageId || messages.filter(m => m.role === 'assistant').pop()?.id;
+        if (!targetId) return;
+        set(
+          (state) => ({
+            messages: state.messages.map((m) =>
+              m.id === targetId ? { ...m, inlineVideo: video } : m,
+            ),
+          }),
+          false,
+          'chat/setInlineVideo',
+        );
+      },
+
+      clearInlineVideo: () => {
+        set(
+          (state) => ({
+            messages: state.messages.map((m) =>
+              m.inlineVideo ? { ...m, inlineVideo: undefined } : m,
+            ),
+          }),
+          false,
+          'chat/clearInlineVideo',
+        );
+      },
+
+      setPipelineStage: (stage, detail = '') =>
+        set({ pipelineStage: stage, pipelineDetail: detail }, false, 'chat/setPipelineStage'),
+
       clearChat: () =>
-        set({ messages: [], streamingContent: '' }, false, 'chat/clearChat'),
+        set({ messages: [], streamingContent: '', pipelineStage: 'idle' as PipelineStage, pipelineDetail: '' }, false, 'chat/clearChat'),
 
       newSession: () =>
         set(
-          { messages: [], sessionId: uid(), isStreaming: false, streamingMessageId: null, streamingContent: '' },
+          { messages: [], sessionId: uid(), isStreaming: false, streamingMessageId: null, streamingContent: '', pipelineStage: 'idle' as PipelineStage, pipelineDetail: '' },
           false,
           'chat/newSession',
         ),

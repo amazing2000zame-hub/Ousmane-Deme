@@ -32,6 +32,11 @@ const ACTION_KEYWORDS = [
   'update', 'upgrade',
   'migrate', 'backup', 'restore', 'snapshot',
   'restart service', 'systemctl',
+  // UI/dashboard actions
+  'close', 'open', 'pull', 'read', 'find',
+  // Phase 32: Web browsing and video
+  'search', 'google', 'look up', 'browse',
+  'youtube', 'play', 'watch', 'video',
 ];
 
 // ---- Stage 3: Cluster entity references ----
@@ -50,6 +55,8 @@ const ENTITY_PATTERNS = [
   /\b(node status|cluster status|node temp|temperature)\b/i,
   /\b(vm|vms|container|containers|lxc|qemu)\b/i,
   /\b(docker|portainer|nginx|guacamole)\b/i,
+  // Files and planning
+  /\b(file|files|roadmap|plan|config|log|logs)\b/i,
   // Smart home / Camera / Presence (Phase 26-28)
   /\b(camera|cameras|snapshot|live\s*stream|frigate|nvr|detection|detections)\b/i,
   /\b(driveway|front.?door|side.?house|doorbell|yard)\b/i,
@@ -58,6 +65,10 @@ const ENTITY_PATTERNS = [
   /\b(anyone|somebody|someone)\s*(home|there|at)\b/i,
   /\b(presence|arrived|left|away|home)\b/i,
   /\b(thermostat|ecobee|lock|unlock|door\s*lock)\b/i,
+  // Phase 32: Web browsing and video patterns
+  /\b(website|webpage|url|https?:\/\/|\.com|\.org|\.net)\b/i,
+  /\b(youtube|video|videos|mp4|webm)\b/i,
+  /\b(search|google|bing|duckduckgo|look\s*up)\b/i,
 ];
 
 // ---- Stage 2 refinement: query keywords that pair with entities ----

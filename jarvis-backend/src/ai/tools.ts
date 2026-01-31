@@ -771,5 +771,142 @@ export function getClaudeTools(): Anthropic.Tool[] {
         required: [],
       },
     },
+
+    // -----------------------------------------------------------------------
+    // Phase 32: Web Browsing & Video Tools
+    // -----------------------------------------------------------------------
+    {
+      name: 'web_search',
+      description:
+        "Search the web for current information. Use this when users ask to search for something, look something up, google something, or need up-to-date information that may not be in your training data. Examples: 'search for weather in NYC', 'look up the latest news about X', 'google how to do Y'.",
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query - what to search for',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum results to return (1-20, default 5)',
+          },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'fetch_webpage',
+      description:
+        "Fetch the content of a webpage and summarize it. Use this when users ask about the content of a URL, want to know what an article or page says, or need information from a specific webpage.",
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          url: {
+            type: 'string',
+            description: 'The URL to fetch',
+          },
+          summarize: {
+            type: 'boolean',
+            description: 'Whether to summarize the content (default: true)',
+          },
+        },
+        required: ['url'],
+      },
+    },
+    {
+      name: 'open_url',
+      description:
+        "Display a webpage in the chat interface. Use this when users want to see, view, or look at a website directly (e.g., 'show me reddit.com', 'let me see that page', 'open this website').",
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          url: {
+            type: 'string',
+            description: 'The URL to display',
+          },
+          title: {
+            type: 'string',
+            description: 'Optional title for the display',
+          },
+        },
+        required: ['url'],
+      },
+    },
+    {
+      name: 'search_youtube',
+      description:
+        "Search for videos on YouTube. Use this when users ask to find YouTube videos, search for videos, or look for something to watch.",
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          query: {
+            type: 'string',
+            description: 'What to search for on YouTube',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum results (1-10, default 5)',
+          },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'play_youtube',
+      description:
+        "Play a YouTube video in the chat. Use this when users want to play, watch, or see a specific YouTube video. Accepts video ID or full URL.",
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          videoId: {
+            type: 'string',
+            description: 'YouTube video ID (11 chars) or full YouTube URL',
+          },
+          title: {
+            type: 'string',
+            description: 'Video title for display',
+          },
+        },
+        required: ['videoId'],
+      },
+    },
+    {
+      name: 'play_video',
+      description:
+        "Play a video from a direct URL (mp4, webm formats). Use this for non-YouTube video links when users want to watch or play a video file.",
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          url: {
+            type: 'string',
+            description: 'Direct URL to the video file',
+          },
+          title: {
+            type: 'string',
+            description: 'Title for the video',
+          },
+        },
+        required: ['url'],
+      },
+    },
+    {
+      name: 'open_in_browser',
+      description:
+        "Open a URL in a web browser on a cluster node. Use this when a site blocks embedding, or when users specifically ask to open something in a real browser (e.g., 'open this in Chrome', 'launch this in the browser').",
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          url: {
+            type: 'string',
+            description: 'The URL to open',
+          },
+          node: {
+            type: 'string',
+            description: 'Which cluster node to open on (Home, pve, agent1, agent). Default: Home',
+          },
+        },
+        required: ['url'],
+      },
+    },
   ];
 }

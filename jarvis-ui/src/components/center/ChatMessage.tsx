@@ -8,6 +8,9 @@ import { ToolStatusCard } from './ToolStatusCard';
 import { ProviderBadge } from './ProviderBadge';
 import { VoicePlayButton } from './VoicePlayButton';
 import { InlineCameraCard } from './InlineCameraCard';
+import { SearchResultsCard } from './SearchResultsCard';
+import { InlineWebCard } from './InlineWebCard';
+import { InlineVideoCard } from './InlineVideoCard';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -140,6 +143,35 @@ export const ChatMessage = memo(function ChatMessage({
           <InlineCameraCard
             camera={message.inlineCamera.camera}
             onClose={() => useChatStore.getState().clearInlineCamera()}
+          />
+        )}
+
+        {/* Phase 32: Search results */}
+        {message.searchResults && (
+          <SearchResultsCard
+            query={message.searchResults.query}
+            results={message.searchResults.results}
+            timestamp={message.searchResults.timestamp}
+          />
+        )}
+
+        {/* Phase 32: Inline webpage */}
+        {message.inlineWebpage && (
+          <InlineWebCard
+            url={message.inlineWebpage.url}
+            title={message.inlineWebpage.title}
+            timestamp={message.inlineWebpage.timestamp}
+          />
+        )}
+
+        {/* Phase 32: Inline video */}
+        {message.inlineVideo && (
+          <InlineVideoCard
+            type={message.inlineVideo.type}
+            videoId={message.inlineVideo.videoId}
+            url={message.inlineVideo.url}
+            title={message.inlineVideo.title}
+            timestamp={message.inlineVideo.timestamp}
           />
         )}
       </div>

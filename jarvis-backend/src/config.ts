@@ -61,7 +61,7 @@ export const config = {
   memoryContextTokenBudget: parseInt(process.env.MEMORY_CONTEXT_BUDGET || '600', 10),
 
   // TTS — Local XTTS v2 (preferred, custom JARVIS voice clone)
-  localTtsEndpoint: process.env.LOCAL_TTS_ENDPOINT || 'http://192.168.1.50:5050',
+  localTtsEndpoint: process.env.LOCAL_TTS_ENDPOINT || 'http://jarvis-tts:5050',
 
   // TTS -- Piper CPU fallback (fast, <200ms)
   piperTtsEndpoint: process.env.PIPER_TTS_ENDPOINT || 'http://jarvis-piper:5000',
@@ -91,6 +91,32 @@ export const config = {
   elevenlabsStability: parseFloat(process.env.ELEVENLABS_STABILITY || '0.5'),
   elevenlabsSimilarity: parseFloat(process.env.ELEVENLABS_SIMILARITY || '0.75'),
   elevenlabsStyle: parseFloat(process.env.ELEVENLABS_STYLE || '0.4'),
+
+  // Phase 25: Smart Home Integration
+
+  // Home Assistant
+  homeAssistantUrl: process.env.HOME_ASSISTANT_URL || 'http://192.168.1.54:8123',
+  homeAssistantToken: process.env.HOME_ASSISTANT_TOKEN || '',
+
+  // Frigate NVR
+  frigateUrl: process.env.FRIGATE_URL || 'http://192.168.1.61:5000',
+
+  // Entity IDs (adjust after HA integration setup)
+  ecobeeEntityId: process.env.ECOBEE_ENTITY_ID || 'climate.ecobee',
+  doorLockEntityIds: (process.env.DOOR_LOCK_ENTITIES || '').split(',').filter(Boolean),
+
+  // Presence detection - known device MAC addresses
+  // Format: [{"mac":"aa:bb:cc:dd:ee:ff","name":"User iPhone","owner":"User","ip":"192.168.1.x"}]
+  presenceDevices: (() => {
+    try {
+      return JSON.parse(process.env.PRESENCE_DEVICES || '[]');
+    } catch {
+      return [];
+    }
+  })() as Array<{ mac: string; name: string; owner: string; ip?: string }>,
+
+  // Phase 32: Web Browsing
+  searxngUrl: process.env.SEARXNG_URL || 'http://jarvis-searxng:8080',
 
   // CORS
   corsOrigins: [

@@ -21,6 +21,7 @@ import { registerTransferTools } from './tools/transfer.js';
 import { registerProjectTools } from './tools/projects.js';
 import { registerVoiceTools } from './tools/voice.js';
 import { registerSmartHomeTools } from './tools/smarthome.js';
+import { registerWebTools } from './tools/web.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -117,6 +118,7 @@ registerTransferTools(mcpServer);
 registerProjectTools(mcpServer);
 registerVoiceTools(mcpServer);
 registerSmartHomeTools(mcpServer);
+registerWebTools(mcpServer);
 
 // ---------------------------------------------------------------------------
 // executeTool -- the single entry point for all tool invocations
