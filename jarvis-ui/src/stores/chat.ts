@@ -11,11 +11,13 @@ export interface ToolCall {
   name: string;
   input: Record<string, unknown>;
   toolUseId: string;
-  status: 'executing' | 'done' | 'error' | 'confirmation_needed' | 'confirmed' | 'denied' | 'blocked';
+  status: 'executing' | 'done' | 'error' | 'confirmation_needed' | 'confirmed' | 'denied' | 'blocked' | 'keyword_needed' | 'keyword_approved';
   tier: string;
   result?: string;
   isError?: boolean;
   reason?: string;
+  /** For keyword_needed: hint shown to user */
+  keywordHint?: string;
 }
 
 export interface InlineCamera {

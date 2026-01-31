@@ -22,6 +22,9 @@ export enum ActionTier {
   /** Execute + log: service restarts, safe operational commands */
   YELLOW = 'yellow',
 
+  /** Require keyword confirmation: dangerous operations that need explicit approval */
+  ORANGE = 'orange',
+
   /** Require confirmed=true flag: VM/CT start/stop/restart */
   RED = 'red',
 
@@ -84,8 +87,12 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   stop_container: ActionTier.RED,
   restart_container: ActionTier.RED,
 
-  // BLACK -- always blocked destructive operations
-  reboot_node: ActionTier.BLACK,
+  // ORANGE -- dangerous operations requiring keyword approval
+  reboot_node: ActionTier.ORANGE,
+  delete_file: ActionTier.ORANGE,
+  execute_command: ActionTier.ORANGE,
+  install_package: ActionTier.ORANGE,
+  manage_service: ActionTier.ORANGE,
 
   // Phase 25: Smart Home Tools
 
@@ -149,6 +156,8 @@ export interface SafetyResult {
   allowed: boolean;
   reason?: string;
   tier: ActionTier;
+  /** For ORANGE tier: true if keyword approval is needed */
+  keywordRequired?: boolean;
 }
 
 /**
@@ -158,16 +167,18 @@ export interface SafetyResult {
  *  1. Look up tool tier
  *  2. Check if target is a protected resource -> BLOCK
  *  3. BLACK -> always block
- *  4. RED && !confirmed -> block with "requires confirmation"
- *  5. YELLOW -> allow
- *  6. GREEN -> allow
- *  7. Default: block (fail-safe, should never be reached)
+ *  4. ORANGE && !keywordApproved -> block with "requires keyword approval"
+ *  5. RED && !confirmed -> block with "requires confirmation"
+ *  6. YELLOW -> allow
+ *  7. GREEN -> allow
+ *  8. Default: block (fail-safe, should never be reached)
  */
 export function checkSafety(
   tool: string,
   args: Record<string, unknown>,
   confirmed: boolean = false,
   overrideActive: boolean = false,
+  keywordApproved: boolean = false,
 ): SafetyResult {
   const tier = getToolTier(tool);
 
@@ -181,7 +192,7 @@ export function checkSafety(
     };
   }
 
-  // Step 3: Override active -- bypass BLACK and RED restrictions
+  // Step 3: Override active -- bypass BLACK, ORANGE, and RED restrictions
   if (overrideActive) {
     return { allowed: true, tier };
   }
@@ -195,7 +206,20 @@ export function checkSafety(
     };
   }
 
-  // Step 5: RED tier -- requires explicit confirmation
+  // Step 5: ORANGE tier -- requires keyword approval
+  if (tier === ActionTier.ORANGE) {
+    if (!keywordApproved) {
+      return {
+        allowed: false,
+        reason: `Tool "${tool}" is classified as ORANGE tier and requires keyword approval`,
+        tier,
+        keywordRequired: true,
+      };
+    }
+    return { allowed: true, tier };
+  }
+
+  // Step 6: RED tier -- requires explicit confirmation
   if (tier === ActionTier.RED) {
     if (!confirmed) {
       return {
@@ -207,17 +231,17 @@ export function checkSafety(
     return { allowed: true, tier };
   }
 
-  // Step 5: YELLOW tier -- allowed
+  // Step 7: YELLOW tier -- allowed
   if (tier === ActionTier.YELLOW) {
     return { allowed: true, tier };
   }
 
-  // Step 6: GREEN tier -- allowed
+  // Step 8: GREEN tier -- allowed
   if (tier === ActionTier.GREEN) {
     return { allowed: true, tier };
   }
 
-  // Step 7: Fail-safe -- block anything unclassified
+  // Step 9: Fail-safe -- block anything unclassified
   return {
     allowed: false,
     reason: `Tool "${tool}" has unrecognized tier "${tier}" -- blocked by fail-safe`,

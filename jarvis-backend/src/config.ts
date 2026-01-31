@@ -39,6 +39,9 @@ export const config = {
   // Override passkey for elevated operations
   overrideKey: process.env.JARVIS_OVERRIDE_KEY || '',
 
+  // Keyword for ORANGE tier approval (dangerous operations)
+  approvalKeyword: process.env.JARVIS_APPROVAL_KEYWORD || 'JARVIS-EXECUTE',
+
   // Claude AI
   claudeModel: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
   claudeMaxTokens: parseInt(process.env.CLAUDE_MAX_TOKENS || '4096', 10),

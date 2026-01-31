@@ -49,6 +49,7 @@ import { cleanTextForSpeech } from '../ai/text-cleaner.js';
 import { encodeWavToOpus, isOpusEnabled } from '../ai/opus-encode.js';
 import { RequestTimer } from './timing.js';
 import { ContextManager } from '../ai/context-manager.js';
+import { validateApprovalKeyword, getKeywordHint } from '../safety/keyword-approval.js';
 
 // Provider lookup map
 const providers: Record<string, LLMProvider> = {
@@ -126,6 +127,12 @@ interface ChatConfirmPayload {
   sessionId: string;
   toolUseId: string;
   confirmed: boolean;
+}
+
+interface KeywordApprovePayload {
+  sessionId: string;
+  toolUseId: string;
+  keyword: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +440,10 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
             socket.emit('chat:confirm_needed', { sessionId, toolName, toolInput, toolUseId, tier });
           },
 
+          onKeywordApprovalNeeded: (toolName, toolInput, toolUseId, tier) => {
+            socket.emit('chat:keyword_needed', { sessionId, toolName, toolInput, toolUseId, tier });
+          },
+
           onBlocked: (toolName, reason, tier) => {
             socket.emit('chat:blocked', { sessionId, toolName, reason, tier });
           },
@@ -667,9 +678,149 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
       }
     }
 
+    // ------------------------------------------------------------------
+    // chat:keyword_approve -- user submits keyword for ORANGE-tier action
+    // ------------------------------------------------------------------
+    async function handleKeywordApprove(payload: KeywordApprovePayload): Promise<void> {
+      const { sessionId, toolUseId, keyword } = payload ?? {};
+
+      if (!sessionId || !toolUseId || typeof keyword !== 'string') {
+        socket.emit('chat:error', {
+          sessionId: sessionId ?? 'unknown',
+          error: 'Invalid keyword payload: sessionId, toolUseId, and keyword (string) are required',
+        });
+        return;
+      }
+
+      const pending = pendingConfirmations.get(sessionId);
+      if (!pending) {
+        socket.emit('chat:error', {
+          sessionId,
+          error: 'No pending keyword approval found for this session',
+        });
+        return;
+      }
+
+      // Validate the keyword
+      const keywordValid = validateApprovalKeyword(keyword);
+      if (!keywordValid) {
+        socket.emit('chat:keyword_invalid', {
+          sessionId,
+          toolUseId,
+          hint: getKeywordHint(),
+        });
+        return;
+      }
+
+      // Remove from pending map
+      pendingConfirmations.delete(sessionId);
+
+      try {
+        // Build fresh Claude system prompt
+        const summary = await buildClusterSummary();
+        const systemPrompt = buildClaudeSystemPrompt(summary);
+
+        // Create abort controller
+        const abortController = new AbortController();
+        abortControllers.set(sessionId, abortController);
+
+        // Accumulate text for DB persistence
+        let accumulatedText = '';
+
+        const callbacks: StreamCallbacks = {
+          onTextDelta: (text: string) => {
+            accumulatedText += text;
+            socket.emit('chat:token', { sessionId, text });
+          },
+
+          onToolUse: async (toolName, toolInput, toolUseId, tier) => {
+            await sendToolAcknowledgment(socket, sessionId, false);
+            socket.emit('chat:tool_use', { sessionId, toolName, toolInput, toolUseId, tier });
+            eventsNs.emit('event', {
+              id: crypto.randomUUID(),
+              type: 'action',
+              severity: 'info',
+              title: `Tool: ${toolName}`,
+              message: `Executed ${toolName} via chat (keyword approved)`,
+              source: 'jarvis',
+              timestamp: new Date().toISOString(),
+            });
+          },
+
+          onToolResult: (toolUseId, result, isError) => {
+            socket.emit('chat:tool_result', { sessionId, toolUseId, result, isError });
+          },
+
+          onConfirmationNeeded: (toolName, toolInput, toolUseId, tier) => {
+            socket.emit('chat:confirm_needed', { sessionId, toolName, toolInput, toolUseId, tier });
+          },
+
+          onKeywordApprovalNeeded: (toolName, toolInput, toolUseId, tier) => {
+            socket.emit('chat:keyword_needed', { sessionId, toolName, toolInput, toolUseId, tier });
+          },
+
+          onBlocked: (toolName, reason, tier) => {
+            socket.emit('chat:blocked', { sessionId, toolName, reason, tier });
+          },
+
+          onDone: (usage) => {
+            const cost = calculateCost('claude', usage);
+
+            if (accumulatedText.length > 0) {
+              try {
+                memoryStore.saveMessage({
+                  sessionId,
+                  role: 'assistant',
+                  content: accumulatedText,
+                  model: 'claude',
+                  tokensUsed: usage.inputTokens + usage.outputTokens,
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                  costUsd: cost,
+                });
+              } catch {
+                // Non-critical
+              }
+            }
+
+            sessionLastProvider.set(sessionId, 'claude');
+            socket.emit('chat:done', { sessionId, usage, provider: 'claude', cost });
+            abortControllers.delete(sessionId);
+          },
+
+          onError: (error) => {
+            socket.emit('chat:error', { sessionId, error: error.message });
+            abortControllers.delete(sessionId);
+          },
+        };
+
+        // Resume with keyword approval
+        const nextPending = await resumeAfterConfirmation(
+          pending,
+          true, // approved
+          systemPrompt,
+          callbacks,
+          abortController.signal,
+          true, // keywordApproved
+        );
+
+        // If another confirmation is needed, store it
+        if (nextPending) {
+          pendingConfirmations.set(sessionId, nextPending);
+        }
+      } catch (err) {
+        socket.emit('chat:error', {
+          sessionId,
+          error: err instanceof Error ? err.message : 'Keyword approval handling failed',
+        });
+        abortControllers.delete(sessionId);
+      }
+    }
+
     // Register handlers
     socket.on('chat:send', handleSend);
     socket.on('chat:confirm', handleConfirm);
+    socket.on('chat:keyword_approve', handleKeywordApprove);
 
     // Cleanup on disconnect
     socket.on('disconnect', (reason: string) => {

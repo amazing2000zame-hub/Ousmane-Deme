@@ -4,6 +4,7 @@ import { useChatStore } from '../../stores/chat';
 import { useVoiceStore } from '../../stores/voice';
 import { BlockedCard } from './BlockedCard';
 import { ConfirmCard } from './ConfirmCard';
+import { KeywordApprovalCard } from './KeywordApprovalCard';
 import { ToolStatusCard } from './ToolStatusCard';
 import { ProviderBadge } from './ProviderBadge';
 import { VoicePlayButton } from './VoicePlayButton';
@@ -18,6 +19,7 @@ interface ChatMessageProps {
   displayContent?: string;
   onConfirm?: (toolUseId: string) => void;
   onDeny?: (toolUseId: string) => void;
+  onSubmitKeyword?: (toolUseId: string, keyword: string) => void;
   onSpeak?: (text: string, messageId: string) => void;
 }
 
@@ -25,10 +27,12 @@ function ToolCallRenderer({
   tool,
   onConfirm,
   onDeny,
+  onSubmitKeyword,
 }: {
   tool: ToolCall;
   onConfirm?: (toolUseId: string) => void;
   onDeny?: (toolUseId: string) => void;
+  onSubmitKeyword?: (toolUseId: string, keyword: string) => void;
 }) {
   if (tool.status === 'confirmation_needed') {
     return (
@@ -38,6 +42,20 @@ function ToolCallRenderer({
         toolUseId={tool.toolUseId}
         tier={tool.tier}
         onConfirm={onConfirm ?? (() => {})}
+        onDeny={onDeny ?? (() => {})}
+      />
+    );
+  }
+
+  if (tool.status === 'keyword_needed') {
+    return (
+      <KeywordApprovalCard
+        toolName={tool.name}
+        toolInput={tool.input}
+        toolUseId={tool.toolUseId}
+        tier={tool.tier}
+        keywordHint={tool.keywordHint}
+        onApprove={onSubmitKeyword ?? (() => {})}
         onDeny={onDeny ?? (() => {})}
       />
     );
@@ -72,6 +90,7 @@ export const ChatMessage = memo(function ChatMessage({
   displayContent,
   onConfirm,
   onDeny,
+  onSubmitKeyword,
   onSpeak,
 }: ChatMessageProps) {
   const isUser = message.role === 'user';
@@ -133,6 +152,7 @@ export const ChatMessage = memo(function ChatMessage({
                 tool={tc}
                 onConfirm={onConfirm}
                 onDeny={onDeny}
+                onSubmitKeyword={onSubmitKeyword}
               />
             ))}
           </div>

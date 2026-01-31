@@ -3,6 +3,7 @@ import { useClusterStore } from '../../stores/cluster';
 import { useUIStore } from '../../stores/ui';
 import { useTerminalStore } from '../../stores/terminal';
 import { useAuthStore } from '../../stores/auth';
+import { useMetricsStore } from '../../stores/metrics';
 import { StatusDot } from '../shared/StatusDot';
 import { DataPulse } from '../../effects/DataPulse';
 import { RadialThemePicker } from './RadialThemePicker';
@@ -24,6 +25,8 @@ export function TopBar() {
   const setVisualMode = useUIStore((s) => s.setVisualMode);
   const isTerminalCollapsed = useTerminalStore((s) => s.isCollapsed);
   const toggleTerminal = useTerminalStore((s) => s.toggleCollapse);
+  const showMetrics = useMetricsStore((s) => s.showMetrics);
+  const toggleMetrics = useMetricsStore((s) => s.toggleMetrics);
   const token = useAuthStore((s) => s.token);
   const [time, setTime] = useState(() => new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -156,6 +159,22 @@ export function TopBar() {
             </button>
           ))}
         </div>
+
+        {/* Latency metrics toggle */}
+        <button
+          type="button"
+          onClick={toggleMetrics}
+          title={showMetrics ? 'Hide latency metrics' : 'Show latency metrics'}
+          className={`
+            px-1.5 py-0.5 text-[10px] font-mono tracking-wider rounded
+            transition-all duration-200
+            ${showMetrics
+              ? 'bg-jarvis-amber/20 text-jarvis-amber border border-jarvis-amber/30'
+              : 'text-jarvis-text-dim hover:text-jarvis-amber-dim border border-transparent'}
+          `}
+        >
+          LAT
+        </button>
 
         {/* Terminal toggle */}
         <button

@@ -22,6 +22,7 @@ const uid = (): string =>
 interface ChatSocketActions {
   sendMessage: (message: string) => void;
   confirmTool: (toolUseId: string, confirmed: boolean) => void;
+  submitKeyword: (toolUseId: string, keyword: string) => void;
 }
 
 /**
@@ -141,6 +142,37 @@ export function useChatSocket(): ChatSocketActions {
         status: 'blocked',
         tier: data.tier,
         reason: data.reason,
+      });
+    }
+
+    // Handle ORANGE tier keyword approval needed
+    function onKeywordNeeded(data: {
+      sessionId: string;
+      toolName: string;
+      toolInput: Record<string, unknown>;
+      toolUseId: string;
+      tier: string;
+    }) {
+      void data.sessionId;
+      useChatStore.getState().addToolCall({
+        name: data.toolName,
+        input: data.toolInput,
+        toolUseId: data.toolUseId,
+        status: 'keyword_needed',
+        tier: data.tier,
+      });
+    }
+
+    // Handle invalid keyword response
+    function onKeywordInvalid(data: {
+      sessionId: string;
+      toolUseId: string;
+      hint: string;
+    }) {
+      void data.sessionId;
+      // Update the tool call with the hint
+      useChatStore.getState().updateToolCall(data.toolUseId, {
+        keywordHint: data.hint,
       });
     }
 
@@ -319,6 +351,8 @@ export function useChatSocket(): ChatSocketActions {
     socket.on('chat:tool_result', onToolResult);
     socket.on('chat:confirm_needed', onConfirmNeeded);
     socket.on('chat:blocked', onBlocked);
+    socket.on('chat:keyword_needed', onKeywordNeeded);
+    socket.on('chat:keyword_invalid', onKeywordInvalid);
     socket.on('chat:done', onDone);
     socket.on('chat:timing', onTiming);
     socket.on('chat:error', onChatError);
@@ -357,6 +391,8 @@ export function useChatSocket(): ChatSocketActions {
       socket.off('chat:tool_result', onToolResult);
       socket.off('chat:confirm_needed', onConfirmNeeded);
       socket.off('chat:blocked', onBlocked);
+      socket.off('chat:keyword_needed', onKeywordNeeded);
+      socket.off('chat:keyword_invalid', onKeywordInvalid);
       socket.off('chat:done', onDone);
       socket.off('chat:timing', onTiming);
       socket.off('chat:error', onChatError);
@@ -401,5 +437,17 @@ export function useChatSocket(): ChatSocketActions {
     });
   }, []);
 
-  return { sendMessage, confirmTool };
+  const submitKeyword = useCallback((toolUseId: string, keyword: string) => {
+    const store = useChatStore.getState();
+    store.updateToolCall(toolUseId, {
+      status: 'keyword_approved',
+    });
+    socketRef.current?.emit('chat:keyword_approve', {
+      sessionId: store.sessionId,
+      toolUseId,
+      keyword,
+    });
+  }, []);
+
+  return { sendMessage, confirmTool, submitKeyword };
 }

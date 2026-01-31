@@ -36,6 +36,7 @@ async function executeToolWithTimeout(
   args: Record<string, unknown>,
   source: 'llm' | 'monitor' | 'user' | 'api' = 'llm',
   overrideActive: boolean = false,
+  keywordApproved: boolean = false,
 ): Promise<{
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
@@ -51,7 +52,7 @@ async function executeToolWithTimeout(
 
   try {
     return await Promise.race([
-      executeTool(name, args, source, overrideActive),
+      executeTool(name, args, source, overrideActive, keywordApproved),
       timeoutPromise,
     ]);
   } catch (err) {
@@ -80,6 +81,8 @@ export interface StreamCallbacks {
   onToolUse: (toolName: string, toolInput: Record<string, unknown>, toolUseId: string, tier: string) => void | Promise<void>;
   onToolResult: (toolUseId: string, result: string, isError: boolean) => void;
   onConfirmationNeeded: (toolName: string, toolInput: Record<string, unknown>, toolUseId: string, tier: string) => void;
+  /** Called when ORANGE tier tool needs keyword approval */
+  onKeywordApprovalNeeded?: (toolName: string, toolInput: Record<string, unknown>, toolUseId: string, tier: string) => void;
   onBlocked: (toolName: string, reason: string, tier: string) => void;
   onDone: (usage: { inputTokens: number; outputTokens: number }) => void;
   onError: (error: Error) => void;
@@ -93,6 +96,8 @@ export interface PendingConfirmation {
   assistantContent: Anthropic.ContentBlock[];
   /** All prior messages (excluding the assistant message that contains the tool_use) */
   priorMessages: Anthropic.MessageParam[];
+  /** Type of approval needed: 'red' for UI confirmation, 'orange' for keyword approval */
+  approvalType: 'red' | 'orange';
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +205,28 @@ export async function runAgenticLoop(
           continue;
         }
 
+        // ORANGE tier -- needs keyword approval unless override active
+        if (tier === ActionTier.ORANGE && !overrideActive) {
+          if (callbacks.onKeywordApprovalNeeded) {
+            callbacks.onKeywordApprovalNeeded(
+              block.name,
+              block.input as Record<string, unknown>,
+              block.id,
+              tierStr,
+            );
+          }
+
+          // Return PendingConfirmation so the caller can resume after keyword approval
+          return {
+            toolName: block.name,
+            toolInput: block.input as Record<string, unknown>,
+            toolUseId: block.id,
+            assistantContent: response.content,
+            priorMessages: [...currentMessages],
+            approvalType: 'orange',
+          };
+        }
+
         // RED tier -- needs confirmation unless override active
         if (tier === ActionTier.RED && !overrideActive) {
           callbacks.onConfirmationNeeded(
@@ -216,6 +243,7 @@ export async function runAgenticLoop(
             toolUseId: block.id,
             assistantContent: response.content,
             priorMessages: [...currentMessages],
+            approvalType: 'red',
           };
         }
 
@@ -294,28 +322,44 @@ export async function runAgenticLoop(
 // ---------------------------------------------------------------------------
 
 /**
- * Resume the agentic loop after user confirms or denies a RED-tier action.
+ * Resume the agentic loop after user confirms/denies a RED-tier action
+ * or provides keyword approval for an ORANGE-tier action.
  *
  * Reconstructs the conversation state from the PendingConfirmation, executes
  * (or rejects) the tool, and re-enters the agentic loop.
+ *
+ * @param pending - The pending confirmation state
+ * @param approved - Whether the user approved (true) or declined (false)
+ * @param systemPrompt - The system prompt for the conversation
+ * @param callbacks - Stream callbacks for events
+ * @param abortSignal - Optional abort signal
+ * @param keywordApproved - For ORANGE tier: true if keyword was validated
  */
 export async function resumeAfterConfirmation(
   pending: PendingConfirmation,
-  confirmed: boolean,
+  approved: boolean,
   systemPrompt: string,
   callbacks: StreamCallbacks,
   abortSignal?: AbortSignal,
+  keywordApproved: boolean = false,
 ): Promise<PendingConfirmation | null> {
   let resultText: string;
   let isError: boolean;
 
-  if (confirmed) {
+  if (approved) {
     try {
+      // For RED tier, pass confirmed=true; for ORANGE tier, pass keywordApproved
+      const isOrange = pending.approvalType === 'orange';
+      const toolArgs = isOrange
+        ? pending.toolInput
+        : { ...pending.toolInput, confirmed: true };
+
       const toolResult = await executeToolWithTimeout(
         pending.toolName,
-        { ...pending.toolInput, confirmed: true },
+        toolArgs,
         'llm',
-        false, // overrideActive - confirmed RED tier doesn't need override
+        false, // overrideActive - approved tier doesn't need override
+        isOrange ? keywordApproved : false,
       );
 
       resultText = toolResult.content

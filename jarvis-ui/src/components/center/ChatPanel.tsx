@@ -8,6 +8,7 @@ import { ChatInput } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
 import { AudioVisualizer } from './AudioVisualizer';
 import { PipelineProgress } from './PipelineProgress';
+import { LatencyMetrics } from './LatencyMetrics';
 
 /**
  * Main chat interface -- message list with auto-scroll and text input.
@@ -18,7 +19,7 @@ import { PipelineProgress } from './PipelineProgress';
  * React.memo ChatMessage for selective re-renders, and throttled auto-scroll.
  */
 export function ChatPanel() {
-  const { sendMessage, confirmTool } = useChatSocket();
+  const { sendMessage, confirmTool, submitKeyword } = useChatSocket();
   const messages = useChatStore((s) => s.messages);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const streamingMessageId = useChatStore((s) => s.streamingMessageId);
@@ -39,6 +40,10 @@ export function ChatPanel() {
   const handleDeny = useCallback(
     (toolUseId: string) => confirmTool(toolUseId, false),
     [confirmTool],
+  );
+  const handleSubmitKeyword = useCallback(
+    (toolUseId: string, keyword: string) => submitKeyword(toolUseId, keyword),
+    [submitKeyword],
   );
 
   const handleSpeak = useCallback(
@@ -144,6 +149,7 @@ export function ChatPanel() {
                 displayContent={msg.id === streamingMessageId ? streamingContent : undefined}
                 onConfirm={handleConfirm}
                 onDeny={handleDeny}
+                onSubmitKeyword={handleSubmitKeyword}
                 onSpeak={handleSpeak}
               />
             ))}
@@ -154,6 +160,11 @@ export function ChatPanel() {
 
       {/* Pipeline progress indicator */}
       <PipelineProgress />
+
+      {/* Latency metrics panel (toggled via TopBar) */}
+      <div className="px-3">
+        <LatencyMetrics />
+      </div>
 
       {/* Input area */}
       <ChatInput onSend={sendMessage} disabled={isStreaming} />

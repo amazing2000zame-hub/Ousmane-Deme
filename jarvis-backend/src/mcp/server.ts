@@ -140,6 +140,7 @@ export async function executeTool(
   args: Record<string, unknown>,
   source: ToolSource = 'api',
   overrideActive: boolean = false,
+  keywordApproved: boolean = false,
 ): Promise<ToolResult> {
   const startTime = Date.now();
 
@@ -170,7 +171,7 @@ export async function executeTool(
 
   // Step 3: Safety check
   const confirmed = Boolean(sanitizedArgs.confirmed);
-  const safety: SafetyResult = checkSafety(name, sanitizedArgs, confirmed, overrideActive);
+  const safety: SafetyResult = checkSafety(name, sanitizedArgs, confirmed, overrideActive, keywordApproved);
 
   if (!safety.allowed) {
     const blockedResult: ToolResult = {
