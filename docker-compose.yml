@@ -28,7 +28,6 @@ services:
       - PVE_TOKEN_ID=${PVE_TOKEN_ID:-root@pam!jarvis}
       - PVE_TOKEN_SECRET=${PVE_TOKEN_SECRET}
       - SSH_KEY_PATH=/app/.ssh/id_ed25519
-      - NODE_TLS_REJECT_UNAUTHORIZED=0
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - JARVIS_OVERRIDE_KEY=${JARVIS_OVERRIDE_KEY}
       - LOCAL_LLM_ENDPOINT=${LOCAL_LLM_ENDPOINT:-http://192.168.1.50:8080}
@@ -40,6 +39,8 @@ services:
       - TTS_CACHE_DIR=${TTS_CACHE_DIR:-/data/tts-cache}
       - TTS_CACHE_MAX=${TTS_CACHE_MAX:-500}
       - TTS_MAX_PARALLEL=${TTS_MAX_PARALLEL:-2}
+      - ALERT_ENTRY_CAMERAS=${ALERT_ENTRY_CAMERAS:-front_door}
+      - WHISPER_ENDPOINT=${WHISPER_ENDPOINT:-http://jarvis-whisper:5051}
     deploy:
       resources:
         limits:
@@ -203,12 +204,54 @@ services:
         max-size: "5m"
         max-file: "3"
 
+  # Phase 33: Whisper STT for server-side voice I/O
+  jarvis-whisper:
+    build: ./jarvis-whisper
+    container_name: jarvis-whisper
+    restart: unless-stopped
+    security_opt:
+      - apparmor:unconfined
+    cpuset: "10-13"
+    ports:
+      - "5051:5051"
+    volumes:
+      - whisper-models:/app/models
+    environment:
+      - PORT=5051
+      - WHISPER_MODEL=medium.en
+      - WHISPER_COMPUTE_TYPE=int8
+      - WHISPER_CPU_THREADS=4
+      - WHISPER_BEAM_SIZE=5
+    networks:
+      - jarvis-net
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+        reservations:
+          cpus: "2"
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5051/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   jarvis-data:
     driver: local
   piper-voices:
     driver: local
   searxng-data:
+    driver: local
+  whisper-models:
     driver: local
 
 networks:

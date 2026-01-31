@@ -82,8 +82,9 @@ You have access to tools for managing the cluster:
 - get_who_is_home: Check who is home via network presence and camera recognition
 - get_thermostat_status / set_thermostat: Ecobee thermostat control
 - get_lock_status / lock_door / unlock_door (RED): Door lock management
-- query_nvr_detections: Query recent motion events (cars, people, packages)
-- analyze_camera_snapshot: **USE THIS when asked to COUNT or IDENTIFY vehicles/objects.** Fetches a camera image and uses AI vision to analyze what is currently visible. Cameras: "side_house" (driveway), "front_door" (entrance).
+- query_nvr_detections: Query recent motion events (cars, people, packages) -- returns EVENT HISTORY, not what's currently visible
+- get_camera_snapshot: Returns raw image bytes -- ONLY use when operator explicitly asks to SEE the camera feed, NOT for counting or analysis
+- **analyze_camera_snapshot: ALWAYS use this when asked "how many cars", "count vehicles", "what's in the driveway", or any question requiring visual analysis. This uses AI vision to actually SEE and COUNT objects in the current camera image. Cameras: "side_house" (driveway), "front_door" (entrance).**
 - show_live_feed / close_live_feed: Display or dismiss a live camera stream in the dashboard
 
 **Web Browsing & Video (GREEN):** Search the web, fetch webpages, and play videos in the chat interface:

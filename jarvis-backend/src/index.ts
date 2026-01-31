@@ -12,6 +12,7 @@ import { startEmitter, stopEmitter } from './realtime/emitter.js';
 import { startMonitor, stopMonitor } from './monitor/index.js';
 import { setupTerminalHandlers } from './realtime/terminal.js';
 import { setupChatHandlers } from './realtime/chat.js';
+import { setupVoiceHandlers } from './realtime/voice.js';
 import { costRouter } from './api/cost.js';
 import { memoryRouter } from './api/memory.js';
 import { ttsRouter } from './api/tts.js';
@@ -20,6 +21,7 @@ import { authMiddleware } from './auth/jwt.js';
 import { memoryStore } from './db/memory.js';
 import { startMemoryCleanup, stopMemoryCleanup } from './services/memory-cleanup.js';
 import { startAlertMonitor, stopAlertMonitor } from './services/alert-monitor.js';
+import { startMqttAlertService, stopMqttAlertService, isMqttConnected } from './services/mqtt-alert-service.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -41,10 +43,10 @@ app.use('/api/memory', authMiddleware, memoryRouter);
 app.use('/api/tts', authMiddleware, ttsRouter);
 
 // Set up Socket.IO on the HTTP server
-const { io, clusterNs, eventsNs, terminalNs, chatNs } = setupSocketIO(server);
+const { io, clusterNs, eventsNs, terminalNs, chatNs, voiceNs } = setupSocketIO(server);
 
 // Export for use by other modules (e.g., emitting events)
-export { io, clusterNs, eventsNs, terminalNs, chatNs };
+export { io, clusterNs, eventsNs, terminalNs, chatNs, voiceNs };
 
 // Run database migrations, then start listening
 try {
@@ -80,9 +82,18 @@ setupTerminalHandlers(terminalNs);
 setupChatHandlers(chatNs, eventsNs);
 console.log('[Chat] AI chat handler initialized on /chat namespace');
 
-// Start proactive alert monitoring (Phase 29: ALERT-01)
-startAlertMonitor(eventsNs);
-console.log('[Alert Monitor] Proactive alert service initialized');
+// Register server-side voice handlers on the /voice namespace
+setupVoiceHandlers(voiceNs, eventsNs);
+console.log('[Voice] Server-side voice handler initialized on /voice namespace');
+
+// Start proactive alert monitoring (Phase 33: MQTT preferred, REST fallback)
+const mqttConnected = await startMqttAlertService(eventsNs);
+if (mqttConnected) {
+  console.log('[Alert] Using MQTT for real-time alerts (<100ms latency)');
+} else {
+  startAlertMonitor(eventsNs);
+  console.log('[Alert] Using REST polling fallback (5s latency)');
+}
 
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
 server.listen(config.port, () => {
@@ -121,6 +132,7 @@ server.listen(config.port, () => {
 function shutdown(signal: string) {
   console.log(`\n[${signal}] Shutting down gracefully...`);
   stopMemoryCleanup();
+  stopMqttAlertService();
   stopAlertMonitor();
   stopMonitor();
   stopEmitter();

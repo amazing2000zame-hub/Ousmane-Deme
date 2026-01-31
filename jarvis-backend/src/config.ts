@@ -107,6 +107,12 @@ export const config = {
   alertEntryCameras: (process.env.ALERT_ENTRY_CAMERAS || 'front_door').split(',').filter(Boolean),
   alertTtsEnabled: process.env.ALERT_TTS_ENABLED !== 'false', // default true
 
+  // Phase 33: MQTT Real-Time Alerts
+  mqttBrokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://192.168.1.61:1883',
+  mqttClientId: process.env.MQTT_CLIENT_ID || 'jarvis-backend',
+  mqttTopicPrefix: process.env.MQTT_TOPIC_PREFIX || 'frigate',
+  mqttEnabled: process.env.MQTT_ENABLED !== 'false', // default true
+
   // Entity IDs (adjust after HA integration setup)
   ecobeeEntityId: process.env.ECOBEE_ENTITY_ID || 'climate.ecobee',
   doorLockEntityIds: (process.env.DOOR_LOCK_ENTITIES || '').split(',').filter(Boolean),
@@ -123,6 +129,11 @@ export const config = {
 
   // Phase 32: Web Browsing
   searxngUrl: process.env.SEARXNG_URL || 'http://jarvis-searxng:8080',
+
+  // Phase 33: Server-Side Voice I/O
+  whisperEndpoint: process.env.WHISPER_ENDPOINT || 'http://jarvis-whisper:5051',
+  voiceSilenceThresholdMs: parseInt(process.env.VOICE_SILENCE_THRESHOLD_MS || '1500', 10),
+  voiceMaxRecordingMs: parseInt(process.env.VOICE_MAX_RECORDING_MS || '30000', 10),
 
   // CORS
   corsOrigins: [
