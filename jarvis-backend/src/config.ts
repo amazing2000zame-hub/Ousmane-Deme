@@ -101,6 +101,12 @@ export const config = {
   // Frigate NVR
   frigateUrl: process.env.FRIGATE_URL || 'http://192.168.1.61:5000',
 
+  // Phase 29: Proactive Alerts
+  alertPollIntervalMs: parseInt(process.env.ALERT_POLL_INTERVAL_MS || '5000', 10),
+  alertCooldownMs: parseInt(process.env.ALERT_COOLDOWN_MS || '300000', 10), // 5 minutes
+  alertEntryCameras: (process.env.ALERT_ENTRY_CAMERAS || 'front_door').split(',').filter(Boolean),
+  alertTtsEnabled: process.env.ALERT_TTS_ENABLED !== 'false', // default true
+
   // Entity IDs (adjust after HA integration setup)
   ecobeeEntityId: process.env.ECOBEE_ENTITY_ID || 'climate.ecobee',
   doorLockEntityIds: (process.env.DOOR_LOCK_ENTITIES || '').split(',').filter(Boolean),

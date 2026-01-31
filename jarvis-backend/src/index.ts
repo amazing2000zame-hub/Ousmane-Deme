@@ -19,6 +19,7 @@ import { prewarmTtsCache } from './ai/tts.js';
 import { authMiddleware } from './auth/jwt.js';
 import { memoryStore } from './db/memory.js';
 import { startMemoryCleanup, stopMemoryCleanup } from './services/memory-cleanup.js';
+import { startAlertMonitor, stopAlertMonitor } from './services/alert-monitor.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -79,6 +80,10 @@ setupTerminalHandlers(terminalNs);
 setupChatHandlers(chatNs, eventsNs);
 console.log('[Chat] AI chat handler initialized on /chat namespace');
 
+// Start proactive alert monitoring (Phase 29: ALERT-01)
+startAlertMonitor(eventsNs);
+console.log('[Alert Monitor] Proactive alert service initialized');
+
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
 server.listen(config.port, () => {
   console.log(`Jarvis backend running on port ${config.port}`);
@@ -116,6 +121,7 @@ server.listen(config.port, () => {
 function shutdown(signal: string) {
   console.log(`\n[${signal}] Shutting down gracefully...`);
   stopMemoryCleanup();
+  stopAlertMonitor();
   stopMonitor();
   stopEmitter();
   closeAllConnections();
