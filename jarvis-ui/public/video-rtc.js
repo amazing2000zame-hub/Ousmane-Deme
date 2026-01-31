@@ -693,3 +693,6 @@ export class VideoRTC extends HTMLElement {
         return window.btoa(binary);
     }
 }
+
+// Register the custom element
+customElements.define('video-rtc', VideoRTC);

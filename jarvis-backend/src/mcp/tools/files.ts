@@ -40,7 +40,8 @@ const APPLE_DOUBLE_PREFIX = '._';
 const SSH_TIMEOUT_MS = 15_000;
 
 /** The local node name (filesystem accessed directly, no SSH) */
-const LOCAL_NODE = 'Home';
+/** Local node name - empty to force SSH for all nodes (backend runs in Docker) */
+const LOCAL_NODE = '';
 
 // ---------------------------------------------------------------------------
 // Helpers: formatting

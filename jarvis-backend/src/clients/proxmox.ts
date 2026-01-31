@@ -1,14 +1,23 @@
+import { Agent } from 'undici';
 import { config, type ClusterNode } from '../config.js';
 
 /**
  * Proxmox VE REST API client with token authentication.
  *
  * Each instance connects to a single PVE node via HTTPS on port 8006.
- * Self-signed TLS is accepted via NODE_TLS_REJECT_UNAUTHORIZED=0
- * (set in Docker Compose environment, no per-request agent needed).
+ * Self-signed TLS is accepted via a custom undici Agent with
+ * rejectUnauthorized: false (scoped to Proxmox only, not global).
  *
  * API token auth does NOT require CSRF tokens for write operations.
  */
+
+// Custom dispatcher for Proxmox self-signed certificates
+// This replaces the global NODE_TLS_REJECT_UNAUTHORIZED=0
+const proxmoxAgent = new Agent({
+  connect: {
+    rejectUnauthorized: false,
+  },
+});
 
 export interface ProxmoxClientOptions {
   host: string;
@@ -48,6 +57,8 @@ export class ProxmoxClient {
         method: 'GET',
         headers: this.headers,
         signal: controller.signal,
+        // @ts-expect-error Node.js 22 undici dispatcher for self-signed certs
+        dispatcher: proxmoxAgent,
       });
 
       if (!res.ok) {
@@ -90,6 +101,8 @@ export class ProxmoxClient {
           : { Authorization: this.headers.Authorization },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
+        // @ts-expect-error Node.js 22 undici dispatcher for self-signed certs
+        dispatcher: proxmoxAgent,
       });
 
       if (!res.ok) {

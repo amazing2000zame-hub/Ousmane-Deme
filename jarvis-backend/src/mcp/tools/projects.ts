@@ -26,8 +26,10 @@ import { sanitizePath } from '../../safety/paths.js';
 /** SSH command timeout */
 const SSH_TIMEOUT_MS = 15_000;
 
-/** The local node name (filesystem accessed directly, no SSH) */
-const LOCAL_NODE = 'Home';
+/** The local node name (filesystem accessed directly, no SSH)
+ * Set to empty string to force SSH for all nodes (needed when backend runs in Docker)
+ */
+const LOCAL_NODE = '';
 
 /** Max file size for read_project_file (1 MB) */
 const MAX_READ_BYTES = 1_048_576;
