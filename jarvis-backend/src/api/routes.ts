@@ -238,4 +238,25 @@ export function setupMonitorRoutes(routerInstance: Router, eventsNs: Namespace):
     memoryStore.setPreference('autonomy.level', String(level));
     res.json({ autonomyLevel: level });
   });
+
+  // POST /api/monitor/test-alert -- emit a test alert notification (Phase 29 testing)
+  routerInstance.post('/api/monitor/test-alert', (req: Request, res: Response) => {
+    const { camera = 'front_door' } = req.body as { camera?: string };
+    const testId = `test-${Date.now()}`;
+
+    const notification = {
+      id: testId,
+      type: 'unknown_person' as const,
+      camera,
+      timestamp: Date.now() / 1000,
+      thumbnailUrl: `/api/events/${testId}/thumbnail`,
+      snapshotUrl: `/api/events/${testId}/snapshot`,
+      message: `Unknown person detected at ${camera.replace(/_/g, ' ')}`,
+    };
+
+    console.log(`[Alert Monitor] TEST alert emitted for ${camera}`);
+    eventsNs.emit('alert:notification', notification);
+
+    res.json({ success: true, notification });
+  });
 }

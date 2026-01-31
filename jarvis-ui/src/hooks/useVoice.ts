@@ -39,7 +39,7 @@ export function useVoice(): UseVoiceReturn {
   }, []);
 
   const speak = useCallback(async (text: string, messageId: string) => {
-    // Stop any current playback
+    // Stop any current playback (progressive + monolithic)
     stop();
 
     // Clean markdown and special characters before speaking

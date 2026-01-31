@@ -2,9 +2,16 @@ import { Router } from 'express';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { Agent } from 'undici';
 import { checkTTSHealth } from '../ai/tts.js';
+import { getDiskCacheStats } from '../ai/tts-cache.js';
 import { config } from '../config.js';
 import { sqlite } from '../db/index.js';
+
+// Custom dispatcher for Proxmox self-signed certificates
+const proxmoxAgent = new Agent({
+  connect: { rejectUnauthorized: false },
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -63,6 +70,8 @@ healthRouter.get('/', async (req, res) => {
         const res = await fetch(`https://${node.host}:8006/api2/json/version`, {
           signal: AbortSignal.timeout(3000),
           headers: { Authorization: `PVEAPIToken=${config.pveTokenId}=${config.pveTokenSecret}` },
+          // @ts-expect-error Node.js 22 undici dispatcher for self-signed certs
+          dispatcher: proxmoxAgent,
         });
         const responseMs = Date.now() - start;
         let pveVersion: string | undefined;
@@ -86,6 +95,9 @@ healthRouter.get('/', async (req, res) => {
     proxmox: proxmoxResult.status === 'fulfilled' ? proxmoxResult.value : { status: 'down', responseMs: 0 },
   };
 
+  // Get TTS cache stats (non-blocking)
+  const cacheStats = await getDiskCacheStats().catch(() => ({ xtts: { count: 0, sizeKB: 0, oldestDays: 0 }, piper: { count: 0, sizeKB: 0, oldestDays: 0 } }));
+
   const allUp = Object.values(components).every((c) => c.status === 'up');
 
   res.status(allUp ? 200 : 503).json({
@@ -94,5 +106,10 @@ healthRouter.get('/', async (req, res) => {
     uptime: process.uptime(),
     version,
     components,
+    cache: {
+      tts: cacheStats,
+      maxEntries: config.ttsCacheMaxEntries,
+      maxAgeDays: 7,
+    },
   });
 });

@@ -1,10 +1,11 @@
 /**
- * 13 smart home control tools for presence detection, thermostat, locks, cameras, and face recognition.
+ * 14 smart home control tools for presence detection, thermostat, locks, cameras, and face recognition.
  *
  * Safety tiers:
  *   GREEN: get_who_is_home, get_thermostat_status, get_lock_status,
  *          get_camera_snapshot, query_nvr_detections, scan_network_devices,
- *          whos_at_door, get_recognized_faces, get_unknown_visitors, show_live_feed
+ *          whos_at_door, get_recognized_faces, get_unknown_visitors, show_live_feed,
+ *          analyze_camera_snapshot
  *   YELLOW: set_thermostat
  *   RED: lock_door, unlock_door
  */
@@ -709,16 +710,126 @@ export function registerSmartHomeTools(server: McpServer): void {
         }
 
         // Lazy import to avoid circular dependency with index.ts
-        const { eventsNs } = await import('../../index.js');
-        eventsNs.emit('show_live_feed', {
-          camera,
-          timestamp: new Date().toISOString(),
-        });
+        const { eventsNs, chatNs } = await import('../../index.js');
+        const timestamp = new Date().toISOString();
+
+        // Emit to events namespace (for modal display in cam tab)
+        eventsNs.emit('show_live_feed', { camera, timestamp });
+
+        // Emit to chat namespace (for inline display in chat)
+        chatNs.emit('chat:show_live_feed', { camera, timestamp });
 
         return {
           content: [{
             type: 'text' as const,
             text: `Opening ${camera} live feed in the dashboard.`,
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // 14. close_live_feed -- close live camera stream in the dashboard
+  server.tool(
+    'close_live_feed',
+    'Close/stop a live camera feed in the dashboard UI. Use when user asks to stop, close, or dismiss a camera stream.',
+    {},
+    async () => {
+      try {
+        const { eventsNs, chatNs } = await import('../../index.js');
+        const timestamp = new Date().toISOString();
+
+        // Emit close events to both namespaces
+        eventsNs.emit('close_live_feed', { timestamp });
+        chatNs.emit('chat:close_live_feed', { timestamp });
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: 'Live camera feed closed.',
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // 15. analyze_camera_snapshot -- use Claude Vision to analyze camera image
+  server.tool(
+    'analyze_camera_snapshot',
+    'Analyze a camera snapshot using AI vision to identify and count objects (cars, people, packages). Use this when asked "how many cars in the driveway" or similar questions requiring visual analysis.',
+    {
+      camera: z.string().describe('Camera name (e.g., "side_house" for driveway, "front_door")'),
+      question: z.string().optional().describe('Specific question to answer about the image (default: describe what you see)'),
+    },
+    async ({ camera, question }) => {
+      try {
+        // Lazy import to avoid circular dependency
+        const { claudeClient, claudeAvailable } = await import('../../ai/claude.js');
+
+        if (!claudeAvailable) {
+          return {
+            content: [{ type: 'text' as const, text: 'Error: Claude API not configured for vision analysis' }],
+            isError: true,
+          };
+        }
+
+        // Fetch snapshot from Frigate
+        const snapshot = await frigate.getLatestSnapshot(camera);
+        const base64Image = snapshot.toString('base64');
+
+        // Build the prompt
+        const prompt = question
+          ? question
+          : 'Describe what you see in this security camera image. Count and identify any vehicles (including color, type, approximate size), people, and other notable objects.';
+
+        // Call Claude Vision
+        const response = await claudeClient.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/jpeg',
+                    data: base64Image,
+                  },
+                },
+                {
+                  type: 'text',
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+        });
+
+        // Extract text response
+        const textContent = response.content.find((c) => c.type === 'text');
+        const analysis = textContent && 'text' in textContent ? textContent.text : 'No analysis available';
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              camera,
+              timestamp: new Date().toISOString(),
+              question: question || 'general analysis',
+              analysis,
+            }, null, 2),
           }],
         };
       } catch (err) {

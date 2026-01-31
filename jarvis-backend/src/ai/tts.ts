@@ -77,7 +77,7 @@ async function checkLocalTTSHealth(): Promise<boolean> {
 let xttsHealthy = true;
 let xttsLastFailure = 0;
 const XTTS_RECOVERY_CHECK_INTERVAL = 30_000; // 30s before re-trying XTTS
-const XTTS_FALLBACK_TIMEOUT = 3_000; // 3s timeout triggers Piper (TTS-02)
+const XTTS_FALLBACK_TIMEOUT = 15_000; // 15s timeout - XTTS needs 7-10s when cold
 
 function shouldTryXTTS(): boolean {
   if (!xttsHealthy) {
@@ -335,6 +335,33 @@ function cacheGet(text: string, engine: string = 'xtts'): CachedAudio | undefine
     sentenceCache.set(key, entry);
   }
   return entry;
+}
+
+/**
+ * Get cached XTTS audio ONLY - no synthesis, no fallback.
+ * Returns instantly. Used for acknowledgments that must not block.
+ * Checks both in-memory and disk cache.
+ */
+export async function getCachedXttsAudio(text: string): Promise<CachedAudioWithEngine | null> {
+  // Check in-memory cache first
+  const cached = cacheGet(text, 'xtts');
+  if (cached) return { ...cached, engine: 'xtts' };
+
+  // Check disk cache
+  const diskCached = await diskCacheGet(text, 'xtts');
+  if (diskCached) {
+    const audio: CachedAudioWithEngine = {
+      buffer: diskCached,
+      contentType: 'audio/wav',
+      provider: 'local',
+      engine: 'xtts',
+    };
+    // Promote to in-memory cache for next time
+    cachePut(text, audio, 'xtts');
+    return audio;
+  }
+
+  return null; // Not cached - don't synthesize
 }
 
 // ---------------------------------------------------------------------------
@@ -650,18 +677,53 @@ export async function restartTTSContainer(): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 const PREWARM_PHRASES = [
+  // Acknowledgments
   'Certainly, sir.',
   'Right away.',
-  'Systems nominal.',
-  'All systems operational.',
-  'Good morning, sir.',
-  'Good evening, sir.',
-  'At your service.',
   'Understood.',
   'Done.',
-  'Task complete.',
+  'Of course.',
+  'Very well, sir.',
+  'As you wish.',
+  'Consider it done.',
+  // Tool acknowledgments (spoken before executing tools)
+  'One moment, sir.',
+  'Getting that pulled up now.',
+  'Right away, sir.',
+  'Let me check on that.',
+  'Working on it.',
+  // Status
+  'Systems nominal.',
+  'All systems operational.',
+  'Everything is running smoothly.',
+  'The cluster is operating normally.',
+  // Greetings
+  'Good morning, sir.',
+  'Good afternoon, sir.',
+  'Good evening, sir.',
+  'At your service.',
+  'How may I assist you?',
+  'What can I do for you?',
+  // Working
   'Processing your request.',
   "I'll look into that right away.",
+  'One moment please.',
+  'Analyzing now.',
+  'Running diagnostics.',
+  'Checking the systems.',
+  // Completions
+  'Task complete.',
+  'Request completed.',
+  "I've finished the task.",
+  'All done, sir.',
+  // Errors/Issues
+  'I encountered an issue.',
+  'There appears to be a problem.',
+  "I'm afraid I cannot do that.",
+  // Cluster specific
+  'All nodes are online.',
+  'The cluster is healthy.',
+  'No issues detected.',
 ];
 
 export async function prewarmTtsCache(): Promise<void> {

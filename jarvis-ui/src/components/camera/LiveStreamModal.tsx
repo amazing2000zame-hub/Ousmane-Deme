@@ -40,17 +40,18 @@ export function LiveStreamModal({ camera, onClose }: LiveStreamModalProps) {
 
   // Set stream source when component mounts
   useEffect(() => {
-    const el = videoRef.current;
+    const el = videoRef.current as VideoRTCElement | null;
     if (el) {
-      // video-rtc.js auto-converts http:// to ws://
-      el.setAttribute('src', `${FRIGATE_URL}/live/mse/api/ws?src=${camera}`);
-      el.setAttribute('mode', 'mse,webrtc,hls');
-      el.setAttribute('media', 'video,audio');
+      // video-rtc.js expects property assignment (not setAttribute) to trigger connection
+      // The src setter auto-converts http:// to ws:// and calls onconnect()
+      el.mode = 'mse,webrtc,hls';
+      el.media = 'video,audio';
+      el.src = `${FRIGATE_URL}/live/mse/api/ws?src=${camera}`;
     }
     return () => {
-      // Cleanup: remove src to close WebSocket
+      // Cleanup: setting empty src triggers disconnect
       if (el) {
-        el.removeAttribute('src');
+        (el as VideoRTCElement).src = '';
       }
     };
   }, [camera]);

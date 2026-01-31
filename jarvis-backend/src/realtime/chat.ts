@@ -44,7 +44,7 @@ import { extractMemoriesFromSession, detectPreferences } from '../ai/memory-extr
 import { detectRecallQuery, buildRecallBlock } from '../ai/memory-recall.js';
 import { memoryBank } from '../db/memories.js';
 import { SentenceAccumulator } from '../ai/sentence-stream.js';
-import { synthesizeSentenceWithFallback, ttsAvailable, type TTSEngine } from '../ai/tts.js';
+import { synthesizeSentenceWithFallback, ttsAvailable, getCachedXttsAudio, type TTSEngine } from '../ai/tts.js';
 import { cleanTextForSpeech } from '../ai/text-cleaner.js';
 import { encodeWavToOpus, isOpusEnabled } from '../ai/opus-encode.js';
 import { RequestTimer } from './timing.js';
@@ -80,36 +80,35 @@ function getNextAckPhrase(): string {
 }
 
 /**
- * Synthesize and send an acknowledgment phrase immediately.
+ * Send a pre-cached acknowledgment phrase immediately.
  * Used to give voice feedback before long-running tool calls.
  *
- * Uses Piper TTS (not XTTS) for instant synthesis (<200ms).
- * Sends via dedicated chat:acknowledge event for immediate playback.
+ * ONLY uses cached XTTS Jarvis audio - instant, no synthesis wait.
+ * If phrase not cached, silently skips (no acknowledgment is better than wrong voice).
  */
 async function sendToolAcknowledgment(
   socket: Socket,
   sessionId: string,
   voiceMode: boolean,
 ): Promise<void> {
-  if (!voiceMode || !ttsAvailable()) return;
+  if (!voiceMode) return;
 
   const phrase = getNextAckPhrase();
   try {
-    // Force Piper for instant synthesis - XTTS takes 7-15s even for short phrases
-    const audio = await synthesizeSentenceWithFallback(phrase, { engineLock: 'piper' });
+    // Only use pre-cached Jarvis audio - instant lookup, no synthesis
+    const audio = await getCachedXttsAudio(phrase);
     if (audio) {
-      // Use dedicated event for immediate playback (not queued with response audio)
       socket.emit('chat:acknowledge', {
         sessionId,
         phrase,
         contentType: audio.contentType,
         audio: audio.buffer.toString('base64'),
       });
-      console.log(`[Chat] Sent acknowledgment: "${phrase}" via Piper`);
+      console.log(`[Chat] Sent acknowledgment: "${phrase}" (cached XTTS)`);
     }
-  } catch (err) {
+    // If not cached, skip silently - don't block or use wrong voice
+  } catch {
     // Non-critical, continue without acknowledgment
-    console.warn(`[Chat] Acknowledgment failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -298,6 +297,9 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
         let firstAudioReady = false;
         let firstAudioEmitted = false;
 
+        // Only send ONE voice acknowledgment per request (not per tool)
+        let ackSentThisRequest = false;
+
         async function drainTtsQueue(): Promise<void> {
           // Launch up to config.ttsMaxParallel concurrent synthesis tasks
           while (ttsQueue.length > 0 && activeWorkers < config.ttsMaxParallel) {
@@ -406,8 +408,11 @@ export function setupChatHandlers(chatNs: Namespace, eventsNs: Namespace): void 
           },
 
           onToolUse: async (toolName, toolInput, toolUseId, tier) => {
-            // Send voice acknowledgment FIRST and wait for it
-            await sendToolAcknowledgment(socket, sessionId, voiceMode);
+            // Send voice acknowledgment ONCE per request (not per tool)
+            if (!ackSentThisRequest) {
+              ackSentThisRequest = true;
+              await sendToolAcknowledgment(socket, sessionId, voiceMode);
+            }
             socket.emit('chat:tool_use', { sessionId, toolName, toolInput, toolUseId, tier });
             eventsNs.emit('event', {
               id: crypto.randomUUID(),
