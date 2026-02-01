@@ -1,541 +1,295 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-01-20
+**Analysis Date:** 2026-01-31
 
 ## Test Framework
 
-### Python (jarvis-v3)
-
 **Runner:**
-- pytest >= 8.0.0
-- pytest-asyncio >= 0.24.0 (for async test support)
-- Config: No pytest.ini or setup.cfg; using pyproject.toml defaults
-- Location: Tests referenced in `tests/` directory and `test_jarvis.py` root level
+- Vitest 4.0.18
+- Config: `/root/jarvis-backend/vitest.config.ts`
+
+**Assertion Library:**
+- Vitest built-in `expect` API (compatible with Jest)
 
 **Run Commands:**
 ```bash
-pytest                    # Run all tests in tests/ and test_*.py
-pytest tests/             # Run tests directory
-pytest test_jarvis.py     # Run specific test file
-pytest -v                 # Verbose output
-pytest --asyncio-mode=auto  # For async tests (if needed)
+cd /root/jarvis-backend
+npm test              # Run all tests once
+npm run test:watch    # Watch mode (re-run on file changes)
+npm run test:coverage # Coverage report with v8
 ```
-
-**Assertion Library:**
-- Built-in `assert` statements (standard pytest)
-- Rich console output via Rich library for test status display
-
-### TypeScript/Node.js (proxmox-ui/backend)
-
-**Runner:**
-- No test framework configured
-- `package.json` scripts: `"test": "echo \"Error: no test specified\" && exit 1"`
-- Status: **No automated tests implemented**
-
----
 
 ## Test File Organization
 
-### Python (jarvis-v3)
-
 **Location:**
-- Co-located pattern preferred: test files in `tests/` directory
-- Standalone test script: `test_jarvis.py` in project root
-- Test data/fixtures: Not yet established (see TESTING gaps below)
+- Co-located with source in `src/__tests__/` directory
+- Pattern: `/root/jarvis-backend/src/__tests__/*.test.ts`
 
 **Naming:**
-- Test file: `test_jarvis.py` (single main test file)
-- Test discovery: pytest auto-discovers `test_*.py` and `*_test.py` patterns
-- Module under test path: `src/jarvis/...` (separate from tests)
+- Pattern: `<module-name>.test.ts`
+- Examples:
+  - `safety.test.ts` — tests `/root/jarvis-backend/src/safety/tiers.ts`
+  - `memory-extractor.test.ts` — tests `/root/jarvis-backend/src/ai/memory-extractor.ts`
+  - `router.test.ts` — tests `/root/jarvis-backend/src/ai/router.ts`
 
 **Structure:**
 ```
-jarvis-v3/
+jarvis-backend/
 ├── src/
-│   └── jarvis/
-│       ├── core.py
-│       ├── cli.py
-│       └── ...
-├── tests/
-│   └── (empty - needs implementation)
-├── test_jarvis.py      # Main integration test script
-└── requirements.txt
+│   ├── __tests__/
+│   │   ├── safety.test.ts
+│   │   ├── memory-extractor.test.ts
+│   │   ├── memory-recall.test.ts
+│   │   ├── cost-tracker.test.ts
+│   │   └── router.test.ts
+│   ├── safety/
+│   │   ├── tiers.ts
+│   │   └── protected.ts
+│   └── ai/
+│       ├── memory-extractor.ts
+│       └── router.ts
 ```
-
-### TypeScript (proxmox-ui)
-
-**Test Setup:**
-- No tests directory present
-- No test framework installed
-- No test files found (`*.test.ts`, `*.spec.ts`)
-- Status: **Tests not implemented**
-
----
 
 ## Test Structure
 
-### Python (jarvis-v3) - Integration Tests
-
 **Suite Organization:**
+```typescript
+import { describe, it, expect } from 'vitest';
+import { checkSafety, getToolTier, ActionTier } from '../safety/tiers.js';
 
-From `test_jarvis.py`:
-```python
-# Module-level setup
-import asyncio
-import sys
-sys.path.insert(0, "src")
+describe('getToolTier', () => {
+  it('classifies monitoring tools as GREEN', () => {
+    expect(getToolTier('get_cluster_status')).toBe(ActionTier.GREEN);
+    expect(getToolTier('get_vms')).toBe(ActionTier.GREEN);
+  });
 
-from rich.console import Console
-console = Console()
+  it('classifies operational tools as YELLOW', () => {
+    expect(getToolTier('execute_ssh')).toBe(ActionTier.YELLOW);
+  });
+});
 
-# Test functions using async/await
-async def test_ollama():
-    """Test Ollama connection and chat."""
-    console.print("\n[bold cyan]Testing Ollama LLM...[/]")
-    # Setup
-    client = OllamaClient(model="mistral:7b-instruct-q4_0")
-    # Execute
-    success = await client.initialize()
-    # Assert
-    if not success:
-        console.print("[red]✗ Ollama initialization failed[/]")
-        return False
-    # Teardown (implicit)
-    await client.close()
-    return True
-
-# Main test coordinator
-async def main():
-    panel = Panel.fit("[bold]JARVIS v3.0 Test Suite[/]", border_style="cyan")
-    console.print(panel)
-
-    await test_ollama()
-    await test_skills()
-    console.print("\n[bold green]All tests completed![/]")
+describe('checkSafety', () => {
+  it('allows GREEN tools without confirmation', () => {
+    const result = checkSafety('get_cluster_status', {});
+    expect(result.allowed).toBe(true);
+    expect(result.tier).toBe(ActionTier.GREEN);
+  });
+});
 ```
 
 **Patterns:**
+- Outer `describe` block per function or module
+- Nested `describe` blocks for related test groups (optional, not always used)
+- One `it` block per test case
+- Descriptive test names in plain English (e.g., "allows GREEN tools without confirmation")
 
-1. **Setup:** Instantiate service/client with config
-2. **Execute:** Call async methods, capture output
-3. **Assert:** Check return values, log status with Rich colors
-4. **Teardown:** Call cleanup methods (`await client.close()`)
-5. **Reporting:** Rich console output with success/failure indicators
+**Setup/Teardown:**
+- `beforeEach` used for resetting mocks between tests
+- No `afterEach` observed (cleanup handled by Vitest automatically)
+- Example from `/root/jarvis-backend/src/__tests__/router.test.ts:38-43`:
 
-### TypeScript (proxmox-ui) - No Tests Yet
-
-**Status:**
-- Route handlers lack unit tests
-- Services (`proxmox.ts`) lack integration tests
-- WebSocket handlers untested
-- Authentication middleware untested
-- No test infrastructure in place
-
----
-
-## Async Testing
-
-### Python (jarvis-v3)
-
-**Pattern:**
-```python
-async def test_ollama():
-    """Test Ollama connection and chat."""
-    client = OllamaClient(model="mistral:7b-instruct-q4_0")
-    success = await client.initialize()
-
-    if not success:
-        return False
-
-    # Test chat
-    response = await client.chat("Hello, introduce yourself briefly.")
-    console.print(f"[dim]Response:[/] {response[:200]}...")
-
-    await client.close()
-    return True
-
-# Main runner
-async def main():
-    await test_ollama()
-    await test_skills()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-**Key Points:**
-- All test functions are `async def`
-- Await each async call: `await client.initialize()`, `await client.chat()`
-- pytest-asyncio handles event loop automatically
-- Tests can be run with `pytest --asyncio-mode=auto` or via `asyncio.run()`
-
-### TypeScript (proxmox-ui) - Not Applicable
-
-No async tests established. Route handlers use async/await pattern:
 ```typescript
-router.get('/', authMiddleware, async (_req: AuthRequest, res: Response) => {
-  try {
-    const nodes = await proxmox.getNodes();
-    res.json(nodes);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch nodes' });
-  }
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(checkDailyBudget).mockReturnValue({ spent: 0, limit: 10, exceeded: false });
+  Object.defineProperty(claudeModule, 'claudeAvailable', { value: true, writable: true });
 });
 ```
-
----
 
 ## Mocking
 
-### Python (jarvis-v3)
+**Framework:** Vitest built-in `vi` mock utilities
 
-**Framework:**
-- Standard library `unittest.mock` available but not used in current tests
-- No mock library imported in test file or project dependencies
-- Tests use real service initialization (not mocked)
+**Patterns:**
+- Mock entire modules with `vi.mock()` at top of file (before imports)
+- Mock return values with `vi.fn(() => value)`
+- Reset mocks in `beforeEach` with `vi.clearAllMocks()`
+- Access mocked functions with `vi.mocked(functionName)`
 
-**Current Approach (No Mocking):**
-```python
-# Test uses real Ollama client - requires actual service running
-async def test_ollama():
-    client = OllamaClient(model="mistral:7b-instruct-q4_0")
-    success = await client.initialize()  # Real HTTP call to localhost:11434
-    # ...
+**Example from `/root/jarvis-backend/src/__tests__/router.test.ts:9-31`:**
+```typescript
+// Mock external dependencies before importing the module under test
+vi.mock('../ai/claude.js', () => ({
+  claudeAvailable: true,
+  default: null,
+}));
+
+vi.mock('../ai/cost-tracker.js', () => ({
+  checkDailyBudget: vi.fn(() => ({ spent: 0, limit: 10, exceeded: false })),
+  calculateCost: vi.fn(() => 0),
+}));
+
+vi.mock('../db/index.js', () => ({
+  db: {},
+  sqlite: {
+    exec: vi.fn(),
+    prepare: vi.fn(() => ({ run: vi.fn(), get: vi.fn(), all: vi.fn() }))
+  },
+}));
+
+// Import after mocks are registered
+import { routeMessage } from '../ai/router.js';
+import { checkDailyBudget } from '../ai/cost-tracker.js';
 ```
 
-**What to Mock (Recommended):**
-- External HTTP calls: Ollama API, Proxmox API
-- File system operations: YAML config loading
-- Audio capture: sounddevice (use mock input in tests)
-- LLM responses: hardcode expected outputs
+**What to Mock:**
+- External APIs and network calls (e.g., Claude AI client, database)
+- Environment-dependent modules (e.g., file system, SSH connections)
+- Expensive operations (e.g., model inference, large computations)
 
 **What NOT to Mock:**
-- Core business logic: OllamaClient message handling
-- Skill pattern matching: real regex evaluation
-- Component initialization: use test fixtures instead
+- Pure functions being tested directly
+- Simple data transformations
+- Type definitions and constants
 
-### TypeScript (proxmox-ui) - No Tests
+## Fixtures and Factories
 
-No mocking framework in place. Recommendations:
-- Use `jest` or `vitest` for mocking
-- Mock `child_process.exec` for Proxmox commands
-- Mock `ws` (WebSocket) for terminal tests
-- Fixture data in `test/fixtures/` directory
+**Test Data:**
+- Inline test data preferred over separate fixture files
+- Simple objects created directly in test cases
+- Constants defined at module level for reused values
 
----
-
-## Fixtures and Test Data
-
-### Python (jarvis-v3)
-
-**Current Status:**
-- No fixture files found
-- No test data directory
-- Tests use real service initialization
-
-**Recommended Structure:**
-```
-tests/
-├── fixtures/
-│   ├── config/
-│   │   └── test_jarvis.yaml    # Test config with test Ollama model
-│   ├── audio/
-│   │   └── sample_command.wav  # Sample audio for STT testing
-│   └── responses/
-│       └── ollama_responses.json  # Canned LLM responses
-├── conftest.py                 # Pytest fixtures
-└── unit/
-    ├── test_ollama_client.py
-    ├── test_skills.py
-    └── test_stt.py
+**Example from `/root/jarvis-backend/src/__tests__/safety.test.ts:52-54`:**
+```typescript
+it('allows YELLOW tools without confirmation', () => {
+  const result = checkSafety('execute_ssh', { command: 'uptime', host: '192.168.1.50' });
+  expect(result.allowed).toBe(true);
+});
 ```
 
-**Fixture Pattern (Recommended):**
-```python
-# conftest.py
-import pytest
-from pathlib import Path
-
-@pytest.fixture
-def test_config_path():
-    return Path(__file__).parent / "fixtures" / "config" / "test_jarvis.yaml"
-
-@pytest.fixture
-async def ollama_client(test_config_path):
-    client = OllamaClient(model="mistral:7b-instruct-q4_0")
-    yield client
-    await client.close()
-```
-
-### TypeScript (proxmox-ui) - Not Applicable
-
-No test fixtures established.
-
----
+**Location:**
+- No dedicated fixtures directory observed
+- Test data defined inline or at top of test file
 
 ## Coverage
 
-### Python (jarvis-v3)
+**Requirements:** None enforced (no coverage thresholds in config)
 
-**Requirements:**
-- Not enforced via configuration
-- `pytest-cov` not listed in dependencies
-- No coverage thresholds set
-
-**View Coverage (Setup Needed):**
-```bash
-pip install pytest-cov
-pytest --cov=src/jarvis --cov-report=html
-# Results in htmlcov/index.html
+**Configuration:**
+```typescript
+// vitest.config.ts
+coverage: {
+  provider: 'v8',
+  include: ['src/**/*.ts'],
+  exclude: ['src/**/*.test.ts', 'src/index.ts'],
+}
 ```
 
-**Current Status:**
-- `src/jarvis/` has basic smoke tests only
-- `test_jarvis.py` validates initialization and skill loading
-- Many modules untested: voice components, individual skills, CLI
+**View Coverage:**
+```bash
+npm run test:coverage
+# Generates HTML report in coverage/ directory
+```
 
-### TypeScript (proxmox-ui) - Not Applicable
-
-No coverage tooling; no tests exist.
-
----
+**Current Coverage:**
+- Tests exist for critical safety, routing, memory, and cost-tracking logic
+- Integration tests not present (unit tests only)
+- Frontend has no tests currently
 
 ## Test Types
 
-### Python (jarvis-v3)
-
 **Unit Tests:**
-- Scope: Individual skill execution, pattern matching
-- Approach: Mock LLM for isolated skill testing
-- Location: `tests/unit/test_skills.py` (to be implemented)
-- Example (recommended):
-```python
-@pytest.mark.asyncio
-async def test_time_skill_pattern_match():
-    llm = OllamaClient()
-    skill = TimeDateSkill(llm)
-    assert skill.matches("What time is it?")
-    assert skill.matches("Tell me the time")
-    assert not skill.matches("What's the weather?")
-```
+- Scope: Individual functions and modules
+- Approach: Test pure functions with various inputs
+- Example: `checkSafety()` tested with different tiers, confirmations, overrides
 
 **Integration Tests:**
-- Scope: Full orchestration (Jarvis core, skills + LLM)
-- Approach: Real service dependencies (Ollama running locally)
-- Location: `test_jarvis.py` (current)
-- Current tests:
-  - `test_ollama()` - LLM initialization and chat
-  - `test_skills()` - Skill loading and pattern matching
-  - `interactive_mode()` - Full conversational flow
+- Not currently implemented
+- Future scope: Test Socket.IO handlers, database operations, MCP tool execution
 
 **E2E Tests:**
 - Framework: Not used
-- Status: Not implemented
-- Would test: Voice input → STT → Skill execution → TTS output
+- Frontend uses manual testing via browser
 
-### TypeScript (proxmox-ui)
+## Common Patterns
 
-**Unit Tests:**
-- Not implemented
-- Would cover: Auth middleware, token generation/verification
-- Example (recommended):
+**Async Testing:**
+- Not needed for current tests (all test pure synchronous functions)
+- Vitest supports async tests with `async it()` syntax when needed
+
+**Error Testing:**
+- Tests verify error messages and blocking behavior
+- Example from `/root/jarvis-backend/src/__tests__/safety.test.ts:72-77`:
+
 ```typescript
-describe('authMiddleware', () => {
-  it('should reject missing Authorization header', () => {
-    // ...
-  });
-
-  it('should reject invalid JWT token', () => {
-    // ...
-  });
-
-  it('should extract username from valid token', () => {
-    // ...
-  });
+it('blocks BLACK tools always', () => {
+  const result = checkSafety('reboot_node', { node: 'pve' });
+  expect(result.allowed).toBe(false);
+  expect(result.tier).toBe(ActionTier.BLACK);
+  expect(result.reason).toContain('BLACK tier');
 });
 ```
 
-**Integration Tests:**
-- Not implemented
-- Would cover: Routes with mocked Proxmox service
-- Example (recommended):
+**Parameter Variation Testing:**
+- Multiple test cases for different parameter combinations
+- Example: testing safety tiers (GREEN, YELLOW, RED, BLACK, unknown)
+- Example: testing with/without confirmation, with/without override
+
+**Boundary Testing:**
+- Tests for edge cases (empty input, unknown values)
+- Example from `/root/jarvis-backend/src/__tests__/safety.test.ts:141-143`:
+
 ```typescript
-describe('GET /api/nodes', () => {
-  it('should return nodes list with auth', async () => {
-    const token = generateToken('test-user');
-    const response = await request(app)
-      .get('/api/nodes')
-      .set('Authorization', `Bearer ${token}`);
-    expect(response.status).toBe(200);
-    expect(response.body).toBeInstanceOf(Array);
-  });
+it('returns not protected for empty args', () => {
+  expect(isProtectedResource({}).protected).toBe(false);
 });
 ```
 
-**E2E Tests:**
-- Not implemented
-- Would cover: Full user flows (login → view nodes → start VM)
-- Tool recommendation: Playwright, Cypress
+**Preference Detection Testing:**
+- Pattern matching tests for natural language patterns
+- Example from `/root/jarvis-backend/src/__tests__/memory-extractor.test.ts:10-15`:
 
----
-
-## Common Testing Patterns
-
-### Python - Async Testing
-
-**Pattern:**
-```python
-import pytest
-from jarvis.llm.ollama_client import OllamaClient
-
-@pytest.mark.asyncio
-async def test_chat_with_history():
-    """Test that conversation history is maintained."""
-    client = OllamaClient(model="mistral:7b-instruct-q4_0")
-    await client.initialize()
-
-    # First message
-    response1 = await client.chat("What is Python?")
-    assert len(response1) > 0
-
-    # Second message (should have context)
-    response2 = await client.chat("Is it a snake?")
-    assert len(response2) > 0
-
-    # Verify history
-    assert len(client._conversation_history) > 2
-
-    await client.close()
-```
-
-**Decorators:**
-- `@pytest.mark.asyncio` - Enables async test function
-- `async def test_name()` - Async test function definition
-- `await` for all async calls
-- Fixtures with `async def` and `yield` for setup/teardown
-
-### Python - Error Testing
-
-**Pattern:**
-```python
-import pytest
-from jarvis.skills import SkillRegistry
-
-@pytest.mark.asyncio
-async def test_skill_error_handling():
-    """Test that skill errors are caught gracefully."""
-    registry = SkillRegistry(llm=None)
-
-    # Test non-existent skill
-    response = await registry.try_handle("completely unknown command")
-    assert response is None
-
-    # Test skill error (if implemented)
-    with pytest.raises(Exception):
-        # Trigger skill that doesn't have required LLM
-        pass
-```
-
-**Error Assertions:**
-- `with pytest.raises(ExceptionType):` - Assert exception thrown
-- Check error messages: `assert "expected text" in str(exc_info.value)`
-- Graceful failure patterns: return `None` or empty string
-
-### TypeScript - HTTP Route Testing (Recommended)
-
-**Pattern (Not Yet Implemented):**
 ```typescript
-import request from 'supertest';
-import app from '../src/index';
-
-describe('POST /api/auth/login', () => {
-  it('should return 400 if username missing', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({ password: 'test' });
-
-    expect(response.status).toBe(400);
-    expect(response.body.error).toContain('required');
-  });
-
-  it('should return 401 if invalid credentials', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'invalid', password: 'wrong' });
-
-    expect(response.status).toBe(401);
-    expect(response.body.error).toContain('Invalid');
-  });
+it('detects "I prefer" statements', () => {
+  const prefs = detectPreferences('I prefer email alerts for critical issues');
+  expect(prefs.length).toBeGreaterThan(0);
+  expect(prefs[0].content).toContain('prefers');
+  expect(prefs[0].key).toMatch(/^pref_/);
 });
 ```
 
----
+## Test Philosophy
 
-## Test Coverage Gaps
+**Focus:**
+- Test business logic, not implementation details
+- Verify behavior and contracts, not internal state
+- Pure functions preferred (easier to test, no mocking needed)
 
-### Python (jarvis-v3)
+**What's Tested:**
+- Safety tier classification (`getToolTier`)
+- Safety enforcement logic (`checkSafety`)
+- Protected resource detection (`isProtectedResource`)
+- Memory extraction patterns (`detectPreferences`)
+- Message routing logic (`routeMessage`)
 
-**Untested Areas:**
+**What's Not Tested:**
+- UI components (no React testing library)
+- Socket.IO real-time handlers
+- Database migrations
+- External API integrations (mocked out)
 
-| Component | What's Not Tested | Risk | Priority |
-|-----------|------------------|------|----------|
-| STT (Speech-to-Text) | Audio recording, silence detection, Whisper integration | High - core feature | High |
-| TTS (Text-to-Speech) | Piper TTS integration, audio output | High - core feature | High |
-| Wake Word Detection | Porcupine integration, callback triggering | High - core feature | High |
-| Server Control Skill | Cluster commands, SSH exec, response parsing | High - critical skill | High |
-| CLI Entry Point | Argument parsing, signal handling, shutdown | Medium - user interaction | Medium |
-| Configuration Loading | YAML parsing, defaults fallback, path resolution | Medium - initialization | Medium |
-| Skills Registry | Skill registration, pattern compilation, error recovery | Low - framework | Low |
+## Future Testing Recommendations
 
-### TypeScript (proxmox-ui/backend)
+**Based on codebase analysis:**
 
-**All areas untested:**
+1. **Add frontend tests:**
+   - Install Vitest + React Testing Library
+   - Test critical components: `ChatPanel`, `ChatInput`, `ToolStatusCard`
+   - Test Zustand stores (state mutations)
 
-| Component | Gap | Priority |
-|-----------|-----|----------|
-| Auth Middleware | No tests for token validation, expiration | High |
-| Auth Routes | No tests for login/logout/me endpoints | High |
-| Nodes Routes | No tests for GET/POST node operations | High |
-| WebSocket Terminal | No tests for connection, resize, input handling | High |
-| Proxmox Service | No tests for pvesh, SSH exec, error handling | High |
+2. **Add integration tests:**
+   - Test Socket.IO event flows (send message → receive response)
+   - Test MCP tool execution with safety checks
+   - Test database operations (using in-memory SQLite)
 
----
+3. **Add E2E tests:**
+   - Consider Playwright for critical user flows
+   - Test authentication → chat → tool execution → voice playback
 
-## Testing Recommendations
-
-### Python (jarvis-v3)
-
-1. **Immediate (High Priority):**
-   - Add `pytest-cov` to dev dependencies
-   - Create `tests/conftest.py` with base fixtures
-   - Add unit tests for skills pattern matching
-   - Test Skill base class and SkillRegistry
-
-2. **Next Phase:**
-   - Mock Ollama responses for skill tests
-   - Add STT mock input fixture
-   - Test error handling in core.py
-
-3. **Long Term:**
-   - E2E test suite using real Ollama instance
-   - Coverage threshold enforcement (>80%)
-   - CI/CD pipeline integration
-
-### TypeScript (proxmox-ui/backend)
-
-1. **Immediate:**
-   - Install test framework: `npm install --save-dev jest @types/jest ts-jest`
-   - Create `jest.config.js` for TypeScript support
-   - Add auth middleware tests
-
-2. **Next:**
-   - Route handler tests with mock Proxmox service
-   - WebSocket terminal tests
-
-3. **Long Term:**
-   - E2E tests with test Proxmox instance
-   - Frontend integration tests
+4. **Increase coverage:**
+   - Current focus: safety and routing logic
+   - Missing: TTS pipeline, memory recall, context management, monitoring
 
 ---
 
-*Testing analysis: 2026-01-20*
+*Testing analysis: 2026-01-31*

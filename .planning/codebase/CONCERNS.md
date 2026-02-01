@@ -1,220 +1,254 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-01-20
-
-## Security Considerations
-
-**Hardcoded JWT Secret:**
-- Risk: Default JWT_SECRET in production exposes sessions to compromise
-- Files: `proxmox-ui/backend/src/middleware/auth.ts` (line 4)
-- Current mitigation: Environment variable fallback available but not enforced
-- Recommendations: Require JWT_SECRET env var, fail startup if not set. Rotate secrets regularly. Add token expiration enforcement in validation.
-
-**Command Injection in Shell Execution:**
-- Risk: SSH commands and Proxmox API calls use string interpolation without proper escaping
-- Files: `proxmox-ui/backend/src/services/proxmox.ts` (lines 55-56, 86, 113-114), `jarvis-v3/src/jarvis/skills/server_control.py` (lines 89-90)
-- Current mitigation: pvesh/SSH StrictHostKeyChecking=no set, but user input sanitization missing
-- Recommendations: Use array-based exec calls instead of shell interpolation. Validate/whitelist node names and VMID inputs. Never pass raw user input to shell.
-
-**Password Authentication Over Plaintext:**
-- Risk: PAM authentication passes credentials via command-line arguments, visible in process list
-- Files: `proxmox-ui/backend/src/services/proxmox.ts` (line 157)
-- Current mitigation: Only used internally, but still risky
-- Recommendations: Use Proxmox API token auth instead. Store credentials in secure secrets manager. Mask command-line arguments in logging.
-
-**WebSocket Terminal Access Without Rate Limiting:**
-- Risk: No rate limiting on terminal commands; attacker could execute rapid destructive commands
-- Files: `proxmox-ui/backend/src/websocket/terminal.ts`
-- Current mitigation: Token verification present, but no command throttling or audit logging
-- Recommendations: Add rate limiting per session. Log all terminal commands to audit trail. Implement command whitelisting for critical operations.
-
-**Unsafe SSH Key Configuration:**
-- Risk: StrictHostKeyChecking=no disables host key verification, vulnerable to MITM attacks
-- Files: `proxmox-ui/backend/src/services/proxmox.ts` (lines 86, 113), `proxmox-ui/backend/src/websocket/terminal.ts` (line 34), `jarvis-v3/src/jarvis/skills/server_control.py` (line 89)
-- Current mitigation: Only used on internal network
-- Recommendations: Use known_hosts file. Add host key fingerprint validation. Set StrictHostKeyChecking=accept-new instead of no.
-
-## Test Coverage Gaps
-
-**Jarvis Core - No Unit Tests:**
-- What's not tested: All core orchestration logic (`core.py`), LLM integration, skill dispatch
-- Files: `jarvis-v3/src/jarvis/core.py`, `jarvis-v3/src/jarvis/llm/ollama_client.py`, `jarvis-v3/src/jarvis/skills/__init__.py`
-- Risk: Refactoring or dependency updates could break core flows undetected
-- Priority: High
-
-**Jarvis Skills - Limited Error Paths:**
-- What's not tested: Exception handling in skill execution, timeout behavior, malformed responses
-- Files: `jarvis-v3/src/jarvis/skills/server_control.py` (skill execution), `jarvis-v3/src/jarvis/skills/system_info.py`, `jarvis-v3/src/jarvis/skills/time_date.py`
-- Risk: Server control skill could fail silently during cluster operations
-- Priority: High
-
-**Proxmox UI Backend - No Tests:**
-- What's not tested: API endpoints, error scenarios, authentication flows
-- Files: `proxmox-ui/backend/src/routes/nodes.ts`, `proxmox-ui/backend/src/routes/cluster.ts`, `proxmox-ui/backend/src/services/proxmox.ts`
-- Risk: Breaking changes to Proxmox API communication undetected
-- Priority: Medium
-
-**Proxmox UI Frontend - Placeholder Code:**
-- What's not tested: All UI components, state management, API integration
-- Files: `proxmox-ui/frontend/src/App.tsx` (default Vite template, not implemented)
-- Risk: Frontend is essentially non-functional scaffold
-- Priority: Medium
-
-**Voice Components - Partial Testing:**
-- What's not tested: Wake word detection accuracy, audio streaming edge cases, TTS streaming failures
-- Files: `jarvis-v3/src/jarvis/voice/wake_word.py`, `jarvis-v3/src/jarvis/voice/stt.py`, `jarvis-v3/src/jarvis/voice/tts.py`
-- Risk: Silent failures in audio pipeline during production use
-- Priority: Medium
-
-## Error Handling Issues
-
-**Swallowed Exceptions in Proxmox Services:**
-- Problem: Error details hidden from client; all failures return generic "Failed to fetch X" messages
-- Files: `proxmox-ui/backend/src/routes/nodes.ts` (lines 12-14, 22-24, 32-34, etc.), `proxmox-ui/backend/src/routes/cluster.ts`
-- Impact: Debugging cluster issues impossible; users see unhelpful errors
-- Fix approach: Log full error details server-side, return sanitized but informative client errors, implement structured error responses
-
-**Silent Fallbacks Masking Failures:**
-- Problem: SSH failures silently fall back to local execution; config errors hidden
-- Files: `proxmox-ui/backend/src/services/proxmox.ts` (lines 84-109 getNodeTemperature, 111-127 getNodeUpdates)
-- Impact: User may think command ran remotely when it actually ran locally
-- Fix approach: Return error status indicating fallback occurred. Log which nodes failed. Require explicit configuration.
-
-**Unhandled Promise Rejections:**
-- Problem: Async operations in Jarvis don't always await; failures don't bubble up
-- Files: `jarvis-v3/src/jarvis/core.py` (lines 125-146 callback execution without try-catch)
-- Impact: UI callbacks failing could crash skill execution silently
-- Fix approach: Wrap callback invocations in try-catch. Log callback errors separately. Continue processing on callback failure.
-
-**Skill Execution Catches All Exceptions:**
-- Problem: Broad exception catch hides actual cause of failure
-- Files: `jarvis-v3/src/jarvis/skills/__init__.py` (lines 62-66)
-- Impact: Different failure modes (timeout, permission denied, network) all treated identically
-- Fix approach: Catch specific exceptions, log full traceback, return error type to user
+**Analysis Date:** 2026-01-31
 
 ## Tech Debt
 
-**Jarvis Server Control Skill - Complex String Parsing:**
-- Issue: Regex-based VMID extraction fragile; relies on hardcoded VM names
-- Files: `jarvis-v3/src/jarvis/skills/server_control.py` (lines 188-206)
-- Impact: Command matching unreliable for VMs with similar names; easy to accidentally control wrong VM
-- Fix approach: Build VMID lookup table, validate against known VMs before executing, require explicit confirmation for destructive actions
+**Legacy `tokensUsed` field in database schema:**
+- Issue: Schema contains deprecated `tokensUsed` field alongside newer `inputTokens` + `outputTokens` fields
+- Files: `jarvis-backend/src/db/schema.ts:31`
+- Impact: Duplicate data tracking, potential confusion about which field is authoritative
+- Fix approach: Run migration to drop `tokensUsed` column after verifying all code uses new fields
 
-**Proxmox Service - Mixing Concerns:**
-- Issue: Shell execution, Proxmox API calls, SSH commands all in one service file
-- Files: `proxmox-ui/backend/src/services/proxmox.ts` (165 lines)
-- Impact: Testing individual operations difficult; changes to one API break others
-- Fix approach: Split into ProxmoxClient (pvesh), SSHClient, and SystemClient classes. Each handles one concern.
+**Deprecated context API still in use:**
+- Issue: `setOverrideContext()` in `jarvis-backend/src/safety/context.ts` is marked `@deprecated` but still used by `server.ts` and `system.ts` for backward compatibility
+- Files: `jarvis-backend/src/safety/context.ts:90-106`, `jarvis-backend/src/mcp/server.ts`, `jarvis-backend/src/mcp/tools/system.ts`
+- Impact: Module-level state instead of request-scoped isolation, potential for state leakage across concurrent requests
+- Fix approach: Migrate all callers to use `runWithContext()` for proper AsyncLocalStorage-based isolation, then remove legacy API
 
-**Conversation History Trimming - Off-by-One Risk:**
-- Issue: History trimming logic uses max_history + system prompt, easy to exceed max
-- Files: `jarvis-v3/src/jarvis/llm/ollama_client.py` (lines 155-162)
-- Impact: Conversation context grows unbounded if max_history calculation wrong
-- Fix approach: Enforce hard limit regardless of calculation. Add metrics for actual history size. Test with large conversations.
+**Console.log debugging statements in production code:**
+- Issue: Over 100+ `console.log`, `console.warn`, `console.error` statements scattered throughout backend (278 catch blocks found)
+- Files: Backend-wide, particularly in `jarvis-backend/src/services/`, `jarvis-backend/src/monitor/`, `jarvis-backend/src/realtime/`, `jarvis-backend/src/mcp/tools/`
+- Impact: Inconsistent logging, no structured logging, difficult to filter/search logs, performance overhead
+- Fix approach: Replace with structured logging library (e.g., pino, winston) with log levels and JSON output for production
 
-**Configuration Loading - Silent Defaults:**
-- Issue: Missing config file silently loads defaults; typos in config.yaml not detected
-- Files: `jarvis-v3/src/jarvis/core.py` (lines 39-46)
-- Impact: User thinks system is configured for "mistral" but it's actually using "llama"
-- Fix approach: Fail startup if config file expected but missing. Validate config schema. Log all loaded values.
+**Email generation via inline Node.js eval:**
+- Issue: Email sending uses inline `node -e` eval with template literals injected into command string
+- Files: `jarvis-backend/src/monitor/reporter.ts:47`
+- Impact: Fragile, difficult to test, potential for injection if variables not properly escaped
+- Fix approach: Create dedicated email template files or use a proper email template engine
 
-**Wake Word Detection - Mixed Threading/Async:**
-- Issue: Blocking sounddevice operations run in executor; asyncio.Event used alongside threading.Event
-- Files: `jarvis-v3/src/jarvis/voice/wake_word.py` (lines 42, 81-98, 100-132)
-- Impact: Race conditions between detection thread and async main loop; event cleanup incomplete
-- Fix approach: Use asyncio-based audio library or wrapper. Single event model. Proper cleanup in finally blocks.
+**Hardcoded `any` types in TypeScript:**
+- Issue: Type safety bypassed with `any` in UI code (3 occurrences found), though backend appears well-typed
+- Files: `jarvis-ui/src/hooks/useChatSocket.ts`, `jarvis-ui/src/hooks/useSmoothScroll.ts`
+- Impact: Loss of type safety at critical points (socket event handling)
+- Fix approach: Define proper TypeScript interfaces for all socket events and shared types
 
-## Fragile Areas
+**Large complex files (>800 lines):**
+- Issue: Several core files exceed 800-900+ lines, indicating potential need for decomposition
+- Files:
+  - `jarvis-backend/src/mcp/tools/projects.ts` (961 lines)
+  - `jarvis-backend/src/ai/tools.ts` (912 lines)
+  - `jarvis-backend/src/realtime/chat.ts` (847 lines)
+  - `jarvis-backend/src/mcp/tools/smarthome.ts` (843 lines)
+  - `jarvis-backend/src/mcp/tools/transfer.ts` (790 lines)
+  - `jarvis-backend/src/ai/tts.ts` (779 lines)
+  - `jarvis-backend/src/mcp/tools/files.ts` (743 lines)
+  - `jarvis-backend/src/mcp/tools/web.ts` (701 lines)
+- Impact: Difficult to review, test, and maintain; increased cognitive load
+- Fix approach: Extract related functionality into smaller modules (e.g., split tools.ts into tool-registry.ts, tool-definitions.ts, tool-handlers.ts)
 
-**Jarvis Cluster Control Skill:**
-- Files: `jarvis-v3/src/jarvis/skills/server_control.py`
-- Why fragile: Hardcoded node IPs and names; will break if cluster topology changes. Pattern matching on user input could match unintended commands (e.g., "start twingate" matching "twingate" in any context).
-- Safe modification: Add node registry pattern. Use exact word boundaries for matching. Require node names to be explicitly whitelisted. Add dry-run mode for destructive operations.
-- Test coverage: Zero tests. Missing edge cases: non-existent node names, timeouts, permission errors, partial failures in multi-command sequences.
+## Known Bugs
 
-**Proxmox Backend Proxmox Service:**
-- Files: `proxmox-ui/backend/src/services/proxmox.ts`
-- Why fragile: Direct shell execution to pvesh; minimal input validation. Any Proxmox API change breaks all endpoints. SSH fallback masks failures.
-- Safe modification: Validate inputs before shell execution. Use Proxmox REST API client library instead of shell. Add contract tests against real Proxmox API. Mock Proxmox responses for unit tests.
-- Test coverage: Zero tests. Missing validation: VMID numeric checks, node name whitelist, command existence verification.
+**Frigate face recognition API inconsistency:**
+- Symptoms: `sub_label` field in Frigate events can be null, string (legacy), or [name, confidence] array format
+- Files: `jarvis-backend/src/clients/frigate.ts:14-335`
+- Trigger: Depends on Frigate version and face recognition configuration
+- Workaround: Code handles all three formats but adds complexity to every caller
 
-**Proxmox Terminal WebSocket:**
-- Files: `proxmox-ui/backend/src/websocket/terminal.ts`
-- Why fragile: Raw PTY spawning with SSH; no input sanitization; no command history/audit trail; session cleanup incomplete on network errors.
-- Safe modification: Validate node parameter against known cluster nodes. Implement command whitelist (no arbitrary shell access). Add session logging. Use try-finally for cleanup.
-- Test coverage: Zero tests. Missing: EOF handling, oversized input, rapid reconnects, cleanup after ungraceful close.
+**Voice pipeline abrupt session termination:**
+- Symptoms: No graceful cleanup when voice sessions are aborted mid-processing
+- Files: `jarvis-backend/src/realtime/voice.ts:200-299`
+- Trigger: Client disconnects or sends new wake word during active TTS synthesis
+- Workaround: AbortController is used but may leave orphaned TTS workers in queue
+- Impact: Potential memory leak from unfinished synthesis jobs, audio chunks sent to disconnected clients
 
-**Jar Management VM Initialization:**
-- Files: `jarvis-v3/src/jarvis/core.py` (lines 80-112 async initialize)
-- Why fragile: Component initialization order matters but not enforced. If LLM init fails, skills still initialized pointing to None. No health checks.
-- Safe modification: Use initialization class that enforces order. Return health status. Add verify() method to check all components. Skip failed components gracefully.
-- Test coverage: Zero tests. Missing: out-of-order initialization, missing dependencies, component timeouts.
+## Security Considerations
+
+**Missing .env.example entries:**
+- Risk: `.env.example` missing several production variables (HOME_ASSISTANT_TOKEN, WHISPER_ENDPOINT, PRESENCE_DEVICES, MQTT_BROKER_URL)
+- Files: `jarvis-backend/.env.example` (incomplete compared to `jarvis-backend/src/config.ts`)
+- Current mitigation: None - developers must discover required variables from code
+- Recommendations: Sync .env.example with all variables in config.ts, add comments explaining each variable's purpose
+
+**TLS certificate validation disabled cluster-wide:**
+- Risk: `NODE_TLS_REJECT_UNAUTHORIZED=0` required for self-signed Proxmox certs, but disables all TLS verification
+- Files: Environment configuration (not in code)
+- Current mitigation: Runs in trusted local network (192.168.1.0/24)
+- Recommendations: Configure CA certificate trust for Proxmox self-signed cert instead of global disable
+
+**JWT secret defaults to weak value in development:**
+- Risk: `JWT_SECRET` defaults to `'jarvis-dev-secret'` if not set in non-production
+- Files: `jarvis-backend/src/config.ts:13-18`
+- Current mitigation: Throws error in production if not set
+- Recommendations: Add startup warning in development mode, document in .env.example
+
+**CORS origins include localhost variants:**
+- Risk: CORS allows multiple localhost/development origins (5173, 5174, 3004) which could be exploited if attacker controls localhost
+- Files: `jarvis-backend/src/config.ts:142-150`
+- Current mitigation: Only local network IPs, requires authentication
+- Recommendations: Use environment-based CORS config, remove unused ports
+
+**Keyword approval system uses single static phrase:**
+- Risk: ORANGE tier operations require approval keyword, but it's a single static string that could be leaked
+- Files: `jarvis-backend/src/config.ts:43`, `jarvis-backend/src/safety/keyword-approval.ts`
+- Current mitigation: Keyword stored in env var, not hardcoded
+- Recommendations: Consider time-based or per-session approval tokens for higher security
 
 ## Performance Bottlenecks
 
-**Conversation History Not Bounded at Runtime:**
-- Problem: History can exceed _max_history if calculation wrong or many messages arrive rapidly
-- Files: `jarvis-v3/src/jarvis/llm/ollama_client.py` (lines 154-162)
-- Cause: Trimming happens after history append, not before. If user sends 10+ messages rapidly, all accumulate before trim.
-- Improvement path: Trim before append. Use deque with maxlen. Add metrics for memory usage.
+**Database in synchronous blocking mode:**
+- Problem: SQLite better-sqlite3 runs in synchronous mode, blocking Node.js event loop on all queries
+- Files: `jarvis-backend/src/db/memory.ts`, `jarvis-backend/src/db/memories.ts`
+- Cause: better-sqlite3 uses synchronous bindings for performance, but blocks event loop
+- Improvement path: For high-throughput scenarios, migrate to async SQLite driver or move to PostgreSQL; for current scale, this is acceptable tradeoff
 
-**Proxmox Shell Commands Timeout at 30 Seconds:**
-- Problem: Slow cluster operations (rebuilding storage, large migrations) timeout
-- Files: `proxmox-ui/backend/src/services/proxmox.ts` (line 43, 57, 115)
-- Cause: Hard-coded 30s timeout across all operations; not operation-specific
-- Improvement path: Use per-operation timeouts (10s for status, 60s for control actions, 300s for long operations). Return partial results. Implement polling for long operations.
+**TTS synthesis blocks response streaming:**
+- Problem: Voice pipeline synthesizes entire sentence before sending audio, adds latency
+- Files: `jarvis-backend/src/realtime/voice.ts:275-299`, `jarvis-backend/src/ai/tts.ts`
+- Cause: Sentence accumulation + synthesis queue processes full sentences sequentially
+- Improvement path: Implement word-level or chunk-level streaming TTS if supported by XTTS/Piper engines
 
-**SSH Connection Reuse Missing:**
-- Problem: Each SSH call spawns new connection; full handshake overhead
-- Files: `proxmox-ui/backend/src/websocket/terminal.ts` (line 33), `proxmox-ui/backend/src/services/proxmox.ts` (lines 86, 113)
-- Cause: exec() calls create new processes for each operation
-- Improvement path: Connection pooling. SSH session reuse. Batch operations.
+**No caching for cluster status queries:**
+- Problem: Every chat message triggers fresh cluster status query (PVE API calls to 4 nodes)
+- Files: `jarvis-backend/src/ai/system-prompt.ts`, `jarvis-backend/src/realtime/chat.ts`
+- Cause: System prompt rebuilds full cluster state on each message
+- Improvement path: Cache cluster status with 5-10s TTL, invalidate on state changes from monitor
 
-**Audio Processing Blocks Event Loop:**
-- Problem: Whisper transcription and Porcupine processing run synchronously in executor; if slow, blocks other operations
-- Files: `jarvis-v3/src/jarvis/voice/stt.py` (lines 161-184), `jarvis-v3/src/jarvis/voice/wake_word.py` (lines 100-132)
-- Cause: No async audio libraries; using run_in_executor as workaround
-- Improvement path: Use truly async audio library (e.g., soundio-async). Profile real latency. Add timeout monitoring.
+**Frontend React hook dependency arrays incomplete:**
+- Problem: 159+ React hooks (useEffect, useCallback, useMemo) with potential missing dependencies
+- Files: Across all `jarvis-ui/src/components/` and `jarvis-ui/src/hooks/`
+- Cause: Complex state management with Zustand + Socket.IO, easy to miss dependencies
+- Improvement path: Enable exhaustive-deps ESLint rule, audit each hook for correctness
+
+## Fragile Areas
+
+**Tool tier classification system:**
+- Files: `jarvis-backend/src/safety/tiers.ts`
+- Why fragile: 40+ tools manually classified into 5 tiers; adding new tools requires remembering to add to TOOL_TIERS map or defaults to BLACK (blocked)
+- Safe modification: Always add new tools to TOOL_TIERS with explicit tier, add test coverage for tier lookup
+- Test coverage: No automated tests for tier classification (found in `__tests__/safety.test.ts` but limited)
+
+**Path sanitization logic:**
+- Files: `jarvis-backend/src/safety/paths.ts`
+- Why fragile: Complex symlink resolution, parent directory validation, multiple edge cases for non-existent paths
+- Safe modification: All changes must be tested with symlinks, relative paths, URL-encoded paths, non-existent files
+- Test coverage: Safety audit logging present but no comprehensive test suite visible
+
+**Voice session state management:**
+- Files: `jarvis-backend/src/realtime/voice.ts`
+- Why fragile: Tracks active sessions in Map with complex state (recording, processing, TTS queue, abort controller)
+- Safe modification: Always clean up sessions in finally blocks, check aborted state before emitting events
+- Test coverage: No automated tests for concurrent voice sessions or mid-stream aborts
+
+**Context manager token budget calculation:**
+- Files: `jarvis-backend/src/ai/context-manager.ts`
+- Why fragile: Manual token counting heuristics (chars/3.5), budget splitting between history/summary/tools
+- Safe modification: Test with edge cases (empty history, very long tool results, oversized summaries)
+- Test coverage: No tests found for context trimming logic
+
+**MCP tool registration:**
+- Files: `jarvis-backend/src/mcp/server.ts`, `jarvis-backend/src/ai/tools.ts`
+- Why fragile: Tools defined in multiple places, must be registered in both MCP server and AI tools handler
+- Safe modification: When adding new tool, update both files + TOOL_TIERS + system prompt
+- Test coverage: No integration tests verifying tool registration consistency
+
+## Scaling Limits
+
+**Single-process architecture:**
+- Current capacity: All services (HTTP, Socket.IO, MCP, monitoring, voice) in one Node.js process
+- Limit: Bound by single-core performance for TTS synthesis, LLM inference calls
+- Scaling path: Extract TTS service into separate workers, use Redis for Socket.IO clustering
+
+**In-memory session storage:**
+- Current capacity: Voice sessions, pending confirmations, TTS queue all in process memory
+- Limit: Lost on process restart, no shared state across multiple instances
+- Scaling path: Move to Redis-backed session store with TTL
+
+**SQLite database file:**
+- Current capacity: 340KB database, ~20 VMs, 4 nodes, single-user workload
+- Limit: SQLite write concurrency limited, single-node deployment required
+- Scaling path: Acceptable for homelab scale; if multi-user needed, migrate to PostgreSQL
+
+**TTS cache grows unbounded:**
+- Current capacity: Disk cache with max 500 entries (`config.ttsCacheMaxEntries`)
+- Limit: 500-entry limit not enforced in code, cache grows indefinitely
+- Scaling path: Implement LRU eviction in `jarvis-backend/src/ai/tts-cache.ts`
 
 ## Dependencies at Risk
 
-**Proxmox API Stability:**
-- Risk: All cluster control depends on pvesh command-line tool; no formal API contract
-- Impact: Proxmox version upgrade could break shell command format
-- Migration plan: Implement Proxmox REST API client (official/maintained). Add API version detection. Version-specific command mapping.
+**drizzle-kit vulnerable to esbuild exploit (MODERATE):**
+- Risk: CVE in esbuild <=0.24.2 allows arbitrary requests to dev server
+- Impact: Only affects `drizzle-kit` dev tool, not runtime code
+- Migration plan: Upgrade to drizzle-kit 0.18.1+ (currently 0.31.8 which has issue via transitive dep)
+- Priority: Low (dev-only tool, local environment)
 
-**Ollama Model Availability:**
-- Risk: Model name hardcoded as "mistral:7b-instruct-q4_0"; if model removed from registry, system fails silently
-- Impact: User gets "model not found" error but fallback just pulls model (could be 7GB download)
-- Migration plan: Validate model exists before initialization. Implement model fallback list. Add download progress tracking.
+**hono vulnerable to XSS and cache poisoning (MODERATE):**
+- Risk: 4 moderate CVEs in hono <4.11.7
+- Impact: hono is transitive dependency (not directly used), likely via drizzle-kit
+- Migration plan: Upgrade transitive dependencies or wait for upstream fix
+- Priority: Low (not in production dependency chain)
 
-**Porcupine Access Key Requirement:**
-- Risk: Wake word detection requires Picovoice access key; service dependency
-- Impact: Without key, wake word detection in mock mode only; unreliable for production
-- Migration plan: Support open-source wake word detection (openWakeWord). Make Porcupine optional. Document fallback behavior.
+**express v5.2.1 (release candidate):**
+- Risk: Using Express 5 RC instead of stable v4
+- Impact: Potential API changes before final release, undiscovered bugs
+- Migration plan: Monitor for Express 5.0 stable release, test before upgrading
+- Priority: Medium (core dependency, but API stable in practice)
 
 ## Missing Critical Features
 
-**No Persistent Storage for Conversation Context:**
-- Problem: Conversation history lost when Jarvis restarts
-- Blocks: Multi-turn context across sessions. Learning user preferences.
+**No health check endpoint for Docker:**
+- Problem: Backend has `/health` endpoint but doesn't verify critical dependencies (database, SSH, PVE API)
+- Blocks: Kubernetes/Docker health probes can't detect degraded state
+- Files: `jarvis-backend/src/api/health.ts`
 
-**No Cluster State Validation Before Destructive Operations:**
-- Problem: Server control skill can blindly execute commands without checking preconditions
-- Blocks: Safe automated cluster operations. Prevents accidental cascade failures (e.g., stopping primary node).
+**No graceful shutdown:**
+- Problem: Process termination doesn't clean up active voice sessions, close database connections, or drain TTS queue
+- Blocks: Zero-downtime deployments, data loss on restart
+- Files: `jarvis-backend/src/index.ts:143-148`
 
-**No Audit Trail for Cluster Operations:**
-- Problem: No logging of who executed which command and when
-- Blocks: Compliance, troubleshooting, accountability. Can't trace if someone accidentally restarted wrong VM.
+**No rate limiting on LLM API:**
+- Problem: Claude API calls have daily cost limit check but no per-minute/per-user rate limiting
+- Blocks: Protection against runaway costs from loops or abuse
+- Files: `jarvis-backend/src/ai/cost-tracker.ts`
 
-**No Input Validation in Shell Execution:**
-- Problem: All shell commands pass through without sanitization
-- Blocks: Secure terminal access. Prevents injection attacks.
+**No WebSocket connection limits:**
+- Problem: Unlimited concurrent Socket.IO connections, no per-IP limits
+- Blocks: DoS protection
+- Files: `jarvis-backend/src/index.ts`
 
-**Frontend UI Not Implemented:**
-- Problem: Proxmox UI frontend is default Vite template scaffold
-- Blocks: Cluster management from web interface. Only backend API available.
+## Test Coverage Gaps
+
+**No tests for realtime Socket.IO handlers:**
+- What's not tested: Chat, terminal, voice socket handlers
+- Files: `jarvis-backend/src/realtime/chat.ts`, `jarvis-backend/src/realtime/terminal.ts`, `jarvis-backend/src/realtime/voice.ts`
+- Risk: Regressions in event handling, state management, error paths
+- Priority: High (core user-facing functionality)
+
+**No tests for MCP tool handlers:**
+- What's not tested: 40+ MCP tools in `/mcp/tools/` directory
+- Files: All files in `jarvis-backend/src/mcp/tools/`
+- Risk: Breaking changes to cluster management, file operations, smart home integrations
+- Priority: High (root-level cluster operations)
+
+**No tests for monitoring/autonomy system:**
+- What's not tested: Runbooks, guardrails, remediation actions, escalation logic
+- Files: `jarvis-backend/src/monitor/runbooks.ts`, `jarvis-backend/src/monitor/guardrails.ts`, `jarvis-backend/src/monitor/poller.ts`
+- Risk: Autonomous actions could fail silently or cause unintended cluster changes
+- Priority: Critical (autonomous operations on production cluster)
+
+**No integration tests for frontend components:**
+- What's not tested: React components, Zustand stores, socket integration
+- Files: All `jarvis-ui/src/components/`, `jarvis-ui/src/hooks/`, `jarvis-ui/src/stores/`
+- Risk: UI regressions, broken user flows, state management bugs
+- Priority: Medium (manual testing catches most issues)
+
+**Limited test coverage overall:**
+- Backend has 4 test files: `safety.test.ts`, `memory-extractor.test.ts`, `memory-recall.test.ts`, `cost-tracker.test.ts`, `router.test.ts`
+- Frontend has no test files found
+- Risk: Major refactoring or dependency upgrades break functionality without detection
+- Priority: High (increase to >60% coverage for business logic)
 
 ---
 
-*Concerns audit: 2026-01-20*
+*Concerns audit: 2026-01-31*

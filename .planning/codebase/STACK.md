@@ -1,107 +1,127 @@
 # Technology Stack
 
-**Analysis Date:** 2026-01-20
+**Analysis Date:** 2026-01-31
 
 ## Languages
 
 **Primary:**
-- TypeScript 5.9.3 - Backend API (`/root/proxmox-ui/backend/`) and frontend (`/root/proxmox-ui/frontend/`)
-- Python 3.11+ - Voice assistant and automation (`/root/jarvis-v3/`)
+- TypeScript 5.9.3 (backend), 5.6.2 (frontend) - All application code
+- JavaScript ES2022 (runtime target)
 
 **Secondary:**
-- JavaScript (CommonJS/ESM) - Runtime execution for TypeScript
+- Python 3 - TTS service (XTTS v2), Whisper STT, Piper TTS
+- Shell (Bash) - Cluster SSH operations
 
 ## Runtime
 
 **Environment:**
-- Node.js (version not pinned, must support ES2022)
-- Python 3.11+
+- Node.js 22.22.0
 
 **Package Manager:**
-- npm (Node.js projects use `package.json`)
-- pip/hatch (Python project uses `pyproject.toml`)
-
-**Lockfiles:**
-- `package-lock.json` present for `/root/proxmox-ui/backend/`
-- `pyproject.toml` with pinned versions for `/root/jarvis-v3/`
-- No lockfile for `/root/proxmox-ui/frontend/` (check if needed)
+- npm
+- Lockfile: present (`package-lock.json` in both `jarvis-backend/` and `jarvis-ui/`)
 
 ## Frameworks
 
-**Core (JavaScript/TypeScript):**
-- Express 5.2.1 - REST API backend (`/root/proxmox-ui/backend/`)
-- React 19.2.0 - Frontend UI (`/root/proxmox-ui/frontend/`)
-- Vite 7.2.4 - Build tool and dev server (`/root/proxmox-ui/frontend/`)
+**Core:**
+- Express 5.2.1 - Backend HTTP server
+- React 19.0.0 - Frontend UI framework
+- Vite 6.0.5 - Frontend build tool and dev server
 
-**Voice & AI (Python):**
-- Ollama 0.4.0 - Local LLM inference client (`/root/jarvis-v3/`)
-- faster-whisper 1.0.0 - Speech-to-text (`/root/jarvis-v3/src/jarvis/voice/stt.py`)
-- piper-tts 1.2.0 - Text-to-speech (`/root/jarvis-v3/src/jarvis/voice/tts.py`)
-- pvporcupine 3.0.0 - Wake word detection (`/root/jarvis-v3/src/jarvis/voice/wake_word.py`)
+**Real-Time Communication:**
+- Socket.IO 4.8.3 (server and client) - WebSocket communication for chat, voice, terminal, events, cluster status
+
+**Database:**
+- Drizzle ORM 0.45.1 - SQL query builder and schema management
+- better-sqlite3 12.6.2 - Embedded SQLite database
+
+**AI/ML:**
+- @anthropic-ai/sdk 0.71.2 - Claude API client for agentic tool-use LLM
+- openai 6.16.0 - OpenAI-compatible client for local Qwen LLM and fallback TTS
+- @modelcontextprotocol/sdk 1.25.3 - MCP server for tool registration and execution
 
 **Testing:**
-- pytest 8.0.0 - Python test runner
-- pytest-asyncio 0.24.0 - Async test support
+- Vitest 4.0.18 - Unit test framework (backend only)
 
 **Build/Dev:**
-- tsx 4.21.0 - TypeScript execution and watch mode
-- TypeScript 5.9.3 - Type checking and compilation
+- tsx 4.21.0 - TypeScript execution for development
+- TypeScript Compiler (tsc) - Production builds
+- ESLint 9.17.0 - Code linting (frontend)
+- Tailwind CSS 4.1.18 - UI styling framework
 
 ## Key Dependencies
 
 **Critical:**
-- `express` 5.2.1 - Required for API server; handles all HTTP requests
-- `ws` 8.19.0 - WebSocket library; used for terminal streaming (`/root/proxmox-ui/backend/src/websocket/terminal.ts`)
-- `node-pty` 1.1.0 - Pseudo-terminal spawning; enables interactive shell over WebSocket
-- `jsonwebtoken` 9.0.3 - JWT authentication; issues and verifies auth tokens
-- `cors` 2.8.5 - CORS middleware for cross-origin requests
-- `ollama` 0.4.0 - Required for LLM operations in Jarvis
+- socket.io 4.8.3 - Real-time bidirectional communication between frontend and backend
+- @anthropic-ai/sdk 0.71.2 - Claude Sonnet 4 integration for cluster management
+- drizzle-orm 0.45.1 - Database layer for events, conversations, memory, preferences
+- node-ssh 13.2.1 - SSH client for executing commands on cluster nodes
+- undici 7.3.0 - HTTP client for Proxmox API calls (replaces node-fetch)
 
 **Infrastructure:**
-- `react-router-dom` 7.12.0 - Frontend routing
-- `@tanstack/react-query` 5.90.18 - Frontend data fetching and caching
-- `lucide-react` 0.562.0 - Icon library
-- `xterm` 5.3.0 - Terminal emulator for web
-- `@xterm/addon-fit` 0.11.0 - XTerm auto-sizing
-- `@xterm/addon-web-links` 0.12.0 - XTerm hyperlink support
-- `httpx` 0.27.0 - Async HTTP client for Proxmox API calls (Jarvis)
-- `pyyaml` 6.0 - Configuration file parsing (Jarvis)
-- `rich` 13.0.0 - Terminal output formatting (Jarvis)
-- `sounddevice` 0.5.0 - Audio device access (Jarvis)
-- `numpy` 1.26.0 - Numerical computing for audio (Jarvis)
+- jsonwebtoken 9.0.3 - JWT authentication for API and WebSocket connections
+- cors 2.8.6 - Cross-origin resource sharing for frontend
+- zod 4.3.6 - Runtime schema validation for MCP tool inputs
+- mqtt 5.11.1 - Real-time alerts from Frigate NVR via MQTT broker
+- dotenv 17.2.3 - Environment variable configuration
+
+**UI:**
+- zustand 5.0.10 - State management
+- motion 12.29.0 - Animation library
+- sonner 2.0.7 - Toast notifications
+- @xterm/xterm 6.0.0 - Terminal emulator for SSH sessions
+- react-hotkeys-hook 5.2.3 - Keyboard shortcuts
 
 ## Configuration
 
 **Environment:**
-- No `.env` file detected in codebase (relies on inline defaults)
-- Express backend defaults to `PORT=3001` if unset
-- JWT authentication uses default secret `proxmox-ui-secret-change-in-production` (see `JWT_SECRET` in `/root/proxmox-ui/backend/src/middleware/auth.ts`)
-- Vite dev server configured to proxy API calls to `http://localhost:3001`
-- Ollama defaults to `http://localhost:11434` (see `/root/jarvis-v3/config/jarvis.yaml`)
+- Configuration via `.env` file in `jarvis-backend/`
+- Critical environment variables:
+  - `ANTHROPIC_API_KEY` - Claude API access
+  - `PVE_TOKEN_ID`, `PVE_TOKEN_SECRET` - Proxmox API authentication
+  - `JWT_SECRET` - Session token signing
+  - `JARVIS_PASSWORD` - Login password
+  - `HOME_ASSISTANT_TOKEN` - Smart home integration
+  - `LOCAL_LLM_ENDPOINT` - Qwen inference server (http://192.168.1.50:8080)
+  - `LOCAL_TTS_ENDPOINT` - XTTS v2 voice synthesis service
+  - `WHISPER_ENDPOINT` - Faster-Whisper STT service
+  - `FRIGATE_URL` - NVR camera events API
+  - `MQTT_BROKER_URL` - Real-time event streaming
 
 **Build:**
-- TypeScript: `tsconfig.json` targets `ES2022`, `module: NodeNext`, strict mode enabled
-  - Backend: `/root/proxmox-ui/backend/tsconfig.json` - compiled to `dist/` directory
-  - Frontend: `/root/proxmox-ui/frontend/tsconfig.json` - references `tsconfig.app.json` and `tsconfig.node.json`
-- Vite: `/root/proxmox-ui/frontend/vite.config.ts` - React + Tailwind CSS plugins
-- Python: `pyproject.toml` specifies `hatchling` build backend
+- `tsconfig.json` - TypeScript compiler options (both projects)
+- `drizzle.config.ts` - Database schema location and connection
+- `vitest.config.ts` - Test configuration (backend)
+- `vite.config.ts` - Frontend build and dev server configuration
+- `.env.example` - Template for required environment variables
+
+**Docker:**
+- `docker-compose.yml` - Multi-service deployment orchestration
+- `Dockerfile` (backend) - Node.js 22-slim with ffmpeg for Opus encoding
+- `Dockerfile` (frontend) - nginx:alpine serving pre-built React app
+- Pre-built on host due to AppArmor restrictions in Proxmox kernel
 
 ## Platform Requirements
 
 **Development:**
-- Node.js (ES2022 capable)
-- Python 3.11+
-- CUDA support optional for Whisper (`device: cuda` in config)
-- Audio hardware (for Jarvis voice features)
-- SSH access to Proxmox cluster nodes (for remote commands)
+- Node.js 22.x
+- npm or compatible package manager
+- SQLite support
+- SSH key for cluster access (`~/.ssh/id_ed25519`)
 
 **Production:**
-- Deployment target: Proxmox VE 9.1.4+ (runs on Home node 192.168.1.50)
-- Direct `pvesh` CLI access required (backend must run on Proxmox host)
-- WebSocket support required (terminal streaming)
-- Network access to Proxmox cluster nodes for SSH/remote execution
-- Ollama service available at configured `base_url` (local or remote)
+- Docker with Docker Compose
+- Proxmox VE cluster (API token required)
+- SSH key-based authentication to cluster nodes
+- Volumes: `jarvis-data` (SQLite, TTS cache), `piper-voices`, `searxng-data`, `whisper-models`
+- Optional: NVIDIA GPU for XTTS TTS (falls back to Piper CPU-based TTS)
+- Network access to: Proxmox API (8006), LLM server (8080), Home Assistant (8123), Frigate (5000), MQTT (1883)
+
+**External Services:**
+- Anthropic Claude API (claude-sonnet-4-20250514)
+- Local LLM server (llama-server with Qwen 2.5 7B Instruct Q4_K_M)
+- Optional: OpenAI API (TTS fallback), ElevenLabs API (TTS fallback)
 
 ---
 
-*Stack analysis: 2026-01-20*
+*Stack analysis: 2026-01-31*

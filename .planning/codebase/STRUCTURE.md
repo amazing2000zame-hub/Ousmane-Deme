@@ -1,457 +1,273 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-01-20
+**Analysis Date:** 2026-01-31
 
 ## Directory Layout
 
 ```
-/root/
-├── proxmox-ui/                 # Full-stack web UI for cluster management
-│   ├── backend/                # Express.js API server
-│   │   ├── src/
-│   │   │   ├── index.ts        # Server entry point
-│   │   │   ├── routes/         # API endpoint handlers
-│   │   │   ├── middleware/     # Auth, logging, etc.
-│   │   │   ├── services/       # Business logic (Proxmox integration)
-│   │   │   └── websocket/      # Terminal emulation over WebSocket
-│   │   ├── dist/               # Compiled output (post-build)
-│   │   ├── package.json        # Node dependencies
-│   │   └── tsconfig.json       # TypeScript config
-│   └── frontend/               # React SPA (Vite)
-│       ├── src/
-│       │   ├── main.tsx        # React entry point
-│       │   ├── App.tsx         # Root component
-│       │   └── assets/         # Static assets
-│       ├── public/             # Public static files
-│       ├── dist/               # Built output (post-build)
-│       ├── package.json        # Node dependencies
-│       └── tsconfig.json       # TypeScript config
-├── jarvis-v3/                  # Voice-activated AI assistant
-│   ├── src/
-│   │   └── jarvis/             # Main package
-│   │       ├── core.py         # Main orchestrator
-│   │       ├── cli.py          # CLI entry point
-│   │       ├── llm/            # LLM integration
-│   │       │   └── ollama_client.py  # Ollama API wrapper
-│   │       ├── voice/          # Voice processing
-│   │       │   ├── stt.py      # Speech-to-text (Whisper)
-│   │       │   ├── tts.py      # Text-to-speech (Piper)
-│   │       │   └── wake_word.py # Wake word detection (Porcupine)
-│   │       ├── skills/         # Command handlers
-│   │       │   ├── __init__.py # Skill base class and registry
-│   │       │   ├── server_control.py
-│   │       │   ├── system_info.py
-│   │       │   └── time_date.py
-│   │       └── utils/          # Shared utilities
-│   ├── config/
-│   │   └── jarvis.yaml         # Runtime configuration
-│   ├── scripts/                # Deployment/automation scripts (empty)
-│   ├── tests/                  # Unit tests (placeholder)
-│   ├── venv/                   # Python virtual environment
-│   ├── pyproject.toml          # Python package config
-│   └── README.md               # Documentation
-├── documentation/              # Cluster and system documentation
-│   ├── home-monitoring-project/
-│   ├── security-monitor-setup/
-│   ├── MANAGEMENT_VM_SETUP.md
-│   └── NETWORK_STORAGE_SETUP.txt
-├── cluster-plans/              # Deployment plans
-├── telegram-uploads/           # Media uploads from Telegram bot
-└── .planning/                  # GSD mapping documents
-    └── codebase/               # Architecture and code analysis
-        ├── ARCHITECTURE.md
-        └── STRUCTURE.md
-```
+jarvis-backend/
+├── src/
+│   ├── __tests__/         # Vitest unit tests
+│   ├── ai/                # AI orchestration (router, providers, tools, TTS, STT)
+│   │   └── providers/     # LLM provider implementations
+│   ├── api/               # Express REST routes
+│   ├── auth/              # JWT authentication
+│   ├── clients/           # External service clients (Proxmox, SSH, Frigate, HA)
+│   ├── db/                # Database schema and memory stores
+│   ├── mcp/               # Model Context Protocol server and tools
+│   │   └── tools/         # Tool implementations by category
+│   ├── monitor/           # Autonomous monitoring system
+│   ├── presence/          # User presence detection
+│   ├── realtime/          # Socket.IO handlers (chat, voice, terminal, emitter)
+│   ├── safety/            # Safety tier system and validation
+│   ├── services/          # Background services (cleanup, alerts, MQTT)
+│   ├── config.ts          # Configuration singleton
+│   └── index.ts           # Application entry point
+├── data/                  # SQLite database files (gitignored)
+├── dist/                  # Compiled JavaScript output
+├── package.json           # Dependencies and scripts
+├── tsconfig.json          # TypeScript configuration
+└── Dockerfile             # Container image definition
 
----
+jarvis-ui/
+├── src/
+│   ├── audio/             # Audio processing utilities
+│   ├── components/        # React components
+│   │   ├── alerts/        # Alert/notification toasts
+│   │   ├── boot/          # Boot sequence animation
+│   │   ├── camera/        # Camera/security panels
+│   │   ├── center/        # Center display (chat, globe, activity feed)
+│   │   ├── layout/        # Top-level layout (Dashboard, TopBar)
+│   │   ├── left/          # Left sidebar (nodes, VMs, storage)
+│   │   ├── right/         # Right sidebar (terminal, cost)
+│   │   └── shared/        # Reusable components
+│   ├── effects/           # Visual effects (scan lines, grid background)
+│   ├── hooks/             # Custom React hooks (Socket.IO, keyboard nav, voice)
+│   ├── services/          # API clients and Socket.IO factories
+│   ├── stores/            # Zustand state management
+│   ├── theme/             # Tailwind color theme definitions
+│   ├── types/             # TypeScript type definitions
+│   ├── utils/             # Helper functions (format, etc.)
+│   ├── vendor/            # Third-party code (globe.js)
+│   ├── App.tsx            # Root component with auth routing
+│   ├── main.tsx           # ReactDOM entry point
+│   └── index.css          # Global Tailwind styles
+├── public/                # Static assets
+├── dist/                  # Production build output
+├── package.json           # Dependencies and scripts
+├── vite.config.ts         # Vite bundler configuration
+└── Dockerfile             # Container image with nginx
+```
 
 ## Directory Purposes
 
-### `/root/proxmox-ui/backend/src/`
+**jarvis-backend/src/ai/**
+- Purpose: AI provider orchestration, intent routing, tool execution loop
+- Contains: Claude/Qwen providers, router, cost tracker, TTS/STT, memory extraction, context management
+- Key files: `router.ts` (intent-based routing), `loop.ts` (streaming execution), `tts.ts` (XTTS synthesis + caching)
 
-**Purpose:** Express.js API server code
+**jarvis-backend/src/api/**
+- Purpose: HTTP REST endpoints for auth, health, tools, camera, memory
+- Contains: Express routers with auth middleware
+- Key files: `routes.ts` (main router + monitor routes), `health.ts`, `camera.ts`, `cost.ts`, `memory.ts`, `tts.ts`
 
-**Contains:**
-- HTTP route handlers
-- Business logic for cluster operations
-- WebSocket terminal server
-- Authentication and authorization
-- Proxmox API integration
+**jarvis-backend/src/clients/**
+- Purpose: External service integration with connection management
+- Contains: Proxmox client (per-node instances), SSH client (connection pool), Frigate, Home Assistant, registry
+- Key files: `proxmox.ts` (API wrapper), `ssh.ts` (exec + PTY), `frigate.ts` (camera events)
 
-**Key files:**
-- `index.ts` - Server initialization
-- `routes/` - API endpoints
-- `services/proxmox.ts` - Proxmox operations
-- `middleware/auth.ts` - JWT verification
-- `websocket/terminal.ts` - PTY management
+**jarvis-backend/src/db/**
+- Purpose: Database schema and in-memory state stores
+- Contains: Drizzle ORM schema, memory store (events + preferences), memory bank (TTL tiers), migrations
+- Key files: `schema.ts` (tables), `memory.ts` (event store), `memories.ts` (semantic memory), `migrate.ts`
 
-### `/root/proxmox-ui/frontend/src/`
+**jarvis-backend/src/mcp/**
+- Purpose: Tool registry and execution pipeline with safety enforcement
+- Contains: MCP server, tool registration functions
+- Key files: `server.ts` (executeTool entry point), `tools/*.ts` (9 tool categories)
 
-**Purpose:** React application source code
+**jarvis-backend/src/mcp/tools/**
+- Purpose: Tool implementations grouped by domain
+- Contains: cluster.ts, lifecycle.ts, system.ts, files.ts, transfer.ts, projects.ts, voice.ts, smarthome.ts, web.ts
+- Key files: `cluster.ts` (13 tools), `lifecycle.ts` (start/stop/restart VMs), `files.ts` (read/list with path safety)
 
-**Contains:**
-- React components (currently minimal - placeholder Vite app)
-- Styles (CSS, Tailwind)
-- TypeScript type definitions
+**jarvis-backend/src/monitor/**
+- Purpose: Autonomous monitoring with tiered polling
+- Contains: State tracker, threshold evaluator, poller loops, guardrails, runbooks, reporter
+- Key files: `index.ts` (lifecycle), `poller.ts` (4 polling tiers), `state-tracker.ts`, `thresholds.ts`
 
-**Key files:**
-- `main.tsx` - React root
-- `App.tsx` - Root component
-- `index.css` - Global styles
-- `assets/` - SVGs and static images
+**jarvis-backend/src/realtime/**
+- Purpose: Socket.IO namespace handlers for bidirectional communication
+- Contains: Chat, voice, terminal, emitter (polling), socket setup, timing utilities
+- Key files: `chat.ts` (AI chat), `voice.ts` (voice mode), `terminal.ts` (SSH PTY), `emitter.ts` (cluster state polling)
 
-### `/root/jarvis-v3/src/jarvis/`
+**jarvis-backend/src/safety/**
+- Purpose: Multi-tier safety system and input validation
+- Contains: Tier classification, path sanitization, protected resource checks, keyword approval, context overrides
+- Key files: `tiers.ts` (4-tier system), `paths.ts` (path validation), `sanitize.ts`, `keyword-approval.ts`
 
-**Purpose:** Main Python package for Jarvis assistant
+**jarvis-backend/src/services/**
+- Purpose: Background services started on server init
+- Contains: Memory cleanup (TTL expiration), alert monitor (REST fallback), MQTT alert service
+- Key files: `memory-cleanup.ts`, `alert-monitor.ts`, `mqtt-alert-service.ts`
 
-**Contains:**
-- Core orchestration logic
-- Voice processing pipeline
-- LLM conversation management
-- Skill system and plugins
-- CLI interface
+**jarvis-ui/src/components/**
+- Purpose: React component tree organized by layout region
+- Contains: 8 subdirectories for logical grouping
+- Key files: `layout/Dashboard.tsx` (3-column grid), `center/ChatPanel.tsx`, `right/TerminalPanel.tsx`
 
-**Key subdirectories:**
-- `llm/` - Ollama client and LLM integration
-- `voice/` - Audio input/output (STT, TTS, wake word)
-- `skills/` - Command handlers with pattern matching
-- `utils/` - Shared utilities (logging, config)
+**jarvis-ui/src/hooks/**
+- Purpose: Custom React hooks for shared logic
+- Contains: Socket.IO hooks (cluster, events, chat, voice), terminal hook, keyboard nav, speech recognition
+- Key files: `useClusterSocket.ts`, `useChatSocket.ts`, `useVoice.ts`, `useTerminal.ts`
 
-### `/root/jarvis-v3/config/`
+**jarvis-ui/src/stores/**
+- Purpose: Zustand global state stores
+- Contains: 9 stores for different domains (auth, cluster, chat, voice, terminal, UI, metrics, camera, alerts)
+- Key files: `cluster.ts` (with PERF-17 diffing), `chat.ts`, `auth.ts`, `ui.ts`
 
-**Purpose:** Configuration files for Jarvis
-
-**Contains:**
-- `jarvis.yaml` - Main configuration (models, audio, cluster nodes)
-
-### `/root/documentation/`
-
-**Purpose:** System and cluster documentation
-
-**Contains:**
-- Homelab architecture diagrams (if any)
-- Setup guides for specific services
-- Network configuration documentation
-- VM/container setup procedures
-
----
+**jarvis-ui/src/services/**
+- Purpose: API clients and Socket.IO connection factories
+- Contains: REST API wrapper, Socket.IO namespace factories
+- Key files: `api.ts` (fetch wrapper with auth), `socket.ts` (namespace factories)
 
 ## Key File Locations
 
-### Entry Points
+**Entry Points:**
+- `jarvis-backend/src/index.ts`: Backend server startup
+- `jarvis-ui/src/main.tsx`: Frontend root render
+- `jarvis-ui/src/App.tsx`: Auth routing and socket initialization
 
-| File | Purpose | Trigger |
-|------|---------|---------|
-| `proxmox-ui/backend/src/index.ts` | Express server startup | `npm run dev` |
-| `proxmox-ui/frontend/src/main.tsx` | React app mount | `npm run dev` or browser |
-| `jarvis-v3/src/jarvis/cli.py` | CLI interface | `jarvis` command |
-| `jarvis-v3/src/jarvis/core.py` | Main event loop | Jarvis.run() |
+**Configuration:**
+- `jarvis-backend/src/config.ts`: Environment-based config singleton
+- `jarvis-backend/.env`: Backend secrets (Proxmox tokens, API keys)
+- `jarvis-ui/vite.config.ts`: Frontend build configuration
+- `jarvis-backend/drizzle.config.ts`: Database migrations config
 
-### Configuration
+**Core Logic:**
+- `jarvis-backend/src/mcp/server.ts`: Tool execution pipeline
+- `jarvis-backend/src/ai/router.ts`: Intent-based AI routing
+- `jarvis-backend/src/ai/loop.ts`: Streaming chat loop with tools
+- `jarvis-backend/src/realtime/emitter.ts`: Cluster state polling
+- `jarvis-backend/src/monitor/poller.ts`: Autonomous monitoring loops
 
-| File | Purpose | Format |
-|------|---------|--------|
-| `proxmox-ui/backend/package.json` | Node deps + scripts | JSON |
-| `proxmox-ui/frontend/package.json` | Node deps + scripts | JSON |
-| `jarvis-v3/pyproject.toml` | Python package config | TOML |
-| `jarvis-v3/config/jarvis.yaml` | Runtime configuration | YAML |
-| `proxmox-ui/backend/tsconfig.json` | TypeScript compiler options | JSON |
-| `proxmox-ui/frontend/tsconfig.json` | TypeScript compiler options | JSON |
-
-### Core Logic
-
-| File | Responsibility |
-|------|-----------------|
-| `proxmox-ui/backend/src/services/proxmox.ts` | Proxmox CLI wrapper (pvesh commands) |
-| `jarvis-v3/src/jarvis/llm/ollama_client.py` | LLM API client and conversation history |
-| `jarvis-v3/src/jarvis/skills/__init__.py` | Skill registry and pattern matching |
-| `jarvis-v3/src/jarvis/voice/stt.py` | Audio capture and transcription |
-| `jarvis-v3/src/jarvis/voice/tts.py` | Text-to-speech synthesis |
-
-### Testing
-
-| Directory | Type | Runner |
-|-----------|------|--------|
-| `jarvis-v3/tests/` | Python unit tests | pytest |
-| None (proxmox-ui) | No tests yet | N/A |
-
----
+**Testing:**
+- `jarvis-backend/src/__tests__/*.test.ts`: Vitest unit tests
+- `jarvis-backend/vitest.config.ts`: Test runner configuration
 
 ## Naming Conventions
 
-### Files
+**Files:**
+- Backend TypeScript: kebab-case (`state-tracker.ts`, `mqtt-alert-service.ts`)
+- Frontend React components: PascalCase (`ChatPanel.tsx`, `NodeCard.tsx`)
+- Frontend utilities: kebab-case (`format.ts`, `useChatSocket.ts`)
+- Test files: `*.test.ts` suffix
 
-**Backend (TypeScript/JavaScript):**
-- `camelCase.ts` for files with single export
-- `routes/` subdirectory files use lowercase: `auth.ts`, `nodes.ts`
-- Service files: `proxmox.ts` (exported functions use camelCase)
-- Example: `middleware/auth.ts` exports `authMiddleware()`, `generateToken()`
+**Directories:**
+- All lowercase, no hyphens (`realtime`, `smarthome`)
+- Pluralized when containing multiple items (`clients`, `stores`, `tools`)
+- Singular for single-purpose modules (`monitor`, `presence`)
 
-**Frontend (React/TypeScript):**
-- `.tsx` for React components
-- `.ts` for non-component modules
-- `.css` for component styles
-- Example: `App.tsx`, `index.css`
+**Variables:**
+- camelCase for all local variables and functions
+- PascalCase for React components and TypeScript interfaces/types
+- UPPER_SNAKE_CASE for constants (`POLL_INTERVALS`, `TOOL_TIERS`, `ACTION_KEYWORDS`)
 
-**Python (Jarvis):**
-- `snake_case.py` for modules
-- `SnakeCase` or `snake_case` per Python convention (no enforcement found)
-- `__init__.py` in packages
-- Example: `ollama_client.py`, `server_control.py`
-
-**Configuration:**
-- `snake_case.yaml` or `snake_case.toml`
-- Example: `jarvis.yaml`, `pyproject.toml`
-
-### Directories
-
-**Backend structure:**
-- `routes/` - Express route handlers (by domain)
-- `middleware/` - Express middleware functions
-- `services/` - Business logic and external integrations
-- `websocket/` - WebSocket-specific handlers
-
-**Frontend structure:**
-- `src/` - Source code
-- `public/` - Static files (served as-is)
-- `dist/` - Build output
-- `assets/` - SVGs and images
-
-**Python structure:**
-- `src/jarvis/` - Main package
-- `config/` - Configuration files
-- `scripts/` - Utility scripts
-- `tests/` - Test suites
-- `venv/` - Virtual environment
-
----
+**Types:**
+- Interface names without "I" prefix: `NodeData`, `ToolResult`, `SafetyResult`
+- Type aliases for unions: `ActionTier`, `ToolSource`, `TTSEngine`
+- Props interfaces suffixed: `ChatMessageProps`, `NodeCardProps`
 
 ## Where to Add New Code
 
-### New Feature in Proxmox UI Backend
+**New MCP Tool:**
+- Implementation: Choose category in `jarvis-backend/src/mcp/tools/` or create new file
+- Registration: Add registerXTools() call in `jarvis-backend/src/mcp/server.ts`
+- Safety: Add tier mapping in `jarvis-backend/src/safety/tiers.ts` TOOL_TIERS
+- Tests: Add test in `jarvis-backend/src/__tests__/` if complex
 
-**Primary code:**
-- Route handler: `proxmox-ui/backend/src/routes/{domain}.ts`
-  - Example: `storage.ts` for storage operations
-  - Pattern: `router.get/post/put/delete(path, authMiddleware, handler)`
+**New AI Provider:**
+- Implementation: `jarvis-backend/src/ai/providers/<provider>-provider.ts`
+- Interface: Implement `LLMProvider` from `jarvis-backend/src/ai/providers.ts`
+- Registration: Add to providers map in `jarvis-backend/src/realtime/chat.ts` and `voice.ts`
 
-**Secondary files:**
-- Service functions: `proxmox-ui/backend/src/services/proxmox.ts`
-  - Add new function following existing patterns
-  - Wrap shell commands or API calls
-  - Return typed data
-- Middleware: `proxmox-ui/backend/src/middleware/` if adding auth/validation
-- Mount in: `proxmox-ui/backend/src/index.ts`
-  - Add `app.use('/api/storage', storageRoutes)`
+**New Socket.IO Namespace:**
+- Setup: Add namespace creation in `jarvis-backend/src/realtime/socket.ts`
+- Handler: Create handler file in `jarvis-backend/src/realtime/<name>.ts`
+- Registration: Call setup handler in `jarvis-backend/src/index.ts`
+- Frontend hook: Create `jarvis-ui/src/hooks/use<Name>Socket.ts`
 
-**Test location:** Create `proxmox-ui/backend/src/routes/storage.test.ts` (not yet established)
+**New React Component:**
+- Implementation: Place in appropriate layout directory (`left`, `center`, `right`, `shared`)
+- Component files: PascalCase filename matching component name
+- Co-located types: Define props interface in same file
+- Imports: Use absolute imports for services/stores, relative for sibling components
 
-### New Component in Proxmox UI Frontend
+**New Background Service:**
+- Implementation: `jarvis-backend/src/services/<name>.ts`
+- Exports: start<Name>() and stop<Name>() functions
+- Registration: Call start in `jarvis-backend/src/index.ts`, add stop to shutdown()
 
-**Primary code:**
-- Component: `proxmox-ui/frontend/src/` or organized subdirectory
-- Pattern: Named export, `.tsx` file, React hooks for state
+**New Zustand Store:**
+- Implementation: `jarvis-ui/src/stores/<name>.ts`
+- Pattern: Use create() with devtools middleware
+- Types: Define state interface and actions inline
+- Usage: Import in components with selector pattern
 
-**Styles:**
-- Co-located `.css` file or Tailwind classes inline
+**New Database Table:**
+- Schema: Add to `jarvis-backend/src/db/schema.ts`
+- Migration: Run `npm run db:generate` to create migration
+- Queries: Add helper methods in `jarvis-backend/src/db/<name>.ts`
+- Types: Export from schema for type safety
 
-**Reference in:**
-- `App.tsx` or parent component
+**New External Client:**
+- Implementation: `jarvis-backend/src/clients/<service>.ts`
+- Pattern: Export typed functions, manage connection state internally
+- Config: Add credentials to `jarvis-backend/src/config.ts`
+- Usage: Import in MCP tools or realtime handlers
 
-**Build system:**
-- Vite auto-discovers and bundles
-- No explicit imports needed in config
-
-### New Skill in Jarvis
-
-**Primary code:**
-- Skill class: `jarvis-v3/src/jarvis/skills/{skill_name}.py`
-  - Extend `Skill` base class
-  - Define `name`, `description`, `patterns`
-  - Implement `execute(command: str) -> str` async method
-- Example:
-  ```python
-  class MediaControlSkill(Skill):
-      name = "media_control"
-      description = "Control media playback"
-      patterns = [r"play", r"pause", r"next", r"previous"]
-
-      async def execute(self, command: str) -> str:
-          # Implementation
-  ```
-
-**Registration:**
-- Update `jarvis-v3/src/jarvis/skills/__init__.py`
-- Import new skill class
-- Add to `SkillRegistry.load_default_skills()`
-
-**Configuration:**
-- Add entry in `jarvis-v3/config/jarvis.yaml`
-- Example:
-  ```yaml
-  skills:
-    media_control:
-      enabled: true
-  ```
-
-**Testing:**
-- Create: `jarvis-v3/tests/test_media_control.py`
-- Pattern: `test_*.py` files in `tests/`
-
-### New Voice Component in Jarvis
-
-**If adding wake word detector variant:**
-- Create: `jarvis-v3/src/jarvis/voice/{detector_type}.py`
-- Implement same interface as existing
-- Update: `jarvis-v3/src/jarvis/core.py` initialization
-
-**If adding TTS provider:**
-- Create: `jarvis-v3/src/jarvis/voice/tts_{provider}.py`
-- Implement `speak()` async method
-- Update: `core.py` initialization
-
-**Configuration:**
-- Add config section in `jarvis.yaml`
-- Reference in `core._load_config()`
-
-### Utilities
-
-**Shared helpers:**
-- Location: `jarvis-v3/src/jarvis/utils/`
-- Example: `jarvis-v3/src/jarvis/utils/__init__.py`
-
-**Cross-project utilities:**
-- Proxmox UI: Not established, add to `services/` if cluster-related
-- Jarvis: Keep in `utils/` subdirectory
-
----
+**Utilities:**
+- Backend helpers: `jarvis-backend/src/<domain>/<util>.ts` (keep domain-specific)
+- Frontend shared helpers: `jarvis-ui/src/utils/<name>.ts`
+- React hooks: `jarvis-ui/src/hooks/use<Name>.ts`
 
 ## Special Directories
 
-### `/root/.planning/codebase/`
+**jarvis-backend/data/**
+- Purpose: SQLite database files
+- Generated: Yes (by Drizzle migrations)
+- Committed: No (gitignored, production uses Docker volume)
 
-**Purpose:** GSD codebase analysis documents
+**jarvis-backend/dist/**
+- Purpose: Compiled JavaScript output from TypeScript
+- Generated: Yes (by `tsc` via `npm run build`)
+- Committed: No (gitignored, rebuilt in Docker)
 
-**Generated:** Mapping documents written by Claude analysis
-**Committed:** Yes, part of documentation
-**Contents:**
-- ARCHITECTURE.md - System design patterns
-- STRUCTURE.md - Directory and file organization
-- CONVENTIONS.md - Code style guidelines
-- TESTING.md - Test patterns and frameworks
-- STACK.md - Technology dependencies
-- INTEGRATIONS.md - External services and APIs
-- CONCERNS.md - Technical debt and issues
+**jarvis-ui/dist/**
+- Purpose: Production build output from Vite
+- Generated: Yes (by `vite build`)
+- Committed: No (gitignored, served by nginx in Docker)
 
-### `/root/proxmox-ui/backend/dist/`
+**jarvis-backend/node_modules/**
+- Purpose: Backend npm dependencies
+- Generated: Yes (by `npm install`)
+- Committed: No (standard gitignore)
 
-**Purpose:** Compiled TypeScript output
+**jarvis-ui/node_modules/**
+- Purpose: Frontend npm dependencies
+- Generated: Yes (by `npm install`)
+- Committed: No (standard gitignore)
 
-**Generated:** Yes (`npm run build`)
-**Committed:** No
-**Created from:** `src/` via TypeScript compiler
+**jarvis-ui/public/**
+- Purpose: Static assets copied to dist root
+- Generated: No (manually managed)
+- Committed: Yes (favicon, robots.txt, etc.)
 
-### `/root/proxmox-ui/frontend/dist/`
-
-**Purpose:** Built frontend bundle
-
-**Generated:** Yes (`npm run build`)
-**Committed:** No
-**Created from:** `src/` via Vite bundler
-
-### `/root/jarvis-v3/venv/`
-
-**Purpose:** Python virtual environment
-
-**Generated:** Yes (`python -m venv venv`)
-**Committed:** No
-**Contains:** Installed packages from `pyproject.toml`
-
-### `/root/proxmox-ui/backend/node_modules/` and `frontend/node_modules/`
-
-**Purpose:** Node.js dependencies
-
-**Generated:** Yes (`npm install`)
-**Committed:** No
-**Managed by:** `package-lock.json` or `package.json`
-
-### `/root/jarvis-v3/tests/`
-
-**Purpose:** Test suite (Python)
-
-**Location for new tests:** `test_{module}.py` pattern
-**Runner:** `pytest`
-**Coverage:** Not yet established
+**jarvis-ui/src/vendor/**
+- Purpose: Third-party code modified for this project
+- Generated: No (manually added)
+- Committed: Yes (globe.js WebGL visualization)
 
 ---
 
-## Build and Deployment Locations
-
-### Proxmox UI Backend
-
-```
-Development:    npm run dev         → tsx watch src/index.ts
-Production:     npm run build       → tsc (outputs to dist/)
-                node dist/index.js  → Start server
-Env required:   JWT_SECRET, PORT (default 3001)
-```
-
-### Proxmox UI Frontend
-
-```
-Development:    npm run dev         → Vite dev server + HMR
-Production:     npm run build       → Vite bundle to dist/
-                npm run preview     → Preview built output
-Served from:    dist/ directory
-```
-
-### Jarvis v3
-
-```
-Development:    jarvis -c config/jarvis.yaml -v
-                python -m jarvis.cli -c config/jarvis.yaml
-Production:     jarvis -c /etc/jarvis/config.yaml
-Entry:          src/jarvis/cli.py main()
-Env required:   CUDA_VISIBLE_DEVICES (optional), HOME
-```
-
----
-
-## Import Path Patterns
-
-### Proxmox UI Backend
-
-```typescript
-// Routes importing services
-import * as proxmox from '../services/proxmox.js'
-
-// Routes importing middleware
-import { authMiddleware } from '../middleware/auth.js'
-
-// Services using built-ins
-import { exec } from 'child_process'
-import jwt from 'jsonwebtoken'
-```
-
-**Path format:** Relative paths with `.js` extensions (ES modules)
-
-### Jarvis v3
-
-```python
-# CLI importing core
-from jarvis.core import Jarvis
-
-# Core importing submodules
-from jarvis.voice.stt import SpeechToText
-from jarvis.llm.ollama_client import OllamaClient
-from jarvis.skills import SkillRegistry
-
-# Skills importing base
-from jarvis.skills import Skill
-```
-
-**Path format:** Absolute imports from package root
-
----
-
-*Structure analysis: 2026-01-20*
+*Structure analysis: 2026-01-31*
