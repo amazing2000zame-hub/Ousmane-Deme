@@ -57,14 +57,13 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 
 ### Active
 
-- [ ] Frigate NVR integration (events, snapshots, recordings, live feeds) -- v1.6
-- [ ] RTSP camera access for any network camera -- v1.6
-- [ ] Face recognition with photo upload + camera learning -- v1.6
-- [ ] Face database for 5-10 household members -- v1.6
-- [ ] Unknown face logging with UI review workflow -- v1.6
-- [ ] Presence timeline (arrivals, departures, searchable history) -- v1.6
-- [ ] Dashboard panel showing faces and presence activity -- v1.6
-- [ ] MCP tools for presence/camera queries -- v1.6
+- [ ] Server-side microphone capture with always-on listening -- v1.8
+- [ ] Voice Activity Detection (VAD) filtering background noise -- v1.8
+- [ ] "Jarvis" soft name-trigger for intent detection -- v1.8
+- [ ] Server-side STT via Whisper (not browser Web Speech API) -- v1.8
+- [ ] Physical audio output through speakers (USB/HDMI/BT) -- v1.8
+- [ ] Full voice command pipeline: listen → transcribe → LLM → TTS → speak -- v1.8
+- [ ] Cluster commands, general questions, smart home control via voice -- v1.8
 
 ### Out of Scope
 
@@ -72,31 +71,36 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - Multi-user permissions -- single operator for now
 - Mobile native app -- responsive web handles mobile
 - Home Assistant integration -- not deployed yet, Frigate-only for now
+- Multi-room mic deployment -- get single room working first, expand later
+- Mobile voice interaction -- browser voice already works for this
+- Custom wake word model training -- "Jarvis" name detection via STT is sufficient
 
-## Current Milestone: v1.6 Smart Home Intelligence
+## Current Milestone: v1.8 Always-On Voice Assistant
 
-**Goal:** Give JARVIS eyes -- camera integration, face recognition, and presence tracking so JARVIS can answer "who's home?" with a searchable activity timeline.
+**Goal:** Transform Jarvis from a browser-only assistant into a physical, always-listening voice assistant. Server microphones capture speech, "Jarvis" name-trigger identifies intent, Whisper transcribes, LLM processes, and TTS responds through physical speakers. Full assistant for cluster ops, general knowledge, and smart home control.
 
 **Target features:**
-- Frigate API integration for events, snapshots, recordings, and live feeds
-- RTSP camera access for any network camera (front_door, side_house on agent1)
-- Face recognition with dual input: upload reference photos + learn from camera feeds
-- Face database supporting 5-10 household members with embeddings
-- Unknown face logging -- store for later UI review, no immediate notifications
-- Presence timeline -- full searchable history ("When did John leave yesterday?")
-- Dashboard panel showing known faces and presence activity timeline
-- MCP tools: query presence, get camera snapshots, search timeline
+- Enable built-in laptop digital mics (Intel SOF firmware installed, needs reboot)
+- Continuous audio capture service with Voice Activity Detection
+- "Jarvis" soft name-trigger -- speech containing the name gets processed, background chatter ignored
+- Server-side Whisper STT (existing Docker container on port 5051)
+- Route transcribed text through existing hybrid LLM pipeline (Claude/Qwen)
+- Physical audio output through speakers (research determines USB vs HDMI vs Bluetooth)
+- Single room deployment first, architecture supports multi-room expansion
 
-**Previous milestone (v1.5):** Optimization & Latency Reduction -- Phases 21-25 (TTS reliability, parallel synthesis, Opus codec, context management, chat virtualization)
+**Previous milestone (v1.7):** UI Polish & Camera Integration -- Phases 31-32 (Web UI redesign, web browsing, video playback)
 
-## Current State (v1.5 shipped 2026-01-28)
+## Current State (v1.7 shipped 2026-01-30)
 
-- **Backend**: ~7,500 LOC TypeScript -- Express 5, Socket.IO, MCP SDK, better-sqlite3, Drizzle ORM
-- **Frontend**: ~5,500 LOC TypeScript/TSX + CSS -- React 19, Vite 6, Tailwind v4, Zustand, xterm.js
-- **Source files**: ~110 across backend and frontend
-- **Git commits**: 100+
+- **Backend**: ~9,000+ LOC TypeScript -- Express 5, Socket.IO, MCP SDK, better-sqlite3, Drizzle ORM
+- **Frontend**: ~7,000+ LOC TypeScript/TSX + CSS -- React 19, Vite 6, Tailwind v4, Zustand, xterm.js
+- **Source files**: ~130+ across backend and frontend
+- **Git commits**: 120+
 - **Tech stack**: Node.js 22, React 19, Socket.IO 4, Claude API, Qwen 2.5 7B, SQLite, Docker
 - **Deployment**: Home node (/root/jarvis-backend, /root/jarvis-ui)
+- **Voice stack**: XTTS v2 (port 5050) + Piper fallback (port 5000) + Whisper STT (port 5051)
+- **Smart home**: Frigate NVR on agent1, face recognition, presence tracking, camera dashboard, proactive alerts
+- **Web**: SearXNG search, web browsing, YouTube playback
 
 ## Context
 
@@ -148,6 +152,8 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 - **Storage**: 4.5TB NAS for camera recordings, SQLite for face data
 - **Security**: PVE firewall enabled, key-only SSH, all traffic LAN-only
 - **Face Recognition**: CPU-based (no GPU), must handle 5-10 faces efficiently
+- **Audio Hardware**: Intel Raptor Lake HDA with SOF firmware (digital mics), NVidia HDMI (output only)
+- **Voice Processing**: All CPU-based, Whisper medium.en model, XTTS v2 on GPU (RTX 4050)
 
 ## Key Decisions
 
@@ -160,8 +166,11 @@ The dashboard shows everything and Jarvis can act on it -- if you can see a prob
 | SQLite + markdown for memory | SQLite for structured events, markdown for LLM context injection | ✓ Good |
 | Modular monolith architecture | Single Node.js process, clean modules, no microservices | ✓ Good |
 | Piper TTS fallback | 99%+ reliability, <500ms synthesis when XTTS slow | ✓ Good |
-| Frigate for NVR | Already deployed, HTTP API, object detection built-in | — Pending |
-| Face embeddings in SQLite | Simple, no new database, vector similarity via cosine | — Pending |
+| Frigate for NVR | Already deployed, HTTP API, object detection built-in | ✓ Good |
+| Face embeddings in SQLite | Simple, no new database, vector similarity via cosine | ✓ Good |
+| SOF firmware for built-in mics | Intel Raptor Lake laptop has digital mic array | — Pending |
+| "Jarvis" soft name-trigger | STT + name detection vs dedicated wake word engine | — Pending |
+| Physical speaker output | USB vs HDMI vs Bluetooth -- research will decide | — Pending |
 
 ---
-*Last updated: 2026-01-29 after v1.6 milestone started*
+*Last updated: 2026-02-25 after v1.8 milestone started*
