@@ -1,386 +1,456 @@
-# Feature Landscape: v1.6 Smart Home Intelligence
+# Feature Landscape: Server-Side Always-On Voice Assistant
 
-**Domain:** AI-powered smart home surveillance with face recognition and presence tracking
-**Project:** Jarvis 3.1 -- v1.6 Smart Home Intelligence Milestone
-**Researched:** 2026-01-29
-**Target:** Give JARVIS eyes -- camera integration, face recognition, and presence tracking
-
----
-
-## Existing Foundation (Already Built)
-
-These features are live and define what the v1.6 features build upon:
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Frigate NVR integration | Working | 2 cameras (front_door, side_house), person/car/dog/cat detection |
-| Frigate client (`frigate.ts`) | Working | Events, snapshots, config, stats APIs implemented |
-| `get_who_is_home` MCP tool | Working | Network presence (arp-scan) + car detection from cameras |
-| `query_nvr_detections` MCP tool | Working | Query events by camera, object type, time range |
-| `get_camera_snapshot` MCP tool | Working | Retrieve latest JPEG from any camera |
-| `scan_network_devices` MCP tool | Working | Raw network scan with known device annotation |
-| Home Assistant client (`homeassistant.ts`) | Working | Thermostat, locks via HA API |
-| Socket.IO real-time events | Working | 4 namespaces for dashboard updates |
-| MCP tool safety tiers | Working | GREEN/YELLOW/RED/BLACK tier system |
-| SQLite event logging | Working | All tool executions logged with timestamps |
-
-### Infrastructure Available
-
-| Resource | Details |
-|----------|---------|
-| Frigate NVR | http://192.168.1.61:5000, Frigate 0.16.x, face_recognition available but disabled |
-| go2rtc | Built into Frigate, WebRTC/MSE streaming at port 8555/1984 |
-| Cameras | front_door (192.168.1.204), side_house (192.168.1.27) via RTSP |
-| Object detection | CPU-based TFLite, person/car/dog/cat tracked |
-| Recording | 30-day retention, 60-day for alerts/detections |
-| Snapshots | Enabled on both cameras, available via Frigate API |
+**Domain:** Always-on server-side voice assistant with physical mic/speaker I/O
+**Researched:** 2026-02-25
+**Mode:** Ecosystem research for new milestone on existing Jarvis 3.1 system
 
 ---
 
-## Feature Domain 1: Face Recognition
+## Context: What Already Exists
 
-### How Frigate Face Recognition Works
+Before defining features, it is critical to understand the existing voice pipeline (shipped in v1.2-v1.5) that this milestone extends:
 
-Frigate 0.16+ includes built-in face recognition that runs locally on the system. Key characteristics:
+| Component | Status | Details |
+|-----------|--------|---------|
+| Whisper STT server | Running | faster-whisper medium.en, Docker port 5051, CPU int8, 4 threads |
+| XTTS v2 TTS | Running | Custom JARVIS voice, Docker port 5050, GPU-accelerated |
+| Piper TTS fallback | Running | CPU-only, <200ms latency, Docker port 5000 |
+| Streaming TTS pipeline | Shipped | Sentence-by-sentence synthesis with parallel workers |
+| TTS disk cache + LRU | Shipped | 500-entry disk cache, 200-entry in-memory cache |
+| Opus encoding | Shipped | Optional 8-10x compression for remote access |
+| Voice Socket.IO namespace | Shipped | `/voice` namespace with full event protocol |
+| Voice processing pipeline | Shipped | audio_start -> audio_chunk -> audio_end -> STT -> LLM -> TTS |
+| Pre-warmed phrases | Shipped | 40+ common JARVIS phrases pre-synthesized |
 
-- **Detection**: When a person is detected, Frigate extracts faces and runs recognition
-- **Training**: Faces learned via UI upload (reference photos) or from detected events
-- **Sub-labels**: Recognized faces get a `sub_label` field added to events (e.g., `sub_label: "John"`)
-- **Models**: `small` (CPU FaceNet) or `large` (GPU ArcFace) -- our setup requires `small`
-- **Storage**: Face data stored locally in `/media/frigate/clips/faces`
-- **Privacy**: All processing local, no cloud transmission
+The backend `/voice` namespace (`voice.ts`) already implements the full server-side processing loop: receive audio chunks via Socket.IO, concatenate, transcribe via Whisper, route through LLM, stream sentence-by-sentence TTS back to the caller. **What is missing is the physical audio agent** -- the Python service that captures from a real microphone, detects when to listen, and plays audio through real speakers.
 
-Sources: [Frigate Face Recognition Docs](https://docs.frigate.video/configuration/face_recognition/)
+---
 
-### Must-Have (Table Stakes)
+## Table Stakes
 
-| Feature | Why Expected | Complexity | Implementation |
-|---------|--------------|------------|----------------|
-| Enable Frigate face recognition | Core capability for "who's at the door" queries | Low | Enable in `frigate.yml`, set `model_size: small` |
-| Face enrollment via photo upload | User must be able to add known faces manually | Low | Use Frigate's built-in Face Library UI at `/face-library` |
-| Query recognized faces from events | JARVIS needs to access sub_label data from Frigate events | Low | Already in `FrigateEvent.sub_label`, just use it |
-| Unknown face detection | System must distinguish known vs unknown persons | Low | Events with `label: person` but `sub_label: null` are unknowns |
-| Face database for 5-10 people | Household members, regular visitors | Low | Frigate stores faces locally, 20-30 images per person recommended |
+Features users expect from any always-on voice assistant. Missing any of these makes the product feel broken or unusable.
 
-### Should-Have (Differentiators)
+### TS-1: Physical Microphone Capture
+| Aspect | Detail |
+|--------|--------|
+| **What** | Continuous audio capture from a USB microphone on the server |
+| **Why expected** | Fundamental requirement -- without mic capture, nothing works |
+| **Complexity** | Low |
+| **Implementation** | PyAudio or sounddevice library reading from ALSA/PulseAudio device at 16kHz, 16-bit, mono PCM (matches Whisper input). For ALSA without PulseAudio, pyalsaaudio provides direct PCM access |
+| **Dependencies** | USB microphone or USB speakerphone hardware, ALSA drivers on Debian 13 |
+| **Testable** | `arecord -f S16_LE -r 16000 -c 1 -d 3 test.wav && aplay test.wav` succeeds on the server with clear audio |
 
-| Feature | Value Proposition | Complexity | Implementation |
-|---------|-------------------|------------|----------------|
-| Camera-based face learning workflow | Learn faces from detected events without manual photo upload | Medium | Frigate Train tab -- detected faces appear, manually assign to person |
-| "Who's at the door?" MCP tool | Natural language query for recognized faces at cameras | Low | Query recent person events with sub_labels, filter by camera zone |
-| Face confidence thresholds | Configurable recognition certainty (default 0.9) | Low | `recognition_threshold` in Frigate config |
-| Multi-face detection per frame | Handle multiple people in doorbell view | Low | Frigate handles this natively |
-| Unknown face logging with snapshots | Store unknown faces for later review | Medium | Query events where `label=person` and `sub_label=null`, store thumbnails |
+### TS-2: Voice Activity Detection (VAD)
+| Aspect | Detail |
+|--------|--------|
+| **What** | Distinguish speech from silence and background noise in the audio stream |
+| **Why expected** | Without VAD, the system either records everything (wasting STT resources on 4 CPU threads) or nothing |
+| **Complexity** | Low-Medium |
+| **Implementation** | Silero VAD v6 -- processes 30ms chunks in <1ms on CPU, MIT license, supports 16kHz, ~2MB model |
+| **Behavior** | Continuously evaluate audio frames; when speech probability exceeds threshold (default 0.5), begin buffering; when speech drops below threshold for configurable duration (1.5-2s), mark end of utterance |
+| **Dependencies** | torch or onnxruntime (Silero supports both backends) |
+| **Testable** | VAD correctly identifies speech segments in a test recording with >95% accuracy; does not trigger on ambient fan noise alone |
+| **Confidence** | HIGH -- Silero VAD is the industry standard, used in Home Assistant, LiveKit, RealtimeSTT, and virtually all open-source voice projects |
 
-### Nice-to-Have
+### TS-3: Wake Word / Name Detection ("Jarvis" Trigger)
+| Aspect | Detail |
+|--------|--------|
+| **What** | Detect "Jarvis" (or "Hey Jarvis") to trigger the assistant, filtering out background conversations and TV audio |
+| **Why expected** | Without a trigger, the assistant either processes all speech (privacy/resource problem) or requires manual activation (defeats "always-on" purpose) |
+| **Complexity** | Medium |
+| **Implementation** | Two viable approaches (see Wake Word Strategy section below). MVP recommendation: VAD + STT + keyword check for "soft wake" behavior |
+| **Dependencies** | TS-2 (VAD), Whisper STT (existing), or openWakeWord (pre-trained "hey_jarvis" model, ~0.42MB) |
+| **Testable** | Say "Jarvis, check the cluster" from 3 meters -- system activates. Hold random conversation for 10 minutes -- zero false activations |
+| **Confidence** | MEDIUM -- the "soft wake" concept (detecting "Jarvis" naturally in speech, not requiring "Hey Jarvis" cadence) is harder than traditional strict wake word detection |
 
-| Feature | Value Proposition | Complexity | Implementation |
-|---------|-------------------|------------|----------------|
-| Dashboard face gallery | Show known faces with stats (last seen, frequency) | High | New React component, query Frigate face library API |
-| Face enrollment from chat | "JARVIS, learn this face as John" with uploaded image | High | New MCP tool, Frigate POST to face library |
-| Recognition accuracy feedback | Allow marking misidentifications to improve model | Medium | Frigate API for face corrections |
-| Face-based automations | Trigger actions when specific person detected | High | Requires event subscription + automation engine |
+### TS-4: Physical Speaker Output
+| Aspect | Detail |
+|--------|--------|
+| **What** | Play TTS audio through physical speakers connected to the server |
+| **Why expected** | The entire point -- user hears Jarvis respond out loud in the room |
+| **Complexity** | Low |
+| **Implementation** | Receive `voice:tts_chunk` events from backend (base64 WAV), decode, play through ALSA/PulseAudio using sounddevice or pyaudio. Sample rate conversion may be needed if TTS output rate differs from device |
+| **Dependencies** | USB speaker, USB speakerphone, or 3.5mm powered speakers; ALSA drivers configured |
+| **Testable** | `aplay /path/to/test.wav` produces audible, clear sound from connected speaker |
 
-### Anti-Features to Avoid
+### TS-5: End-to-End Voice Loop
+| Aspect | Detail |
+|--------|--------|
+| **What** | Complete pipeline: mic capture -> VAD -> name check -> STT -> LLM -> TTS -> speaker |
+| **Why expected** | The fundamental promise. User speaks, Jarvis responds vocally |
+| **Complexity** | Medium |
+| **Implementation** | Python agent service connecting to existing jarvis-backend `/voice` Socket.IO namespace. The agent IS the Socket.IO client that sends `voice:audio_start`, `voice:audio_chunk`, `voice:audio_end` events and receives `voice:tts_chunk`, `voice:tts_done` events back |
+| **Latency target** | < 8 seconds from end-of-speech to first audio output (realistic target given ~2-4s STT + ~0.5-3s LLM first token + ~0.2-4s TTS) |
+| **Dependencies** | TS-1 through TS-4, existing Whisper/LLM/TTS infrastructure |
+| **Testable** | Say "Jarvis, what is the cluster status?" -- hear a spoken response starting within 8 seconds of finishing the sentence |
 
+### TS-6: Listening State Audio Feedback
+| Aspect | Detail |
+|--------|--------|
+| **What** | Audible indication that Jarvis heard the trigger word and is now listening for the command |
+| **Why expected** | Every commercial voice assistant (Alexa, Google, Siri, Sonos) provides an audible activation cue. Without it, users say commands into the void wondering if they were heard |
+| **Complexity** | Low |
+| **Implementation** | Play a short WAV chime (100-300ms) when wake word/name is detected. A subtle electronic tone matching the Iron Man JARVIS aesthetic. Optionally play a second sound when processing begins |
+| **Dependencies** | TS-4 (speaker output working) |
+| **Testable** | Say "Jarvis" -- hear activation chime within 500ms |
+
+### TS-7: Silence and Timeout Handling
+| Aspect | Detail |
+|--------|--------|
+| **What** | Stop listening and return to idle after configurable silence period or max recording duration |
+| **Why expected** | Without this, the system hangs in "listening" mode forever if the user walks away or hesitates |
+| **Complexity** | Low |
+| **Implementation** | VAD-based silence detection (1.5-2s silence = end of utterance, matches existing `VOICE_SILENCE_TIMEOUT_MS` config in voice.ts) + hard timeout (30s max, matches existing `MAX_RECORDING_MS`) |
+| **Behavior** | After silence timeout: process what was captured. After hard timeout: process and warn. After wake word with no speech: return to idle with no action |
+| **Dependencies** | TS-2 (VAD) |
+| **Testable** | Activate Jarvis, say nothing for 3 seconds -- system returns to idle without error |
+
+### TS-8: Graceful Error Recovery and Auto-Reconnect
+| Aspect | Detail |
+|--------|--------|
+| **What** | System recovers from failures (Whisper down, LLM timeout, TTS failure, mic disconnect, backend restart) without crashing or requiring manual intervention |
+| **Why expected** | An always-on service that crashes on first error is unusable. Docker containers restart independently; the agent must handle this |
+| **Complexity** | Medium |
+| **Implementation** | Try/catch around each pipeline stage. Spoken error messages where possible ("I'm having trouble right now, sir"). python-socketio built-in reconnection with exponential backoff. Watchdog for mic device availability |
+| **Behavior** | Backend disconnect -> reconnect with backoff (already built into python-socketio). Whisper failure -> speak cached error phrase, return to listening. Mic disconnect -> log, retry every 5s until device reappears. TTS failure -> log, return to listening |
+| **Dependencies** | TS-4 (speaker for error messages), existing error handling in voice.ts backend |
+| **Testable** | Kill Whisper container, speak a command -- hear error message, not a crash. Restart Whisper -- next command works. Restart Docker stack -- agent reconnects within 30s |
+
+### TS-9: Always-On Systemd Service
+| Aspect | Detail |
+|--------|--------|
+| **What** | The voice agent runs as a systemd service that starts on boot and auto-restarts on crash |
+| **Why expected** | "Always-on" means surviving reboots and crashes without manual intervention. The jarvis-api (llama-server) already runs as a systemd service |
+| **Complexity** | Low |
+| **Implementation** | systemd unit file with `Restart=always`, `RestartSec=5`, `WantedBy=multi-user.target`. Log to journal for `journalctl -u jarvis-ear` monitoring |
+| **Dependencies** | TS-5 (end-to-end loop working), TS-8 (error recovery) |
+| **Testable** | Reboot the server -- voice agent comes back online within 30 seconds. Kill the process -- it restarts within 10 seconds |
+
+---
+
+## Differentiators
+
+Features that elevate the experience beyond basic functionality. Not expected by default, but significantly improve how natural the interaction feels.
+
+### D-1: Conversation Mode (Follow-Up Without Re-Triggering)
+| Aspect | Detail |
+|--------|--------|
+| **What** | After Jarvis responds, keep listening for a follow-up command for 5-10 seconds without requiring the wake word again |
+| **Why valuable** | Natural conversation flow. "Jarvis, check disk usage." [response] "What about on pve?" -- no need to say "Jarvis" again. Alexa launched this as "Conversation Mode" in 2021; Google launched "Continued Conversation" in 2018. It is now an expected pattern for premium voice assistants |
+| **Complexity** | Medium |
+| **Implementation** | After TTS playback completes, re-enter VAD listening with a shorter timeout (5-10s) that does NOT require the wake word. If speech detected within the window, process as continuation of the same conversation. If silence exceeds timeout, return to wake-word-only mode. Exit conversation mode on explicit "that's all" or "thanks Jarvis" |
+| **Backend change** | Currently `voice.ts` creates a new session UUID per utterance. Conversation mode requires reusing the same sessionId within a time window so the LLM gets conversation context |
+| **Dependencies** | TS-5 (end-to-end loop), TS-7 (silence handling) |
+
+### D-2: Mic Mute During Playback (Self-Trigger Prevention)
+| Aspect | Detail |
+|--------|--------|
+| **What** | Mute/ignore the microphone while Jarvis is speaking through the speaker to prevent the system from hearing its own voice and re-triggering |
+| **Why valuable** | Without this, Jarvis's TTS output goes into the microphone, potentially triggering wake word detection or corrupting STT input. This is the simplest and most reliable solution to the acoustic echo problem |
+| **Complexity** | Low |
+| **Implementation** | Set a `playback_active` flag when TTS audio starts. While flag is set, discard all VAD/wake-word processing. Clear flag when playback completes. Simple, zero-DSP solution |
+| **Tradeoff** | Prevents barge-in (D-3). User cannot interrupt Jarvis while it is speaking. This is acceptable for v1 |
+| **Dependencies** | TS-4 (speaker), TS-2 (VAD) |
+
+### D-3: Barge-In / Interruption Support
+| Aspect | Detail |
+|--------|--------|
+| **What** | User can interrupt Jarvis mid-response by speaking, and Jarvis stops talking immediately |
+| **Why valuable** | Essential for natural interaction with long responses. If Jarvis gives a detailed cluster report, the user should be able to say "stop" or redirect |
+| **Complexity** | High |
+| **Implementation** | During TTS playback, continue running VAD on mic input. If speech detected while playing audio, stop playback immediately, clear audio queue, start listening for new input. Requires acoustic echo cancellation to distinguish user speech from Jarvis's own audio in the microphone |
+| **AEC options** | (1) Hardware AEC via USB speakerphone -- zero software effort, most reliable. (2) Software AEC via speexdsp -- complex, environment-dependent, fragile. (3) Wake-word-only barge-in: only interrupt if "Hey Jarvis" detected during playback (simpler than full speech detection during playback) |
+| **Dependencies** | TS-2 (VAD), TS-4 (speaker), AEC solution (hardware recommended) |
+| **Confidence** | MEDIUM -- hardware AEC via USB speakerphone is proven but must be tested. Software AEC is explicitly an anti-feature for v1 |
+
+### D-4: Proactive Voice Announcements
+| Aspect | Detail |
+|--------|--------|
+| **What** | Jarvis speaks unprompted to announce important events (security alerts, doorbell, cluster issues) |
+| **Why valuable** | Transforms Jarvis from reactive tool to proactive assistant. "Sir, an unknown person has been detected at the front door" feels exactly like Iron Man JARVIS. Leverages existing alert infrastructure from Phase 29 (proactive alerts) and Phase 27 (presence intelligence) |
+| **Complexity** | Low-Medium |
+| **Implementation** | Backend events push announcements to the voice agent via Socket.IO (new event type `voice:announce`). Agent interrupts idle state, plays TTS. Priority queue: critical alerts (security) override everything; low-priority info waits for idle. Announcement cooldown prevents spam |
+| **Dependencies** | TS-4 (speaker), existing alert/presence infrastructure |
+| **Testable** | Trigger a test alert -- Jarvis announces through the speaker within 10 seconds |
+
+### D-5: Configurable Sensitivity Thresholds
+| Aspect | Detail |
+|--------|--------|
+| **What** | Expose VAD threshold, wake word sensitivity, silence timeout, and conversation mode timeout as configuration parameters |
+| **Why valuable** | Different environments (quiet office vs noisy server room) need different tuning. Avoids hardcoding values that only work in one room |
+| **Complexity** | Low |
+| **Implementation** | YAML or JSON config file (`/etc/jarvis-ear/config.yml`) with sensible defaults. Parameters: `vad_threshold` (float, default 0.5), `wake_word_threshold` (float, default 0.5), `silence_timeout_ms` (int, default 1500), `conversation_timeout_ms` (int, default 8000), `max_recording_ms` (int, default 30000) |
+| **Dependencies** | TS-2 (VAD), TS-3 (wake word) |
+
+### D-6: Voice State Indicator in Web UI
+| Aspect | Detail |
+|--------|--------|
+| **What** | Visual indicator in the existing Jarvis web UI showing the voice agent's current state: idle, listening, processing, speaking, error |
+| **Why valuable** | When the browser UI is open, a glanceable indicator shows what Jarvis is doing. Extends the existing audio visualizer |
+| **Complexity** | Low |
+| **Implementation** | Voice agent emits state changes via Socket.IO to a new `voice:agent_state` event. The existing UI picks this up and displays a status badge or animates the existing AudioVisualizer |
+| **Dependencies** | Existing Jarvis UI, TS-5 (state machine inherent in the voice loop) |
+
+### D-7: Audio Level Monitoring and Gain Control
+| Aspect | Detail |
+|--------|--------|
+| **What** | Monitor input audio levels and provide auto-gain or manual gain adjustment |
+| **Why valuable** | USB microphone sensitivity varies by device and distance. Auto-gain helps with far-field capture (user across the room). Level monitoring helps diagnose "why isn't it hearing me?" issues |
+| **Complexity** | Medium |
+| **Implementation** | Calculate RMS audio level per frame. Log periodically. Optionally adjust ALSA capture volume via mixer controls (pyalsaaudio or `amixer` commands). Expose current level via status reporting |
+| **Dependencies** | TS-1 (mic capture), ALSA mixer access |
+
+---
+
+## Anti-Features
+
+Features to explicitly NOT build. These are tempting but would waste effort or harm the product.
+
+### AF-1: Continuous Full-Time STT (Transcribe Everything Always)
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Cloud-based face recognition | Privacy violation, latency, internet dependency | Use Frigate's local face recognition only |
-| Large model on CPU | ArcFace requires GPU, CPU inference too slow | Use `model_size: small` (FaceNet on CPU) |
-| Real-time face tracking overlays | CPU-intensive, adds complexity, minimal value | Rely on event-based recognition, not frame-by-frame |
-| Automatic face learning without consent | Privacy concern, may learn visitors unintentionally | Require manual confirmation in Train tab |
-| Push notifications for every face | Notification fatigue | Log to timeline, alert only for unknowns when configured |
+| Transcribing all audio at all times regardless of VAD or wake word | Massive CPU waste: Whisper medium.en uses 4 CPU threads for 2-4s per utterance. The Home node has 20 threads shared with LLM inference, Docker, and TTS. Continuous STT would starve other services. Also a privacy concern -- recording and transcribing all conversations | Use VAD to gate STT. Only transcribe audio segments that contain detected speech after wake word activation. With the "soft wake" approach (Option B), every speech segment gets a lightweight STT pass, but only segments containing "jarvis" trigger full processing |
 
----
-
-## Feature Domain 2: Presence Tracking
-
-### How Smart Home Presence Detection Works
-
-Presence detection answers "who is home right now?" using multiple signals:
-
-- **Network presence**: Phone/device MAC addresses detected via arp-scan (already implemented)
-- **Camera-based**: Cars in driveway, people detected at entry points
-- **Face recognition**: Specific person identified by face (new in v1.6)
-- **Zones**: Room-level presence using camera zones (front door, side of house, etc.)
-
-The key insight: combine multiple signals for higher confidence. Phone on network + car in driveway + face at door = high confidence someone is home.
-
-Sources: [Home Assistant Presence Detection](https://www.home-assistant.io/getting-started/presence-detection/), [Better Presence Detection](https://www.homeautomationguy.io/blog/home-assistant-tips/better-presence-detection-in-home-assistant)
-
-### Must-Have (Table Stakes)
-
-| Feature | Why Expected | Complexity | Implementation |
-|---------|--------------|------------|----------------|
-| Combined presence query | "Who's home?" uses network + camera + face signals | Medium | Enhance existing `get_who_is_home` tool with face recognition data |
-| Arrival detection | Detect when someone arrives home | Medium | Person detected at entry camera, optionally with face |
-| Departure detection | Detect when someone leaves | Medium | Car detection + phone leaving network |
-| Current occupancy state | Real-time "at home" vs "away" per person | Medium | Track last seen time + signal combination |
-| Camera-to-location mapping | Know "front_door" means entrance, "side_house" means driveway | Low | Config mapping of camera names to locations |
-
-### Should-Have (Differentiators)
-
-| Feature | Value Proposition | Complexity | Implementation |
-|---------|-------------------|------------|----------------|
-| Presence timeline/history | "When did John arrive yesterday?" searchable | High | Store presence events in SQLite with timestamps, query API |
-| Room-level presence | Which camera area someone is in (not just home/away) | Medium | Track person events per camera zone |
-| Presence event notifications | Socket.IO events when presence changes | Medium | Emit `presence:changed` events to dashboard |
-| Presence context in chat | JARVIS knows who's home during conversation | Low | Include presence in system prompt context |
-| Multi-person tracking | Track presence for each household member independently | Medium | Per-person state machine (home/away/unknown) |
-
-### Nice-to-Have
-
-| Feature | Value Proposition | Complexity | Implementation |
-|---------|-------------------|------------|----------------|
-| Historical presence patterns | "John usually arrives home at 6pm" | High | Analyze presence history, build patterns |
-| Guest tracking | Track visitors separately from household members | High | Unknown faces as "guests" with temporary tracking |
-| Presence-based automations | Lights on when first person arrives, off when last leaves | High | Automation engine integration |
-| Bluetooth beacon support | More accurate room-level tracking | High | Requires ESP32 + ESPresense setup |
-
-### Anti-Features to Avoid
-
+### AF-2: Cloud-Based Wake Word Detection
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| GPS/location tracking | Privacy invasive, requires phone apps, works outside home | Focus on home-only detection via network/camera |
-| Continuous polling for presence | Battery drain on devices, unnecessary API load | Event-driven: check on motion, on face detect |
-| Binary home/away only | Loses useful context about who specifically | Per-person presence tracking |
-| Presence without retention policy | Indefinite tracking raises privacy concerns | 30-day retention default, configurable |
+| Sending audio to cloud for wake word detection | Defeats privacy-first, local-processing philosophy. Adds internet dependency to a LAN-only system. Picovoice Porcupine has usage limits and requires API keys | Use openWakeWord or Silero VAD -- both 100% local, MIT license, zero telemetry, no API keys, no registration |
 
----
-
-## Feature Domain 3: Smart Home Awareness (Proactive Intelligence)
-
-### How Proactive AI Assistants Work
-
-Beyond responding to queries, JARVIS should proactively share relevant information:
-
-- **Event awareness**: Know when cameras detect something interesting
-- **Contextual announcements**: "Sir, someone is at the front door"
-- **Alerting**: Unknown person detected, package arrived, etc.
-- **Status updates**: "Everyone has left for the day"
-
-Key principle: Proactive but not annoying. Alert on exceptions, not routine.
-
-Sources: [ADT Familiar Face Detection](https://help.adt.com/s/article/adt-Smart-Home-Security-Familiar-Face-Detection), [Home Surveillance with Facial Recognition](https://github.com/BrandonJoffe/home_surveillance)
-
-### Must-Have (Table Stakes)
-
-| Feature | Why Expected | Complexity | Implementation |
-|---------|--------------|------------|----------------|
-| Camera event subscription | Backend receives Frigate events in real-time | Medium | Frigate MQTT or polling recent events |
-| Person detection alerts | Know when a person is detected at cameras | Low | Filter events for `label: person` |
-| "Who's at the door?" query | Natural language query about current camera activity | Low | MCP tool checking recent person events at door cameras |
-| Event context in chat | JARVIS can reference recent detections in conversation | Low | Include recent events in system prompt |
-
-### Should-Have (Differentiators)
-
-| Feature | Value Proposition | Complexity | Implementation |
-|---------|-------------------|------------|----------------|
-| Unknown person alert | "Sir, there's someone I don't recognize at the front door" | Medium | Detect person + no sub_label + at entry camera |
-| Proactive announcement | Unprompted notification when significant event occurs | High | WebSocket push to dashboard, optional TTS |
-| Activity summary on demand | "What happened while I was away?" | Medium | Summarize events since last interaction |
-| Package detection alert | "A package was delivered to the front door" | Medium | Detect `package` label events (if model supports) |
-| Cooldown/debounce | Don't alert on same person every 5 seconds | Low | 5-minute cooldown per person per camera |
-
-### Nice-to-Have
-
-| Feature | Value Proposition | Complexity | Implementation |
-|---------|-------------------|------------|----------------|
-| Alert preferences | User configures what triggers notifications | High | Settings UI, per-event-type preferences |
-| Silent hours | No proactive alerts between 11pm-7am | Low | Time-based filter on announcements |
-| Alert escalation | Unknown person lingers > 2 min = higher priority | Medium | Track event duration, escalate logic |
-| Integration with TTS | JARVIS speaks alerts aloud | Medium | Connect event detection to voice pipeline |
-
-### Anti-Features to Avoid
-
+### AF-3: Software Echo Cancellation / Full DSP Pipeline (v1)
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Alert on every motion | Notification fatigue | Only alert on person detection, with cooldown |
-| Immediate unknown alerts | Too many false positives during training | Log unknowns to timeline, manual review |
-| Forced TTS for all alerts | Disruptive, especially at night | Dashboard notification default, optional TTS |
-| Real-time video streaming alerts | Bandwidth, privacy, complexity | Snapshot-based alerts with option to view live |
+| Building software AEC, beamforming, dereverberation, or noise suppression | Enormous engineering effort that Amazon/Google/Apple spend years perfecting with dedicated DSP teams and custom silicon. Software AEC (speexdsp, WebRTC) is fragile and environment-dependent. A single-user server room does not warrant this | Use a USB speakerphone with hardware AEC (ReSpeaker, Jabra, Anker) which handles echo cancellation and noise suppression in dedicated hardware. For v1, simple mic muting during playback (D-2) is the reliable zero-effort alternative |
 
----
-
-## Feature Domain 4: Camera Integration
-
-### How Camera Dashboards Work
-
-Modern NVR interfaces provide:
-
-- **Live view**: Real-time camera feeds with low latency (MSE/WebRTC)
-- **Multi-camera grid**: View multiple cameras simultaneously
-- **Event timeline**: Scrub through events and recordings
-- **Snapshot on demand**: Quick capture current frame
-
-Frigate + go2rtc provides all the streaming infrastructure. The Jarvis dashboard needs to surface it.
-
-Sources: [Frigate Live View](https://docs.frigate.video/configuration/live/), [go2rtc](https://go2rtc.com/), [Camera.UI](https://github.com/seydx/camera.ui)
-
-### Must-Have (Table Stakes)
-
-| Feature | Why Expected | Complexity | Implementation |
-|---------|--------------|------------|----------------|
-| Camera list in dashboard | Show available cameras | Low | Query Frigate `/api/config` for camera list |
-| Snapshot display | Show latest frame from each camera | Low | Fetch `/api/{camera}/latest.jpg`, display in UI |
-| Event history view | See recent detections with timestamps | Medium | Query Frigate events API, display list |
-| Event snapshot/thumbnail | View image for each detection event | Low | Frigate provides `/events/{id}/snapshot.jpg` |
-
-### Should-Have (Differentiators)
-
-| Feature | Value Proposition | Complexity | Implementation |
-|---------|-------------------|------------|----------------|
-| Live camera feed | Real-time video stream in dashboard | High | go2rtc MSE/WebRTC via `/api/{camera}/live` |
-| Multi-camera dashboard panel | 2x2 or 2x1 grid view of all cameras | Medium | React component with video elements |
-| Click event to view recording | Navigate from event to recorded clip | Medium | Frigate recording API, video player |
-| Camera status indicators | Show if camera is online, recording, detecting | Low | Query Frigate stats API |
-
-### Nice-to-Have
-
-| Feature | Value Proposition | Complexity | Implementation |
-|---------|-------------------|------------|----------------|
-| Full-screen camera view | Expand single camera to full panel | Low | React modal/overlay |
-| Event timeline scrubber | Visual timeline with event markers | High | Custom React component with Frigate recordings API |
-| PTZ controls | Pan/tilt/zoom for supported cameras | High | ONVIF integration (cameras may not support) |
-| Camera-specific MCP tools | "Show me the front door camera" | Low | Tool that returns camera URL/snapshot |
-
-### Anti-Features to Avoid
-
+### AF-4: NLU/Intent Parsing in the Voice Agent
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| HLS streaming in dashboard | Higher latency (2-10s vs <1s for WebRTC) | Use MSE or WebRTC via go2rtc |
-| Always-on multiple live feeds | Bandwidth, CPU load, battery | Snapshot grid default, live on-demand |
-| Custom RTSP player | Reinventing wheel, browser compatibility | Use Frigate's go2rtc streaming |
-| Recording management UI | Frigate already has this | Link to Frigate UI for advanced features |
+| Building intent classification, slot filling, or NLU in the Python agent | The LLM (Claude/Qwen) already handles all natural language understanding through the MCP tool system. Duplicating intelligence in the agent adds complexity with zero benefit | The agent's job is simple: capture audio, detect speech/wake word, stream to backend, play response. All intelligence stays in the existing backend pipeline |
+
+### AF-5: Multi-Language Support (v1)
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Supporting multiple languages in the listener | Single-user English-only deployment. Whisper is already configured as medium.en (English-only, faster and more accurate). Multilingual complicates wake word, VAD, and TTS for zero benefit | English-only throughout the stack |
+
+### AF-6: Multi-Room Satellite Architecture (v1)
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Building distributed multi-room satellite infrastructure from the start | Over-engineering for single-room deployment. Adds networking (MQTT/Wyoming protocol), synchronization, room detection, and audio routing complexity | Build for one room. The Socket.IO agent pattern with `agentId` already supports multiple agents connecting simultaneously -- multi-room extension requires only deploying additional agents later, not architectural changes now |
+
+### AF-7: Streaming / Real-Time Partial STT
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Real-time streaming transcription with partial results as user speaks | Requires fundamentally different architecture (WebSocket streaming, partial hypothesis management, correction/rollback). The existing Whisper server processes batch utterances. Latency benefit is marginal for 2-5 second voice commands | Batch STT: record complete utterance, transcribe in one shot. The 2-4s STT time is acceptable. Can optimize later with faster models (tiny.en) for the name-detection pass |
+
+### AF-8: Custom TTS Voice Per Room / Per Context
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Different TTS voices for different rooms or contexts | The JARVIS voice is the product identity. Multiple voices confuse the experience and multiply TTS configuration complexity | Use the same XTTS JARVIS voice (with Piper fallback) everywhere. Voice is configured once at the backend level |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Feature Domain 1 (Face Recognition)
-    |
-    +--> Enable face recognition in Frigate config
-    +--> Train faces via Frigate UI or photo upload
-    |
-    v
-Feature Domain 2 (Presence Tracking)
-    |
-    +--> Depends on face recognition for per-person tracking
-    +--> Combines with existing network presence
-    |
-    v
-Feature Domain 3 (Smart Home Awareness)
-    |
-    +--> Depends on face recognition for "unknown person" alerts
-    +--> Depends on presence for "who's home" context
-    |
-    v
-Feature Domain 4 (Camera Integration)
-    |
-    +--> Depends on all above for meaningful dashboard
-    +--> Can be done in parallel with basic features
+TS-1 (Mic Capture) ───────────────────┐
+                                       ├──> TS-5 (Voice Loop) ──> TS-8 (Error Recovery)
+TS-2 (VAD) ──> TS-3 (Wake Word) ──────┤         |                        |
+                                       │         |                        └──> TS-9 (Systemd)
+TS-4 (Speaker Output) ────────────────┘         |
+        |                                        ├──> D-1 (Conversation Mode)
+        ├──> TS-6 (Listening Chime)              ├──> D-2 (Mic Mute) [simple]
+        |                                        ├──> D-3 (Barge-In) [needs AEC]
+        └──> TS-7 (Silence/Timeout)              ├──> D-4 (Announcements)
+                                                 └──> D-6 (UI State Indicator)
+
+TS-2 (VAD) ──> D-5 (Configurable Thresholds)
+TS-1 (Mic)  ──> D-7 (Gain Control)
+
+D-2 (Mic Mute) ──conflicts──> D-3 (Barge-In)
+   [choose one per deployment: simple mute OR hardware AEC barge-in]
 ```
 
-Build order recommendation:
-1. **Phase 1**: Enable Frigate face recognition + basic face MCP tools
-2. **Phase 2**: Presence tracking with face + timeline storage
-3. **Phase 3**: Dashboard camera panel + event viewing
-4. **Phase 4**: Proactive alerts + announcements
+Key ordering constraints:
+- TS-1 through TS-4 are independent infrastructure and can be built in parallel
+- TS-5 integrates all four and is the central milestone deliverable
+- TS-6 and TS-7 are trivial additions once TS-4 and TS-2 exist
+- TS-8 and TS-9 make the system production-grade (always-on)
+- D-1 through D-4 all require the complete TS-5 loop
+- D-2 (mic mute) and D-3 (barge-in) are mutually exclusive strategies; pick one per deployment
 
 ---
 
-## MVP Recommendation
+## Wake Word Strategy: Detailed Analysis
 
-For a focused v1.6 release, prioritize by impact-to-effort ratio:
+The user wants a "soft wake" -- saying "Jarvis, check the cluster" as a natural sentence, not requiring the stilted "Hey Jarvis" pause-then-speak pattern. This is the most architecturally consequential decision for the milestone.
 
-### Phase 1: Face Recognition Foundation (Days 1-3)
+### Option A: Pure Wake Word Engine (openWakeWord "hey_jarvis")
 
-1. **Enable Frigate face recognition** -- Config change, immediate capability
-2. **"Who's at the door?" MCP tool** -- Query person events with face sub_labels
-3. **Face enrollment documentation** -- Guide users to Frigate Face Library UI
-4. **Unknown face query** -- Find person events without recognized faces
+openWakeWord runs continuously on all audio at <1ms per frame. When it detects "hey jarvis," it signals the start of a command. Audio after detection is recorded and sent to STT.
 
-### Phase 2: Presence Intelligence (Days 4-6)
+| Aspect | Assessment |
+|--------|------------|
+| Resource usage | Ultra-low (~0.42MB model, <1ms per frame on CPU) |
+| False positive rate | <0.5 per hour (openWakeWord target) |
+| False reject rate | <5% (openWakeWord target) |
+| Supports "Hey Jarvis" | Yes -- the model is specifically trained for this phrase |
+| Supports "Jarvis, do X" (mid-sentence) | No -- model expects the specific "hey jarvis" phrase |
+| Supports "What do you think, Jarvis?" (name at end) | No |
+| Latency to activation | <300ms from utterance |
+| STT resource consumption | Minimal -- only transcribes post-wake-word audio |
 
-4. **Enhanced `get_who_is_home`** -- Add face recognition to presence signals
-5. **Presence event logging** -- Store arrivals/departures in SQLite
-6. **Presence timeline query** -- "When did X arrive/leave?" MCP tool
-7. **Presence context in system prompt** -- JARVIS knows who's home
+### Option B: VAD + Full STT + Keyword Check (Recommended for MVP)
 
-### Phase 3: Camera Dashboard (Days 7-9)
+Silero VAD runs continuously. When speech is detected, buffer the entire utterance. Send to Whisper STT. Check transcript for "jarvis" (case-insensitive). If found, process transcript as command. If not found, discard.
 
-8. **Dashboard camera panel** -- Snapshot grid for all cameras
-9. **Event list component** -- Recent detections with thumbnails
-10. **Click to view event snapshot** -- Modal with full-size image
-11. **Live view (single camera)** -- MSE stream for one camera at a time
+| Aspect | Assessment |
+|--------|------------|
+| Resource usage | Moderate (every speech segment gets a Whisper pass) |
+| False positive rate | Very low (Whisper rarely hallucinates "jarvis" from non-speech) |
+| False reject rate | Low (full STT is more accurate than keyword spotting for name detection) |
+| Supports "Hey Jarvis" | Yes |
+| Supports "Jarvis, do X" (mid-sentence) | Yes |
+| Supports "What do you think, Jarvis?" (name at end) | Yes |
+| Latency to activation | 2-4s (must complete STT before knowing if "jarvis" was said) |
+| STT resource consumption | Higher -- every speech segment transcribed |
 
-### Phase 4: Proactive Intelligence (Days 10-12)
+**Resource impact mitigation:** In a home environment, speech occurs intermittently (every few minutes at most). Whisper medium.en on 4 threads processes a 5-second utterance in ~2 seconds. Use a lighter model (tiny.en or base.en, 4-10x faster) for the name-detection pass only; re-transcribe with medium.en only when "jarvis" is detected for higher-quality final transcript.
 
-12. **Event subscription** -- Backend polls/subscribes to Frigate events
-13. **Unknown person detection** -- Identify unrecognized faces at entry
-14. **Dashboard notification** -- Push events to UI via Socket.IO
-15. **Optional TTS announcement** -- "Sir, someone is at the door"
+### Option C: Hybrid (Phase 2+ Optimization)
 
-### Defer to Future (v1.7+)
+Run openWakeWord AND VAD+STT in parallel. openWakeWord provides instant response for "Hey Jarvis" (low latency fast path). VAD+STT provides flexible "Jarvis, do X" path (natural but slower).
 
-- Face enrollment from chat (complex UX)
-- Historical presence patterns (needs data collection)
-- Presence-based automations (needs automation engine)
-- Multi-camera live grid (bandwidth, complexity)
-- PTZ camera controls (hardware dependent)
-- Alert preferences UI (over-engineering for single user)
-
----
-
-## Technical Constraints
-
-| Constraint | Impact | Mitigation |
-|------------|--------|------------|
-| CPU-only inference | Face recognition must use `small` model | FaceNet is adequate for 5-10 faces |
-| Frigate 0.16 required | Face recognition only available in recent versions | Already running 0.16.4 |
-| No MQTT on Frigate | Need alternative event subscription | Poll recent events or enable MQTT |
-| Single user system | Can skip multi-user permissions | Simplify implementation |
-| LAN-only access | No remote viewing concern | All traffic local |
-| 2 cameras only | Limited coverage | Sufficient for POC, expand later |
+**Recommendation:** Start with **Option B** for MVP -- simplest implementation, most flexible trigger patterns, matches the user's "soft wake" requirement exactly. Add Option A as a fast-path optimization later if the STT-on-every-utterance latency or resource usage becomes a problem.
 
 ---
 
-## Confidence Assessment
+## Latency Budget Analysis
 
-| Domain | Confidence | Rationale |
-|--------|------------|-----------|
-| Face Recognition | HIGH | Frigate docs comprehensive, feature exists in current version |
-| Presence Tracking | HIGH | Combines existing tools with face data, well-understood pattern |
-| Smart Home Awareness | MEDIUM | Event subscription method needs verification (MQTT vs polling) |
-| Camera Integration | HIGH | go2rtc well-documented, MSE widely supported |
-| Dashboard UI | MEDIUM | React components straightforward, but go2rtc integration needs testing |
+| Stage | Estimated Latency | Notes |
+|-------|-------------------|-------|
+| VAD detection | <50ms | Silero VAD processes 30ms chunks in <1ms |
+| Audio buffering (end-of-speech) | 1.5-2s | Silence timeout after user stops speaking |
+| STT (Whisper medium.en) | 2-4s | Depends on utterance length, CPU load |
+| Name check | <1ms | String search in transcript |
+| Network to backend (Socket.IO) | <5ms | LAN, same machine or same subnet |
+| LLM first token | 0.5-3s | Claude API ~0.5-1s, local Qwen ~1-3s |
+| TTS first sentence | 0.2-4s | Piper <200ms, XTTS 3-10s (cache hit <10ms) |
+| Audio playback start | <50ms | Local USB device, negligible |
+| **Total: end-of-speech to first audio** | **~4-10s** | Best case ~4s (Piper + Claude + cache), worst ~12s (XTTS cold + Qwen) |
+
+**Comparison to commercial assistants:**
+- Alexa/Google: 1-3s simple queries, 3-8s complex queries
+- Conversational UX research: 300-800ms feels natural, >1.4s is typical production voice AI
+- Jarvis target: 4-10s is acceptable for a local, private, CPU-inference assistant
+
+**Optimization levers (future phases):**
+- Whisper tiny.en for name detection pass (~4x faster), medium.en only for final transcript
+- TTS cache hits eliminate synthesis latency entirely for common phrases
+- Speculative LLM warm-up during STT processing
+- openWakeWord fast-path for "Hey Jarvis" (skips STT name-detection latency entirely)
+
+---
+
+## Hardware Recommendation
+
+### Primary: USB Speakerphone with Hardware AEC
+
+A USB conference speakerphone provides microphone + speaker + hardware echo cancellation in one device, eliminating the need for any software audio processing.
+
+| Device | Mic Range | AEC | Est. Price | Linux Support | Best For |
+|--------|-----------|-----|------------|---------------|----------|
+| ReSpeaker USB Mic Array | 5m, 360 deg | Yes | ~$70 | Excellent (standard USB audio, no drivers) | Voice assistant projects specifically. Used by HA/Rhasspy communities |
+| Anker PowerConf S330 | 5m | Yes | ~$50 | Good (standard USB audio) | Budget-friendly, better speaker quality |
+| Jabra Speak 410 | 3m | Yes | ~$80 | Excellent | Proven enterprise reliability |
+| Jabra Speak 510 | 4m | Yes | ~$100 | Excellent | Bluetooth + USB, portable |
+
+**Recommendation:** ReSpeaker USB Mic Array for its 360-degree far-field pickup and purpose-built voice assistant design, OR Anker PowerConf S330 as a budget alternative with better speaker output quality.
+
+### Alternative: Separate Mic + Speaker
+
+If separate devices are used:
+- **Challenge:** No hardware AEC -- must implement mic muting during playback (D-2), which prevents barge-in (D-3)
+- **Mic:** Any USB condenser mic works but lacks far-field optimization
+- **Speaker:** Any USB or 3.5mm powered speaker
+
+### Server Audio Configuration (Home node, Debian 13, headless)
+
+```bash
+# Verify USB audio recognized
+aplay -l    # List playback devices
+arecord -l  # List capture devices
+
+# Set defaults via PulseAudio (if installed)
+pactl set-default-sink <usb-device-name>
+pactl set-default-source <usb-device-name>
+
+# Or via ALSA directly (if no PulseAudio)
+# Edit /etc/asound.conf or ~/.asoundrc
+```
+
+---
+
+## MVP Recommendation Summary
+
+### Phase 1: Core Pipeline (all Table Stakes)
+1. Hardware setup (USB speakerphone, ALSA verification)
+2. Audio capture daemon with VAD (TS-1, TS-2)
+3. Wake word / name detection via STT keyword check (TS-3)
+4. Speaker output for TTS playback (TS-4)
+5. End-to-end Socket.IO voice loop integration (TS-5)
+6. Listening chime feedback (TS-6)
+7. Silence/timeout handling (TS-7)
+8. Error recovery and auto-reconnect (TS-8)
+9. systemd service (TS-9)
+
+**Deliverable:** Say "Jarvis, check the cluster" -- hear a spoken response.
+
+### Phase 2: Natural Interaction (key Differentiators)
+1. Mic mute during playback (D-2) -- prevents self-triggering
+2. Conversation mode follow-ups (D-1) -- no re-triggering needed
+3. Proactive announcements (D-4) -- leverages existing alerts
+4. Configurable thresholds (D-5) -- environment tuning
+5. UI state indicator (D-6)
+
+### Phase 3: Polish
+1. Barge-in support (D-3) -- if hardware AEC works well
+2. Audio gain control (D-7)
+
+### Defer
+- Speaker identification (only if false triggers are a real problem)
+- Multi-room satellites (architecture supports it; do not build orchestration)
+- Streaming STT (marginal benefit for short commands)
 
 ---
 
 ## Sources
 
-### Face Recognition
-- [Frigate Face Recognition Docs](https://docs.frigate.video/configuration/face_recognition/) - Official configuration guide
-- [Microsoft Face Enrollment Best Practices](https://learn.microsoft.com/en-us/azure/ai-services/computer-vision/enrollment-overview) - UX principles
-- [Frigate Third Party Extensions](https://docs.frigate.video/integrations/third_party_extensions/) - Double Take for advanced face workflows
+### Voice Activity Detection
+- [Silero VAD GitHub](https://github.com/snakers4/silero-vad) -- v6.2.1, MIT license, <1ms/chunk, trained on 6000+ languages (HIGH confidence)
+- [Silero VAD PyAudio streaming examples](https://github.com/snakers4/silero-vad/blob/master/examples/pyaudio-streaming/pyaudio-streaming-examples.ipynb) -- Reference for real-time mic capture + VAD (HIGH confidence)
 
-### Presence Detection
-- [Home Assistant Presence Detection](https://www.home-assistant.io/getting-started/presence-detection/) - Zone and device tracking
-- [Better Presence Detection Guide](https://www.homeautomationguy.io/blog/home-assistant-tips/better-presence-detection-in-home-assistant) - Multi-signal approach
-- [Best Presence Sensors 2026](https://spicehometech.com/product-reviews/motion-sensors/best-presence-sensors/) - mmWave comparison
+### Wake Word Detection
+- [openWakeWord GitHub](https://github.com/dscripka/openWakeWord) -- Open-source framework, MIT license, pre-trained models (HIGH confidence)
+- [openWakeWord hey_jarvis model](https://github.com/dscripka/openWakeWord/blob/main/docs/models/hey_jarvis.md) -- ~200K synthetic training clips, ~0.42MB, dual-stage architecture (HIGH confidence)
+- [Picovoice Wake Word Guide 2026](https://picovoice.ai/blog/complete-guide-to-wake-word/) -- Technical overview of wake word approaches (MEDIUM confidence)
 
-### Camera Integration
-- [Frigate HTTP API](https://docs.frigate.video/integrations/api/frigate-http-api/) - Events, snapshots, recordings
-- [Frigate Live View](https://docs.frigate.video/configuration/live/) - MSE/WebRTC configuration
-- [Configuring go2rtc](https://docs.frigate.video/guides/configuring_go2rtc/) - Streaming setup
-- [go2rtc GitHub](https://github.com/AlexxIT/go2rtc) - WebRTC/MSE streaming
+### Reference Implementations
+- [RealtimeSTT GitHub](https://github.com/KoljaB/RealtimeSTT) -- Combines Silero VAD + openWakeWord + faster-whisper (MEDIUM confidence)
+- [Home Assistant Voice Satellite](https://www.home-assistant.io/voice_control/about_wake_word/) -- Wyoming protocol, satellite architecture patterns (MEDIUM confidence)
 
-### Privacy & Security
-- [Privacy-Preserving Face Recognition Survey](https://dl.acm.org/doi/full/10.1145/3673224) - Academic overview
-- [FTC Face Recognition Best Practices](https://www.ftc.gov/sites/default/files/documents/reports/facing-facts-best-practices-common-uses-facial-recognition-technologies/121022facialtechrpt.pdf) - Regulatory guidance
-- [ADT Familiar Face Detection](https://help.adt.com/s/article/adt-Smart-Home-Security-Familiar-Face-Detection) - Consumer product UX patterns
+### Hardware
+- [ReSpeaker USB Mic Array Wiki](https://wiki.seeedstudio.com/ReSpeaker-USB-Mic-Array/) -- 4-mic, 360-deg, hardware AEC (HIGH confidence)
+- [HA Voice Satellite hardware discussion](https://community.home-assistant.io/t/assist-microphone-usb-conference-mic-speaker/725164) -- Community recommendations (MEDIUM confidence)
 
-### Unknown Person Alerts
-- [Home Assistant Unknown Person Alert](https://community.home-assistant.io/t/alert-for-unknown-person-detected-not-a-household-member/749531) - Community implementation
-- [Home Surveillance with Face Recognition](https://github.com/BrandonJoffe/home_surveillance) - Open source reference
+### UX and Latency
+- [Twilio Voice Agent Latency Guide](https://www.twilio.com/en-us/blog/developers/best-practices/guide-core-latency-ai-voice-agents) -- <300ms magical, 300-800ms natural, >1.4s typical (MEDIUM confidence)
+- [Alexa Conversation Mode](https://voicebot.ai/2021/11/18/new-alexa-conversation-mode-skips-wake-word-repetition/) -- Follow-up without wake word (MEDIUM confidence)
+- [HA Assist chime request](https://community.home-assistant.io/t/assist-chime-or-other-acknowledgement-it-is-listening/703716) -- Audio feedback patterns (MEDIUM confidence)
+
+### Barge-In and Echo Cancellation
+- [Barge-In Interruption Guide](https://medium.com/@roshini.rafy/handling-interruptions-in-speech-to-speech-services-a-complete-guide-4255c5aa2d84) -- AEC requirements, implementation patterns (LOW confidence)
+- [Vocal.com AEC Barge-In](https://vocal.com/echo-cancellation/aec-barge-in/) -- Technical AEC requirements (MEDIUM confidence)
+- [Optimizing Voice Agent Barge-In 2025](https://sparkco.ai/blog/optimizing-voice-agent-barge-in-detection-for-2025) -- Current best practices (LOW confidence)
+
+### Audio Configuration
+- [PulseAudio ArchWiki](https://wiki.archlinux.org/title/PulseAudio) -- Comprehensive Linux audio reference (HIGH confidence)
+- [PulseAudio Command Line](https://www.shallowsky.com/linux/pulseaudio-command-line.html) -- pacmd/pactl usage (MEDIUM confidence)

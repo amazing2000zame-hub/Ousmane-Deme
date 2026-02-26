@@ -1,419 +1,398 @@
-# Domain Pitfalls -- v1.5 Optimization & Latency Reduction
+# Domain Pitfalls -- Server-Side Always-On Voice Input/Output
 
-**Domain:** Adding TTS fallback, parallel synthesis, Opus codec, conversation windowing, latency tracing, health monitoring, cache pre-warming, and Web Worker audio to an existing AI assistant (Jarvis 3.1)
-**Researched:** 2026-01-27
-**Confidence:** HIGH (verified against current codebase analysis, official documentation, community reports, and browser compatibility databases)
+**Domain:** Adding always-on server-side voice capture and playback to an existing Node.js/Docker AI assistant running on a headless Proxmox laptop server
+**Researched:** 2026-02-25
+**Confidence:** HIGH (verified against official SOF documentation, ALSA project docs, Docker device sharing bugs, voice-engine/ec project, Silero/openWakeWord benchmarks, Proxmox forum reports, and existing codebase analysis)
 
-**Scope:** This document focuses on pitfalls specific to ADDING performance optimization features to the EXISTING Jarvis 3.1 voice pipeline. The system currently has a working XTTS v2 TTS pipeline (CPU, 3-10s per sentence), streaming sentence detection via `SentenceAccumulator`, progressive audio queue with Web Audio API, Socket.IO binary delivery, and a serial TTS synthesis queue (`drainTtsQueue`). The Home node (24GB RAM, 20 threads) runs the Docker stack alongside llama-server and Proxmox cluster operations.
+**Scope:** This document focuses on pitfalls specific to ADDING server-side always-on voice to the EXISTING Jarvis 3.1 system. The system currently has a working browser-based voice pipeline (mic capture in browser, WebSocket to backend, Whisper STT, LLM, TTS response streamed back). The new capability adds physical microphone capture and speaker playback on the Home node (i5-13500HX laptop running as headless Proxmox server), running alongside 6 Docker containers, llama-server, and Proxmox cluster services.
+
+**Key system constraints:**
+- Home node: i5-13500HX (14 cores / 20 threads), 24GB RAM
+- OS: Debian 13 (trixie) / PVE kernel 6.14.11-5-pve
+- Audio: Intel SOF firmware just installed, not yet rebooted; no PulseAudio/PipeWire
+- Docker containers: jarvis-backend, jarvis-frontend, jarvis-tts, jarvis-piper, jarvis-searxng, jarvis-whisper
+- llama-server: 16 threads on CPU, systemd service
+- Existing voice pipeline: browser-based (must continue working)
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause system crashes, data corruption, or require rewrites.
+Mistakes that cause hardware lockups, audio device conflicts, or require fundamental redesigns.
 
 ---
 
-### Pitfall 1: TTS Fallback Voice Mismatch Creates Jarring User Experience
+### Pitfall 1: Intel SOF Firmware Fails to Initialize on Headless Proxmox Server
 
-**What goes wrong:** When XTTS times out and the system falls back to Piper TTS, the user hears a completely different voice mid-response. XTTS v2 produces a custom-cloned JARVIS voice with specific prosody, accent, and timbre trained from reference audio in `/opt/jarvis-tts/voices/`. Piper uses pre-trained VITS models (e.g., `en_US-lessac-medium`) with entirely different vocal characteristics -- different pitch, cadence, speaking rate, and accent. Research confirms that Piper has significantly lower quality than XTTS, with fundamentally different prosodic patterns due to its VITS architecture vs. XTTS's autoregressive decoder. In a progressive playback scenario where sentences play sequentially, sentence 3 suddenly sounding like a different person is worse than a brief pause.
+**What goes wrong:** The SOF (Sound Open Firmware) driver requires the Intel i915 graphics driver to initialize the HDMI audio codec. On a headless Proxmox server with no display connected, the i915 driver may fail to probe or be blacklisted (common in Proxmox GPU passthrough configurations). The SOF driver then reports "init of i915 and HDMI codec failed" and enters a deferred probe loop. This has already been observed on this system -- the firmware-sof-signed package was installed but the driver failed at boot with "deferred probe pending."
 
-**Why it happens:** Developers treat TTS fallback as a binary availability question ("Is XTTS down? Use Piper.") without considering the perceptual continuity requirement. The current system already hardcodes voice to `'jarvis'` in `synthesizeLocal()` (tts.ts line 109), and the progressive queue plays chunks sequentially. A naive fallback inserts alien-sounding audio into a sequence the user was tracking as a single voice.
+The critical nuance: on modern Intel laptops (Raptor Lake like the i5-13500HX), the SOF driver handles ALL audio -- not just HDMI. The digital microphone array (DMIC) and the internal speaker codec (typically Realtek or Cirrus Logic) are all routed through the SOF DSP. If SOF fails to load, there are NO ALSA devices at all -- not even the internal mics.
 
-**Warning signs:**
-- Fallback triggers during normal load (XTTS is just slow, not crashed)
-- Users report "voice changed mid-sentence" or "two voices talking"
-- Piper fallback voice has noticeably different sample rate or encoding than XTTS output
+**Why it happens:** Proxmox kernels may have i915 loaded but without proper display initialization (no connected monitor). The SOF driver on newer kernels uses -EPROBE_DEFER to wait for i915, but if i915 never completes initialization (headless), SOF may remain in deferred probe indefinitely. On Proxmox systems where i915 is sometimes blacklisted for GPU passthrough, this completely prevents audio hardware from appearing.
+
+**Consequences:**
+- `aplay -l` shows no soundcards
+- `/dev/snd/` directory is empty or missing PCM devices
+- The entire always-on voice feature is impossible without working ALSA devices
+- Rebooting does not help if the root cause is i915 initialization order
 
 **Prevention:**
-1. **Never mix engines within a single response.** If XTTS fails on sentence 1, use Piper for ALL subsequent sentences in that response. Never alternate between engines sentence-by-sentence.
-2. **Set the fallback timeout high enough to avoid false triggers.** The current `SENTENCE_TTS_TIMEOUT` is 20 seconds (tts.ts line 276). XTTS CPU inference takes 3-15s typically. Only fall back when XTTS is genuinely unresponsive (health check fails), not merely slow.
-3. **Use Piper's closest-matching voice.** Select a Piper model with similar characteristics to the XTTS JARVIS voice (male, British-accented if applicable, medium pitch). Pre-test voice similarity before deployment.
-4. **Signal the fallback to the user.** Add a visual indicator in the frontend (e.g., badge on message) when fallback voice is active so the voice change is expected, not surprising.
-5. **Consider silence over mismatch.** For a single-user homelab system, it may be better to skip audio entirely and show a "voice temporarily unavailable" message than to play a jarring different voice.
+1. **After reboot, verify SOF loaded successfully.** Run `dmesg | grep -i sof` and `dmesg | grep -i "snd_hda\|snd_soc"`. Look for "Firmware boot complete" and card registration messages. If you see "deferred probe pending" after 30+ seconds, SOF is stuck.
+2. **Ensure i915 is loaded and not blacklisted.** Check `/etc/modprobe.d/` for any `blacklist i915` entries (common in Proxmox GPU passthrough setups). The Home node does NOT use GPU passthrough (VM 100 was migrated without it), so i915 should be loadable.
+3. **Try the legacy HDA driver as a fallback diagnostic.** Add `options snd-intel-dspcfg dsp_driver=1` to `/etc/modprobe.d/alsa-base.conf`. This forces legacy HD-Audio mode instead of SOF. It may work for the speaker codec but will NOT enable digital microphones (DMICs require DSP).
+4. **Check NHLT ACPI tables for DMIC presence.** Run `dmesg | grep NHLT` after boot. If it reports "DMICs detected in NHLT tables: 2" (or 4), the hardware supports digital mics. If no NHLT entry, the laptop may not expose DMICs to the host (rare on modern laptops).
+5. **Consider a USB sound card as a guaranteed fallback.** A USB audio adapter (e.g., USB conference speakerphone like Jabra Speak) completely bypasses SOF/i915 dependency. It appears as a standard USB audio class device, works with vanilla ALSA, and provides both mic and speaker in one unit. Cost: $20-80.
 
-**Detection:** Log which TTS engine produced each audio chunk. Track fallback frequency. If fallback triggers more than 10% of sentences, investigate XTTS capacity rather than relying on fallback.
+**Detection:** After reboot, run: `aplay -l && arecord -l`. If either shows no devices, SOF did not initialize. Check `cat /proc/asound/cards` for registered cards.
 
-**Which phase should address it:** TTS Fallback phase -- this is the first design decision. The fallback strategy (whole-response vs. per-sentence, silent vs. alternate voice) must be decided before implementation.
+**Which phase should address it:** Phase 1 (Audio Hardware Foundation). This is a hard blocker. If SOF does not work, the entire feature requires a USB audio fallback strategy. Must be resolved before any software development begins.
+
+**Confidence:** HIGH -- SOF/i915 dependency is documented in official SOF project docs. The deferred probe behavior is confirmed in kernel mailing list patches.
 
 ---
 
-### Pitfall 2: Parallel TTS Overwhelms CPU and Starves LLM Inference
+### Pitfall 2: Echo/Feedback Loop -- Jarvis Transcribes Its Own TTS Speech
 
-**What goes wrong:** Moving from serial TTS synthesis (current `drainTtsQueue` processes one sentence at a time) to parallel synthesis sends 2-3 concurrent requests to the XTTS container. The XTTS v2 model consumes ~5GB RAM during inference and is CPU-bound. The TTS container has a resource limit of 14 CPUs and 16GB memory (docker-compose.yml lines 103-109), while llama-server runs as a systemd service on the same host using 16 threads for LLM inference. Parallel TTS requests will compete directly with llama-server for CPU cycles, causing both TTS and LLM generation to slow dramatically. Research confirms XTTS v2 has known issues with concurrent requests, including race conditions and CUDA assertion errors (GPU) -- on CPU, concurrent requests cause memory pressure and extreme slowdowns rather than crashes.
+**What goes wrong:** When Jarvis speaks through a physical speaker and the microphone is always-on, the mic captures the TTS audio output. Without acoustic echo cancellation (AEC), the system transcribes Jarvis's own speech, interprets it as a new user command, responds to it, creating an infinite feedback loop. This is the single most dangerous failure mode for an always-on voice assistant with co-located mic and speaker.
 
-**Why it happens:** The optimization sounds obvious: "synthesis takes 8s per sentence, so run 3 in parallel and get 3x throughput." But the system is CPU-bound, not I/O-bound. Three concurrent CPU-bound tasks on a 20-thread machine that is also running LLM inference (16 threads), Docker daemon, Proxmox services, and cluster operations will cause severe contention. The total effect is that each individual synthesis takes 2-3x longer, and LLM token generation drops from ~35 tok/s to ~10 tok/s, making the entire response slower.
+Even with a wake word, this is still dangerous: if Jarvis's TTS output contains the wake word or a phonetically similar phrase (e.g., Jarvis saying "as I mentioned earlier" could sound like "Jarvis" to a wake word detector), the system can self-trigger.
 
-**Warning signs:**
-- LLM token generation rate drops significantly when TTS is synthesizing
-- Individual TTS synthesis times increase rather than decrease with parallelism
-- System load average exceeds CPU count (>20)
-- TTS timeouts increase due to per-request slowdown
-- `top` shows CPU steal time or high iowait
+**Why it happens:** On a laptop, the built-in digital microphones are centimeters from the speaker. Even with the lid closed, sound conducts through the chassis. The microphone array is designed to be sensitive (it was built for video calls). Without AEC, the mic will clearly capture any audio the speaker plays.
+
+**Consequences:**
+- Infinite loop: Jarvis responds to itself forever, burning CPU and API credits
+- Whisper transcribes garbage (TTS audio re-encoded through mic/speaker acoustics)
+- System becomes unresponsive as multiple voice sessions stack up
+- If using Claude API, runaway costs from infinite conversation loops
 
 **Prevention:**
-1. **Limit parallel TTS to 2 concurrent requests maximum.** Even this may be too much. Benchmark before committing. On a 20-thread CPU shared with llama-server, 1-2 parallel TTS requests is the practical ceiling.
-2. **Use CPU affinity or cgroup limits** to prevent TTS from starving LLM. The docker-compose already reserves 4 CPUs for TTS. Consider lowering the limit from 14 to 8 CPUs and ensuring llama-server gets a dedicated share.
-3. **Profile first, parallelize second.** Measure: (a) serial TTS time per sentence, (b) LLM generation speed during serial TTS, (c) same metrics with 2 parallel TTS requests. If LLM slows more than TTS speeds up, keep serial.
-4. **Implement adaptive concurrency.** Start with 1 concurrent request. If system load is below threshold (e.g., load average < 12), allow 2. Never exceed 2 on this hardware.
-5. **Stagger parallel requests** rather than launching all at once. Add 500ms delay between launching concurrent synthesis jobs to avoid CPU spike.
+1. **Implement a "speaking" state lock (MANDATORY, Phase 1).** When TTS is playing through the speaker, the audio capture daemon MUST stop processing captured audio. This is not echo cancellation -- it is a hard mute during playback. Implementation: set a shared flag (file, socket message, or shared memory) that the capture process checks before processing each audio frame. This is the simplest and most reliable approach.
+2. **Add a post-playback silence window.** After TTS finishes playing, wait 500-1000ms before resuming audio processing. Room reverberations and the laptop's built-in DSP may still be producing residual audio after playback "stops."
+3. **Implement software AEC as a secondary defense (Phase 2+).** Use the voice-engine/ec project (SpeexDSP-based) with ALSA named pipes. This provides proper echo cancellation by subtracting the known playback signal from the recorded signal. However, SpeexDSP AEC takes several seconds to converge and has limited attenuation (~20-30dB), so it supplements but does not replace the speaking state lock.
+4. **Never include wake word text in TTS output.** If the wake word is "Jarvis," strip it from any TTS output text. The system prompt already says "You are Jarvis" -- ensure TTS never says the trigger phrase aloud.
+5. **Add a self-detection safety check.** After Whisper transcribes audio, compare it against the last TTS output text. If the transcript is >70% similar to what Jarvis just said, discard it silently. This is a last-resort safety net.
 
-**Detection:** Add CPU utilization monitoring. Track time-per-sentence for TTS and tokens-per-second for LLM. Alert if either metric degrades by more than 30% from baseline.
+**Detection:** Monitor for rapid successive voice sessions (more than 2 per 10 seconds). Log when transcript text matches recent TTS output. Alert on API cost spikes.
 
-**Which phase should address it:** Parallel TTS phase -- this requires careful benchmarking. The phase plan should include a "benchmark and decide" step before committing to any parallelism level.
+**Which phase should address it:** The speaking state lock MUST be in Phase 1 (Audio Hardware Foundation). AEC is Phase 2+. Self-detection is a safety net added alongside wake word detection.
+
+**Confidence:** HIGH -- This is a well-documented problem in all voice assistants with co-located mic/speaker. Home Assistant forums, Rhasspy community, and Mycroft all document this issue extensively.
 
 ---
 
-### Pitfall 3: Opus Codec Breaks Safari Audio Playback via decodeAudioData
+### Pitfall 3: Docker Containers Cannot Access Host ALSA Devices Without Specific Configuration
 
-**What goes wrong:** The frontend uses `AudioContext.decodeAudioData()` to play TTS audio chunks (progressive-queue.ts line 193). Switching the backend to output Opus-encoded audio in a WebM container causes decoding failures in Safari. Research confirms extensive, long-running WebKit bugs: Bug 226922 (Safari 15 breaks WebM Opus), Bug 238546 (inconsistent in Safari 15.4), Bug 245428 (Safari 16 cannot play WebM Opus from blob URL). While Safari 17+ added support for 1-2 channel Opus in WebM, Ogg Opus remains completely broken in Safari. Additionally, Firefox has strict Opus header validation and will reject files with truncated OpusTags headers that Chrome accepts.
+**What goes wrong:** The existing Jarvis backend runs in a Docker container (jarvis-backend). If the audio capture service runs inside a Docker container and needs access to ALSA devices on the host, `--device /dev/snd` must be passed at container creation time. But even with device passthrough, there are permission issues: Docker versions have had bugs where `/dev/snd` devices are mounted with group root instead of group audio (Docker/moby issue #36457, fixed in runc 1.0.0-rc5 but can recur). Additionally, if the SOF driver creates/removes devices dynamically (e.g., on suspend/resume), the container loses access to devices that were mapped at startup.
 
-**Why it happens:** Developers test Opus only in Chrome (where it works reliably), deploy, and then discover Safari users get silence or decode errors. The `decodeAudioData()` API has different codec support per browser engine, and Opus-in-WebM is the most inconsistent format across browsers. Even "supported" formats can fail on edge cases (blob URLs, specific channel configurations, header format variations).
+**Why it happens:** Docker's device isolation is a security feature. ALSA device nodes (`/dev/snd/controlC0`, `/dev/snd/pcmC0D0c`, etc.) are character devices with specific major/minor numbers. The container must have both the device node and the correct group permissions. On Proxmox, the audio group GID on the host may not match what the container expects.
 
-**Warning signs:**
-- `decodeAudioData()` throws `DOMException` or `EncodingError` on specific browsers
-- Audio plays in Chrome but is silent in Safari or Firefox
-- WAV-based pipeline works but Opus pipeline fails intermittently
-- Frontend console shows codec-related errors only on certain browsers
+**Consequences:**
+- Container sees devices but gets "Permission denied" when opening them
+- Audio capture works on first start but breaks after host suspend/resume
+- Multiple containers fighting over ALSA device access (only one can open a non-shared device)
 
 **Prevention:**
-1. **Keep WAV as the primary format for `decodeAudioData()`.** The current system outputs WAV (tts.ts line 125: `'audio/wav'`), which is universally supported. WAV decoding is fast and never fails.
-2. **Use Opus only for transfer encoding, decode on receipt.** If bandwidth savings are needed, encode as Opus for Socket.IO transfer but decode back to PCM on the frontend before passing to `decodeAudioData()`. This requires a client-side Opus decoder (e.g., `opus-decoder` npm package or WebAssembly-based decoder).
-3. **If using native Opus decoding**, implement format negotiation: client reports supported codecs at connection time, backend sends Opus only to confirmed-compatible clients. On a single-user homelab accessed from known devices, you can hardcode the format to match your specific browser.
-4. **Test on ALL target browsers before deploying.** The single-user homelab context means you know exactly which browsers/devices will access the system. Test Opus playback on each one.
-5. **For this specific system**: Given it's a homelab accessed primarily from one device, and WAV transfer over the local network (192.168.1.x) is nearly instantaneous, the bandwidth savings of Opus may not justify the complexity. A 3-second WAV sentence is ~265KB at 22050Hz mono 16-bit. On a local gigabit network, this transfers in <3ms.
+1. **Run the audio capture daemon on the HOST, not in Docker (RECOMMENDED).** This completely avoids Docker-ALSA permission complexity. Run it as a systemd service on the Proxmox host. It communicates with the jarvis-backend container via Socket.IO over the Docker bridge network (the backend already exposes port 4000). This is the architecture the existing voice.ts handler was designed for -- it expects a remote "agent" to connect to the /voice namespace.
+2. **If Docker is required, use `--privileged` or `--device /dev/snd` with `--group-add audio`.** The `--group-add` flag adds the host audio group to the container process. Verify the audio GID matches: `getent group audio` on host.
+3. **Never share ALSA devices between multiple containers.** ALSA does not support concurrent access to the same PCM device without dmix/dsnoop. If the audio capture container opens the capture device, no other container can.
+4. **For playback inside Docker, use network audio.** The TTS containers (jarvis-tts, jarvis-piper) already output audio as HTTP responses. The host-side daemon receives this audio and plays it through ALSA. Do not try to make TTS containers play audio directly.
 
-**Detection:** Add `try/catch` around `decodeAudioData()` calls (already exists in progressive-queue.ts line 193-212). Log the content type and browser UserAgent on decode failures. Monitor for "Failed to play XTTS chunk" warnings.
+**Detection:** Test audio access in the target environment before building the full pipeline: `docker run --rm --device /dev/snd -it debian:13 bash -c "apt update && apt install -y alsa-utils && arecord -d 2 test.wav"`. If this fails, the full feature will fail.
 
-**Which phase should address it:** Opus Codec phase -- but this pitfall suggests the phase may be unnecessary for a homelab system on a local network. The roadmap should evaluate whether Opus provides meaningful benefit before committing to implementation.
+**Which phase should address it:** Phase 1 (Architecture Decision). Decide host-daemon vs Docker before any code is written.
+
+**Confidence:** HIGH -- Docker/moby issue #36457 is publicly documented. Proxmox forum threads confirm ALSA device passthrough challenges.
 
 ---
 
-### Pitfall 4: Conversation Sliding Window Silently Drops Critical Context
+### Pitfall 4: ALSA Without PulseAudio/PipeWire Has No Automatic Device Sharing
 
-**What goes wrong:** The current system uses a fixed `chatHistoryLimit` of 20 messages (config.ts line 46) with simple truncation (`history.slice(-config.chatHistoryLimit)` in chat.ts line 138). Adding a sliding window with summarization introduces a more complex failure mode: the summary loses critical details that the LLM needs to maintain coherent tool execution. For example, a user says "restart the VM we discussed earlier" -- but the summarized context says "discussed cluster status" instead of "discussed VM 103 (management)". The LLM either asks the user to clarify (annoying) or guesses wrong (dangerous -- wrong VM restarted). Research confirms that LLM summarization has hallucination risk and "lost in the middle" effects where important details placed in the middle of context are underweighted.
+**What goes wrong:** On a pure ALSA system (no PulseAudio, no PipeWire), only one application can open a hardware PCM device at a time unless dmix (for playback) or dsnoop (for capture) is configured. If the always-on capture daemon opens `hw:0,0` for recording, no other process (including Docker containers with device passthrough) can record from the same device. Similarly, if TTS playback opens the hardware playback device, the capture daemon cannot simultaneously operate if the card does not support full-duplex.
 
-**Why it happens:** Summarization is lossy compression. It works well for casual conversation but poorly for technical/operational context where specific identifiers (VMIDs, IP addresses, file paths, exact error messages) are critical. The current system routes between Claude (agentic with tools) and Qwen (conversational) based on intent -- tool call context from Claude sessions includes structured data (tool names, inputs, results) that is especially poorly preserved by free-form summarization. Token counting accuracy is another issue: different providers (Claude vs. Qwen) use different tokenizers, so a summary sized for Claude's context may be wrong for Qwen's.
+**Why it happens:** ALSA hardware PCM access is exclusive by default. PulseAudio/PipeWire abstract this by proxying all audio through a single daemon that manages mixing and sharing. Without them, every application must use the ALSA dmix/dsnoop plugins explicitly, or only one application can access the device at a time.
 
-**Warning signs:**
-- LLM asks for information the user already provided earlier in the conversation
-- Tool calls use wrong identifiers (wrong VMID, wrong IP, wrong file path)
-- Summarization generates hallucinated details not present in original conversation
-- Token count estimates drift from actual usage, causing context overflow errors
+**Consequences:**
+- Capture daemon locks the mic; Docker containers cannot record
+- Playback for TTS fails because capture daemon has the device open
+- Race condition on boot: whichever service starts first claims the device
+- No automatic sample rate conversion (ALSA dmix has a fixed rate)
 
 **Prevention:**
-1. **Separate structured context from conversational context.** Keep a "facts extracted" list (VMIDs mentioned, IPs discussed, tools executed with results) that is never summarized. Only summarize the narrative flow.
-2. **Use extraction, not generation, for summaries.** Instead of asking the LLM to "summarize this conversation," extract key entities and decisions: "User asked to restart VM 103. Result: success." This is more deterministic and less prone to hallucination.
-3. **Validate token counting per provider.** Use `tiktoken` for Claude (Anthropic uses cl100k_base), and the local tokenizer endpoint for Qwen. The current Qwen context window is only 4096 tokens (config.ts line 51) -- summarization is most critical for Qwen sessions.
-4. **Keep the full conversation in the database.** The SQLite database already stores all messages via `memoryStore.saveMessage()`. The sliding window affects only the in-context messages sent to the LLM, not persistence. This means you can always reconstruct full context if needed.
-5. **Start with simple truncation improvements** before adding summarization. The current 20-message limit is conservative. For Qwen (4096 token window), count actual tokens rather than messages. For Claude (larger context), increase the message limit. This may solve the problem without needing summarization at all.
+1. **Configure asound.conf with dmix and dsnoop on day one.** Create `/etc/asound.conf` with an `asym` device combining `dmix` (output) and `dsnoop` (input) on the same hardware card. Set this as the default ALSA device. This allows multiple processes to share capture and playback simultaneously.
+2. **Pin the sample rate in dmix/dsnoop to match your pipeline.** The voice pipeline uses 16kHz for STT input and 22050Hz or 24000Hz for TTS output. ALSA dmix locks to a single sample rate. Choose 48000Hz (common hardware default) and resample in software.
+3. **Use `plughw:` prefix instead of `hw:` in application code.** `plughw:` enables ALSA's automatic format conversion (sample rate, bit depth, channels). `hw:` provides raw access and will fail if the requested format does not match hardware capabilities.
+4. **Test full-duplex operation.** Run `arecord -d 5 test.wav &` and `aplay /usr/share/sounds/alsa/Front_Center.wav` simultaneously. If both succeed, full-duplex works. If one fails with "Device or resource busy," configure dsnoop/dmix.
+5. **The host daemon is the ONLY process that should open ALSA devices directly.** All other audio I/O goes through the daemon via network protocols (Socket.IO for voice data, HTTP for TTS audio).
 
-**Detection:** Add a "context confidence" metric: after summarization, check if key entities from the last 5 tool calls are present in the summary. Log when the summary fails to preserve tool call context. Compare LLM behavior (accuracy of references to past context) before and after enabling summarization.
+**Detection:** If any ALSA operation returns EBUSY (-16), device sharing is broken. Log all ALSA open/close operations with timestamps.
 
-**Which phase should address it:** Conversation Windowing phase -- but the phase should start with token-counting improvements to the existing truncation before attempting summarization. The simpler fix may be sufficient.
+**Which phase should address it:** Phase 1 (Audio Hardware Foundation). The asound.conf configuration must be in place before the capture daemon is developed.
+
+**Confidence:** HIGH -- ALSA sharing limitations are fundamental to the Linux audio architecture and extensively documented in ALSA project wiki.
 
 ---
 
 ## Moderate Pitfalls
 
-Mistakes that cause delays, degraded performance, or technical debt.
+Mistakes that cause degraded functionality, excessive resource usage, or require significant debugging.
 
 ---
 
-### Pitfall 5: Latency Tracing Overhead Slows the System It's Measuring
+### Pitfall 5: Always-On Audio Processing Exhausts CPU Budget
 
-**What goes wrong:** Adding timing instrumentation to every stage of the pipeline (LLM token generation, sentence detection, TTS synthesis, Socket.IO transfer, audio decoding, playback start) introduces overhead that itself affects latency. Each `Date.now()` call is cheap, but structured logging, span creation, and especially network transmission of trace data consume CPU and memory. On this system, CPU is the bottleneck -- any overhead compounds. Research on OpenTelemetry confirms that enabling tracing can measurably increase latency in high-throughput services, and that synchronous span export is a common mistake that blocks application threads.
+**What goes wrong:** The Home node already uses most of its CPU capacity. llama-server uses 16 threads for LLM inference (~75-95 tok/s prompt, 27-52 tok/s generation). The Docker stack (backend, TTS, Piper, Whisper, SearXNG) has cpuset allocations that overlap. Adding continuous audio capture, VAD processing, wake word detection, and periodic Whisper transcription to this load can cause system-wide performance degradation, especially during concurrent operations (user asks a question via browser voice while the server-side listener is active).
 
-**Why it happens:** Developers instrument everything because "more data is better." But on a CPU-constrained system where TTS and LLM compete for cycles, even 2-3% overhead from tracing is meaningful. The current system already has minimal logging (`console.warn` for errors only). Adding structured tracing with span hierarchies, timestamp collection, and data export is a qualitative jump in overhead.
+Current CPU allocation:
+- llama-server (systemd): 16 threads, no cpuset limit
+- jarvis-backend: cpuset 0-19, limit 8 CPUs
+- jarvis-whisper: cpuset 10-13, limit 4 CPUs
+- jarvis-piper: cpuset 14-19, limit 6 CPUs
+- jarvis-tts: no cpuset (GPU reservation, falls back to CPU)
+- New audio daemon: needs continuous processing
 
-**Warning signs:**
-- Measured latency increases after adding instrumentation
-- Trace data export causes periodic CPU spikes
-- Log file or trace storage grows rapidly (the system has limited disk on root partition)
-- Tracing data itself becomes a source of garbage collection pauses in Node.js
+**Why it happens:** Developers underestimate the CPU cost of "lightweight" always-on processing. Silero VAD uses ~0.4% CPU for VAD alone (RTF 0.004 on x86), but the audio capture thread, sample rate conversion, ring buffer management, and periodic wake word detection add up. When a wake word is detected and audio is sent to Whisper, the Whisper container spikes to 4 CPU cores for 2-5 seconds. If this coincides with an LLM inference request, both slow down dramatically.
 
 **Prevention:**
-1. **Use lightweight timing, not full distributed tracing.** For a single-user homelab system, you do not need OpenTelemetry, Jaeger, or span-based tracing. Simple `Date.now()` timestamps at key pipeline stages, stored in-memory and emitted via Socket.IO, are sufficient.
-2. **Instrument only the critical path.** Measure: (a) time from user send to first LLM token, (b) time from sentence detection to TTS synthesis complete, (c) time from audio chunk sent to playback start. These 3 measurements capture 90% of perceptible latency. Do not instrument every function call.
-3. **Buffer and batch trace data.** Never send trace data synchronously per-event. Buffer timing data per-response and emit a single `chat:latency` event after `chat:done`, containing all timing breakdowns.
-4. **Set a retention policy.** Store trace data for the last 100 responses only (in-memory ring buffer). Do not persist to SQLite unless explicitly requested. The root partition is 112GB and already at 52%.
-5. **Make tracing opt-in.** Add a `ENABLE_LATENCY_TRACING` environment variable defaulting to `false`. When disabled, all timing code should be no-ops with zero overhead.
+1. **Budget CPU explicitly.** Allocate a specific cpuset for the audio daemon (e.g., cores 18-19) and enforce it. Accept that wake word detection on 2 cores will be slightly slower than unconstrained.
+2. **Use Silero VAD (not openWakeWord) for initial audio filtering.** Silero VAD uses <1% CPU at 16kHz and is a binary speech/silence detector. Only pass audio to the more expensive wake word detector when VAD detects speech. This creates a two-stage pipeline: VAD (cheap, always on) -> wake word (moderate, only during speech) -> Whisper (expensive, only on confirmed trigger).
+3. **Throttle Whisper submissions.** The existing jarvis-whisper container is configured with cpuset 10-13 and limit 4 CPUs. Do not increase this. If a voice session is already being processed, queue the next one rather than running concurrent Whisper jobs.
+4. **Monitor system load.** Add the audio daemon's CPU usage to the existing health endpoint. Alert if the daemon consistently uses >5% of a core during idle (no speech detected).
+5. **Implement a "busy" state.** When the LLM is actively generating a response (high CPU), delay non-urgent audio processing. The voice pipeline already tracks LLM activity through the abortController pattern.
 
-**Detection:** Benchmark the system with and without tracing enabled. If overhead exceeds 5% on any measured metric, the tracing implementation needs optimization.
+**Detection:** Track `process.cpuUsage()` in the Node.js backend. Monitor `/proc/loadavg`. If 1-minute load average consistently exceeds 16 (total cores minus headroom), the system is overloaded.
 
-**Which phase should address it:** Latency Tracing phase -- implement as lightweight timestamps first. Only add structured tracing if the simple approach is insufficient for diagnosing issues.
+**Which phase should address it:** Phase 2 (Audio Capture Daemon). CPU budgeting must be part of the daemon design, not retrofitted.
+
+**Confidence:** HIGH -- CPU allocation from docker-compose.yml verified directly. Silero VAD RTF benchmark from official GitHub README.
 
 ---
 
-### Pitfall 6: Clock Skew Between Frontend and Backend Produces Misleading Latency Numbers
+### Pitfall 6: Wake Word Detection Produces Too Many False Positives or False Negatives
 
-**What goes wrong:** End-to-end latency measurement requires correlating timestamps from the frontend (browser `Date.now()` or `performance.now()`) with backend timestamps (Node.js `Date.now()`). If the browser's system clock differs from the server's clock by even 100ms, the reported "time from message send to first token" is wrong by that amount. Research confirms that browser clock skew is a well-known problem in distributed tracing, with the OpenTelemetry project having open proposals specifically to address client-side clock skew (OTEP #154).
+**What goes wrong:** The wake word detector (for "Jarvis" or "Hey Jarvis") either triggers on non-speech sounds (TV audio, household noise, conversations not directed at the system) or fails to trigger when the user actually says the wake word. Both are frustrating: false positives cause Jarvis to interrupt with "How can I help?" when nobody called, and false negatives require repeating the wake word multiple times.
 
-**Why it happens:** In this system, the Home node (192.168.1.50) runs NTP for clock sync, but the user's browser device (phone, laptop) may not be perfectly synced. Even a 200ms offset makes latency measurements unreliable. Developers assume timestamps are comparable across machines and build dashboards showing incorrect data, leading to optimizing the wrong things.
+The problem is amplified in a server closet or home office environment with ambient noise from server fans (the i5-13500HX laptop will have active cooling), HVAC, and other household sounds.
 
-**Warning signs:**
-- Negative latency values in traces (client timestamp is ahead of server)
-- Latency measurements change dramatically when accessed from different devices
-- Metrics don't match perceived experience (system "feels fast" but traces show 500ms latency, or vice versa)
-- Latency spikes correlate with nothing (they're actually clock drift events)
+**Why it happens:** Pre-trained wake word models (openWakeWord's "hey jarvis" model) are trained on diverse audio samples but not on YOUR specific environment. The laptop's digital microphone array has specific frequency response characteristics and picks up specific room acoustics. Fan noise from the laptop itself is a constant low-frequency background that the model may not have been trained on. Additionally, wake word sensitivity tuning is a difficult balance: lower threshold catches more true positives but also more false positives.
 
 **Prevention:**
-1. **Measure backend-only latency as the primary metric.** The backend controls all timing: message received -> LLM first token -> sentence detected -> TTS synthesis complete -> audio chunk emitted. These are all server-side timestamps with a single clock.
-2. **For frontend latency, use relative timing only.** Measure "time from Socket.IO emit to first `chat:token` received" using `performance.now()` (monotonic, not affected by clock adjustments). This captures network round-trip + server processing without requiring clock sync.
-3. **Never subtract a server timestamp from a client timestamp** (or vice versa). Report them separately and let the viewer understand each segment.
-4. **If cross-device timing is needed**, implement a simple clock offset estimation: on Socket.IO connect, exchange a timestamp pair (client sends its time, server responds with its time and the client's time). Compute offset. Apply to all subsequent traces. Re-estimate periodically.
+1. **Use a two-stage detection pipeline.** Stage 1: Silero VAD filters silence and non-speech audio (eliminates fan noise, HVAC, etc.). Stage 2: only when VAD detects speech, run the wake word model. This dramatically reduces false positives from non-speech sounds.
+2. **Start with openWakeWord's pre-trained "hey jarvis" model and tune threshold empirically.** Default threshold is typically 0.5. Start at 0.7 (fewer false positives) and decrease if false negatives are too frequent. Log all detections with confidence scores for the first week.
+3. **Consider a custom-trained wake word model.** openWakeWord supports training custom models from just a few examples. Recording 10-20 samples of "Hey Jarvis" in the actual deployment environment significantly improves accuracy.
+4. **Add a confirmation window.** After wake word detection, listen for 500ms of additional speech. If VAD shows continued speech, confirm the trigger. If silence follows immediately, it was likely a false positive. Real users say "Hey Jarvis, what's the temperature?" -- there is always speech after the wake word.
+5. **Implement per-environment calibration.** On first setup, run a 5-minute calibration phase that measures ambient noise levels and adjusts VAD thresholds accordingly. Store these in a config file.
 
-**Detection:** Validate that no latency measurement involves subtracting timestamps from different machines. Check for negative values in latency data (indicates clock skew).
+**Detection:** Log all wake word triggers with confidence score, timestamp, and whether the subsequent voice session produced a valid transcript. Calculate false positive rate (triggers that lead to empty/noise transcripts) weekly.
 
-**Which phase should address it:** Latency Tracing phase -- the timing architecture must be defined upfront. Mixing client/server timestamps is a design mistake that is hard to fix retroactively.
+**Which phase should address it:** Phase 3 (Wake Word and VAD). The two-stage pipeline design affects the capture daemon architecture.
+
+**Confidence:** MEDIUM -- openWakeWord accuracy claims are from the project README, not independently verified in this specific hardware/environment. Silero VAD's ability to filter laptop fan noise specifically is unverified.
 
 ---
 
-### Pitfall 7: Health Check Dependencies Create Startup Deadlock
+### Pitfall 7: PyAudio/sounddevice Buffer Overflow in Long-Running Daemon
 
-**What goes wrong:** The current docker-compose.yml already has health checks and dependency ordering: `jarvis-tts` must be healthy before `jarvis-backend` starts (line 40-41), and `jarvis-backend` must be healthy before `jarvis-frontend` starts (line 67-69). The TTS container has a 300-second `start_period` (line 115) because XTTS model loading is slow on CPU. Adding deeper health checks (e.g., backend checks TTS health, TTS checks model integrity, backend checks LLM endpoint) creates circular dependencies or extends startup time. Research confirms that health checks depending on downstream services cause cascading failures: if TTS is slow to start, backend marks itself unhealthy, frontend never starts.
+**What goes wrong:** The audio capture daemon runs 24/7, continuously reading from the microphone. PyAudio (PortAudio wrapper) and sounddevice both use ring buffers for audio I/O. If the processing thread falls behind the audio capture rate (e.g., because of a CPU spike from concurrent Whisper transcription), the ring buffer overflows. PyAudio raises `IOError: [Errno -9981] Input overflowed`. If not handled correctly, the audio stream becomes corrupted -- subsequent reads return stale or partial frames, and the daemon must be restarted.
 
-**Why it happens:** Developers add "deep" health checks that verify all dependencies are working, reasoning that a service isn't truly healthy unless everything it depends on is also healthy. But this creates brittle dependency chains. The current system already has this issue: if `jarvis-tts` takes 6 minutes to load (>300s `start_period`), the entire stack fails to start. Adding more dependency checks to the backend health endpoint (`/api/health`) makes this worse.
+Over days/weeks of continuous operation, memory can also grow if audio buffers are not properly released. Python's garbage collector does not guarantee timely cleanup of large numpy arrays from audio frames.
 
-**Warning signs:**
-- Stack takes longer to start after adding health checks
-- `docker compose up` hangs waiting for health checks to pass
-- Restarting one container causes cascade of other containers restarting
-- Health check flapping (healthy -> unhealthy -> healthy) under normal load
+**Why it happens:** Audio I/O operates on a strict real-time clock. At 16kHz/16-bit, the microphone produces 32KB/sec continuously. If the processing thread blocks for more than the buffer duration (typically 100-500ms), data is lost. Common causes: GIL contention from concurrent Python threads, disk I/O stalls, system-wide CPU pressure from llama-server or Docker containers.
 
 **Prevention:**
-1. **Separate liveness from readiness.** The health endpoint should check: "Can this service process requests?" (liveness), NOT "Are all downstream services working?" (readiness). The current backend health check (`wget --spider http://localhost:4000/api/health`) is a liveness check -- keep it that way.
-2. **Check dependencies at request time, not health check time.** The existing `checkLocalTTSHealth()` function in tts.ts already caches health for 60 seconds and is called when TTS is actually needed. This is the correct pattern.
-3. **Add a separate monitoring endpoint** (e.g., `/api/status`) for detailed dependency status. This endpoint is called by the frontend dashboard, not by Docker health checks.
-4. **Increase TTS start_period if adding model validation.** If the health check now validates model loading (not just HTTP response), the 300s start period may not be enough. Consider 600s.
-5. **Never add circular dependencies.** If A depends on B being healthy, B must never check A's health.
+1. **Use callback-mode audio capture, not blocking reads.** PortAudio's callback mode runs in a separate high-priority thread managed by the OS audio subsystem. The callback should ONLY copy data to a queue -- never do processing (VAD, wake word) inside the callback.
+2. **Set `exception_on_overflow=False` in PyAudio reads.** If using blocking mode, this prevents exceptions on transient overflows. Log the overflow but continue operating.
+3. **Use a bounded queue between capture and processing.** `queue.Queue(maxsize=100)` with 30ms chunks gives ~3 seconds of buffer. If the queue is full, drop the oldest chunk rather than blocking the capture thread.
+4. **Implement a watchdog for the audio stream.** If no audio frames are received for 5 seconds, the ALSA device may have been lost (USB disconnect, driver crash). Close and reopen the stream.
+5. **Run the daemon under systemd with restart-on-failure.** Configure `Restart=on-failure`, `RestartSec=3`, `WatchdogSec=30` in the systemd unit. The daemon should send `WATCHDOG=1` heartbeats via sd_notify to prove it is still processing audio. Use the `sdnotify` Python package.
+6. **Monitor memory usage over time.** If RSS grows by more than 50MB over 24 hours, there is a memory leak. Common cause: accumulating audio buffers in a list that is never cleared.
 
-**Detection:** Monitor container start times. Track how often containers restart due to health check failures. Alert if any container takes more than 5 minutes to become healthy.
+**Detection:** Log buffer overflow events. If more than 10 overflows per minute, the processing thread is consistently falling behind. Track daemon uptime and restarts.
 
-**Which phase should address it:** Health Monitoring phase -- design the monitoring architecture to explicitly separate Docker health checks (simple liveness) from application-level health reporting (rich status).
+**Which phase should address it:** Phase 2 (Audio Capture Daemon). The daemon architecture (callback vs blocking, queue strategy) is a foundational design decision.
+
+**Confidence:** HIGH -- PyAudio buffer overflow (errno -9981) is extensively documented in GitHub issues across speech_recognition, vosk-api, and Picovoice projects.
 
 ---
 
-### Pitfall 8: Audio Chunk Race Conditions When Adding Parallel Synthesis
+### Pitfall 8: Dual Voice Pipeline Conflict (Browser + Server-Side)
 
-**What goes wrong:** The current system assigns chunk indices deterministically at sentence detection time (`audioChunkIndex++` in chat.ts line 267) and drains the TTS queue serially. Parallel synthesis means multiple sentences synthesize concurrently, and audio chunks arrive out of order. The frontend progressive queue already sorts by index (`xttsQueue.sort((a, b) => a.index - b.index)` in progressive-queue.ts line 112), but the playback logic (`playNextXttsChunk`) always takes the first item from the queue. If chunk 3 arrives before chunk 2, chunk 3 plays first because it's at the front of the (sorted) queue -- but only if chunk 2 hasn't arrived yet. The sort pushes chunk 3 after chunk 2's expected position, but since chunk 2 isn't in the queue yet, chunk 3 IS the first item.
+**What goes wrong:** The system has two voice input paths: (1) browser-based voice via WebRTC getUserMedia -> WebSocket -> backend /chat namespace, and (2) server-side voice via physical mic -> capture daemon -> backend /voice namespace. If both are active simultaneously (user has the Jarvis UI open with mic on AND the server-side listener is running), the system receives the same speech twice and generates two responses. Worse, the browser voice pipeline and server-side pipeline may route through different LLM providers or have different context windows, producing contradictory responses.
 
-**Why it happens:** The current frontend assumes serial delivery (chunks arrive in index order because they're synthesized serially). The sort is a safety net, not the primary ordering mechanism. With parallel synthesis, out-of-order delivery becomes the norm. The playback function needs to wait for the next expected index, not just play whatever's first in the queue.
+**Why it happens:** The two pipelines were designed independently. The browser pipeline sends audio via `chat:send` with `voiceMode: true`. The server-side pipeline sends via the `/voice` namespace. The backend treats them as separate sessions with separate session IDs. There is no coordination mechanism to detect that the same user said the same thing through two different input channels.
 
-**Warning signs:**
-- Audio sentences play out of order ("good morning" after "how are you")
-- Gaps in audio playback followed by rapid sequential playback (waiting chunks arrive, then play back-to-back)
-- Progressive playback stutters or pauses between sentences
+**Consequences:**
+- Duplicate responses to the same question
+- Two TTS outputs playing simultaneously (browser audio + physical speaker)
+- Double API cost (two LLM calls for one utterance)
+- Confusing user experience
 
 **Prevention:**
-1. **Track expected next index.** Add a `nextExpectedIndex` counter starting at 0. `playNextXttsChunk` only plays if `xttsQueue[0].index === nextExpectedIndex`. If not, wait for the correct chunk to arrive.
-2. **Add a timeout for missing chunks.** If the expected chunk hasn't arrived within 10 seconds, skip it (it may have failed synthesis) and advance to the next available index. Log the skip.
-3. **Consider a "ready buffer" pattern.** Accumulate chunks until you have N consecutive chunks from the expected index, then start playback. For 2-3 parallel synthesis workers, buffering 2 chunks before starting ensures smooth playback.
-4. **Emit chunk index with the audio_done event** so the frontend knows the total expected count and can detect missing chunks.
-5. **Signal synthesis failure per-chunk** from the backend. Currently, if `synthesizeSentenceToBuffer` returns null (line 231-238 of chat.ts), no `chat:audio_chunk` event is emitted. The frontend never knows that chunk was attempted and failed. Add a `chat:audio_skip` event for failed chunks so the frontend can advance its expected index.
+1. **Implement a priority system.** Server-side voice is the "primary" input when active. When the server-side daemon is connected to /voice namespace, browser voice input should be suppressed or the user should see a "Server mic active" indicator.
+2. **Add a "voice source" mutex in the backend.** When a voice session starts from any source, lock out new voice sessions for 30 seconds (typical response duration). The second source gets a "voice session already active" rejection.
+3. **Use the same session ID for related voice interactions.** If the server-side daemon detects speech and the browser UI is open, route through a single session to maintain context continuity.
+4. **Mute browser mic by default when server-side listening is active.** The frontend can check a backend endpoint (`GET /api/voice/status`) and disable the mic button when server-side voice is active.
+5. **Consider making server-side voice the ONLY voice input.** The browser pipeline was a stepping stone. Once server-side voice works reliably, disable browser voice capture to eliminate the dual-pipeline complexity entirely. Keep browser TTS playback as an option.
 
-**Detection:** Track chunk indices received vs. expected. Log out-of-order arrivals. Log gaps where expected chunks never arrive.
+**Detection:** Log voice session starts with source identifier ("browser" or "server"). Alert if two sessions start within 2 seconds of each other.
 
-**Which phase should address it:** Parallel TTS phase -- the ordering logic must be redesigned BEFORE enabling parallel synthesis. Adding parallelism without fixing the ordering guarantee will cause immediate playback issues.
+**Which phase should address it:** Phase 4 (Backend Integration). The /voice namespace handler already exists and expects a single agent connection. The mutex/priority logic should be added when wiring the server-side daemon to the existing backend.
+
+**Confidence:** HIGH -- The dual pipeline architecture is visible in the existing codebase (chat.ts handles browser voice, voice.ts handles agent voice). No coordination mechanism exists.
 
 ---
 
-### Pitfall 9: Cache Pre-Warming Blocks Container Startup and Delays First Request
+### Pitfall 9: ALSA Configuration Breaks on Kernel Update or SOF Firmware Update
 
-**What goes wrong:** Pre-warming the TTS sentence cache (currently a 50-entry LRU in tts.ts, lines 241-267) at startup means synthesizing common phrases ("Hello!", "How can I help?", "Sure, let me check.") before accepting requests. Each XTTS synthesis takes 3-10 seconds on CPU. Pre-warming 10 phrases takes 30-100 seconds of additional startup time. The backend container already depends on TTS being healthy (docker-compose depends_on), and the TTS container has a 300-second start period. Adding 100 seconds of cache warming on top means the full stack takes 6-7 minutes to start. Research confirms that cache warming blocking startup is an anti-pattern in Node.js, especially when the data changes or the warming set is wrong.
+**What goes wrong:** Proxmox kernel updates (delivered via `apt upgrade`) can change the SOF firmware version, the ALSA kernel module version, or the device topology. After an update, ALSA device numbering may change (card 0 becomes card 1), device names change, or the SOF firmware version is incompatible with the new kernel. The carefully configured `/etc/asound.conf` that references `hw:0,0` or `card sof-hda-dsp` stops working.
 
-**Why it happens:** Developers add cache warming to eliminate the "cold first request" latency. But on this system, the "cold first request" is a user speaking -- which is an interactive event that happens unpredictably. If the user sends a message 10 seconds after startup, warming isn't complete yet and they still get cold latency. If they send a message 10 minutes after startup, the warmed cache is serving phrases that may not match what the LLM actually generates.
-
-**Warning signs:**
-- Container startup time increases by the warming duration
-- `docker compose up` takes 7+ minutes instead of 5 minutes
-- Warmed phrases don't match actual LLM output (cache miss rate remains high despite warming)
-- Memory usage spikes during startup (50 WAV buffers * ~100KB each = 5MB, which is fine, but the CPU load during warming is the real issue)
+**Why it happens:** Proxmox pushes kernel updates aggressively (the current kernel is 6.14.11-5-pve). The SOF firmware files in `/lib/firmware/intel/sof/` are separate from the kernel and may not be updated in lockstep. A new kernel may expect a newer SOF firmware topology file that does not exist, or an updated firmware may change ALSA topology (adding/removing PCM devices, changing mixer controls).
 
 **Prevention:**
-1. **Warm asynchronously, never block startup.** Start accepting requests immediately. Run cache warming in the background with `setTimeout(() => warmCache(), 5000)` after the server is listening.
-2. **Warm lazily on first TTS request.** The first time a user enables voice mode, warm the top 10 phrases in the background while serving the first request normally.
-3. **Warm from actual usage data.** Instead of guessing common phrases, record which phrases hit the cache in production. On restart, warm those exact phrases. Store the warming set in a small JSON file, not hardcoded.
-4. **Rate-limit warming requests.** Send warming synthesis requests with 2-second gaps to avoid overloading the TTS container during its own startup.
-5. **Set warming as completely optional.** The 50-entry LRU cache (tts.ts) already fills naturally during use. For a single-user system, after 10-15 messages with voice mode, the cache is effectively warm. Explicit warming may not provide meaningful benefit.
+1. **Reference ALSA devices by name, not number.** Use `sysdefault:CARD=sofhdadsp` instead of `hw:0,0`. Card names are more stable across reboots and kernel updates.
+2. **Pin the Proxmox kernel version for the audio subsystem.** Use `apt-mark hold proxmox-default-kernel pve-kernel-*` to prevent automatic kernel updates. Update manually after testing audio still works.
+3. **Create a post-kernel-update audio test script.** Add a script to `/etc/kernel/postinst.d/` that runs `aplay -l && arecord -l` and emails results (using the existing email agent on agent1) after any kernel install.
+4. **Keep the USB audio fallback ready.** If kernel updates break SOF, a USB audio device provides immediate recovery without downgrading the kernel.
+5. **Document the working kernel version and SOF firmware version.** Record which exact combination works in CLAUDE.md so future troubleshooting has a known-good baseline.
 
-**Detection:** Track cache hit rate over time. Compare hit rate with and without pre-warming. If natural cache filling achieves >60% hit rate within 5 minutes of use, pre-warming adds minimal value.
+**Detection:** After any `apt upgrade`, check `dmesg | grep -i sof` and `aplay -l` before assuming audio still works.
 
-**Which phase should address it:** Cache Pre-Warming phase -- the phase should begin with cache hit rate analysis of the existing LRU cache before investing in warming infrastructure. If the natural cache is effective, skip warming entirely.
+**Which phase should address it:** Ongoing (Operations). Not a development phase pitfall but an operational resilience concern. Address during Phase 1 setup documentation.
 
----
-
-### Pitfall 10: Web Worker Audio Processing Fails Because AudioContext Is Unavailable
-
-**What goes wrong:** Attempting to offload audio decoding to a Web Worker to free the main thread runs into a fundamental API limitation: `AudioContext` is not available in Web Workers. The `decodeAudioData()` method exists on `BaseAudioContext`, which includes both `AudioContext` and `OfflineAudioContext`, but neither can be constructed in a Worker context as of 2025-2026. There is an open spec issue (#16) on the Web Audio API repository requesting AudioContext in Workers, filed in 2013, still unresolved. The progressive-queue.ts already uses the main-thread AudioContext (lines 17-35) with a singleton pattern -- moving decoding to a Worker requires a fundamentally different architecture.
-
-**Why it happens:** Developers see "decode audio in a worker for better performance" in articles and assume the Web Audio API supports it. It does not. The `AudioWorklet` API allows custom audio processing in a separate thread, but it processes already-decoded PCM data, not encoded audio files. The only way to decode audio in a Worker is to use a WASM-based decoder (e.g., FFmpeg compiled to WASM) or the emerging `WebCodecs` `AudioDecoder` API. But `AudioDecoder` is not yet supported in Safari (only in Safari Technology Preview as of May 2025), and the WASM approach is ~2x slower than native `decodeAudioData()`.
-
-**Warning signs:**
-- `ReferenceError: AudioContext is not defined` in Worker context
-- Worker setup code that imports Web Audio API interfaces
-- Transferable object errors when trying to send AudioBuffer between threads
-- Architecture diagrams showing "decode in worker, play on main thread"
-
-**Prevention:**
-1. **Keep audio decoding on the main thread.** The current approach (progressive-queue.ts) is correct. `decodeAudioData()` is already asynchronous and non-blocking. For WAV chunks of 100-300KB, decoding takes <5ms on any modern device. Moving to a Worker adds complexity with no meaningful performance gain.
-2. **If main thread is truly blocked**, the bottleneck is not audio decoding. Profile first. The RAF-batched token buffer (PERF-08 in useChatSocket.ts) already prevents token processing from blocking audio. If the main thread is sluggish, the issue is React re-renders or Zustand state updates, not audio decoding.
-3. **If you must process audio off-thread**, use `AudioWorklet` for custom DSP (e.g., volume normalization, audio visualization). AudioWorklet runs in a real-time thread and processes decoded PCM streams. This is appropriate for audio effects, not for decoding.
-4. **Wait for WebCodecs AudioDecoder browser support** before attempting Worker-based decoding. When Safari supports `AudioDecoder` in production builds, revisit this. Until then, the complexity is not justified.
-5. **Use `postMessage` with transferable `ArrayBuffer`** to move raw audio data (not decoded AudioBuffer) between threads if needed for preprocessing (e.g., Opus decoding in WASM worker). Transfer the decoded PCM back to the main thread for `AudioContext` playback.
-
-**Detection:** If implementing Worker-based audio, test on all target browsers immediately. A "works in Chrome" implementation that fails in Safari/Firefox is worse than no implementation.
-
-**Which phase should address it:** Web Worker Audio phase -- this phase may be unnecessary. The current main-thread decoding is fast enough for WAV chunks. The phase should start with profiling to confirm audio decoding is actually a bottleneck before investing in Worker architecture.
+**Confidence:** MEDIUM -- Proxmox kernel update frequency is observed. SOF firmware version sensitivity is documented in SOF project issues but the specific impact on this hardware is unverified.
 
 ---
 
 ## Minor Pitfalls
 
-Mistakes that cause annoyance or minor technical debt but are fixable.
+Mistakes that cause degraded quality, suboptimal performance, or require minor rework.
 
 ---
 
-### Pitfall 11: TTS Fallback Timeout Too Short Triggers Under Normal Load
+### Pitfall 10: Digital Microphone Array Picks Up Laptop Fan Noise
 
-**What goes wrong:** Setting the XTTS fallback timeout too aggressively (e.g., 5 seconds) causes the system to switch to Piper during normal operation. XTTS CPU synthesis is inherently variable: simple sentences ("Hello!") take 3 seconds, complex sentences with technical terms take 10-15 seconds. The current `SENTENCE_TTS_TIMEOUT` of 20 seconds (tts.ts line 276) already accounts for this, but a fallback mechanism might use a shorter timeout ("if XTTS doesn't respond in 5s, use Piper") that triggers on perfectly healthy but slow synthesis.
+**What goes wrong:** The i5-13500HX is a high-performance laptop CPU. Under load (llama-server doing inference), the cooling fans spin up significantly. The laptop's built-in digital microphone array is centimeters from the fan exhaust. The constant fan noise creates a noise floor that degrades Whisper transcription accuracy and causes false VAD triggers.
 
-**Prevention:** Use the TTS health check (`checkLocalTTSHealth()`) as the fallback trigger, not synthesis timeout. Only fall back when the health endpoint is unreachable, not when synthesis is slow. If a timeout-based fallback is used, set it to at least 30 seconds for CPU inference.
+**Prevention:**
+1. **Apply noise suppression before VAD.** Use RNNoise (lightweight neural noise suppressor) or the noise suppression from webrtc-audio-processing library to clean the audio before passing to VAD. RNNoise runs at <1% CPU and is specifically designed for removing background noise.
+2. **Record a noise profile during system idle.** Capture 10 seconds of "silence" (actually fan noise) and use spectral subtraction to remove the noise signature from captured audio.
+3. **Position matters.** If possible, elevate the laptop or point the mic array away from the primary fan exhaust. Even 30cm of separation significantly reduces direct fan noise pickup.
+4. **Use an external USB microphone.** A USB microphone placed even 50cm from the laptop body will have dramatically better signal-to-noise ratio. A $15 USB conference mic will outperform the built-in DMIC array for always-on use.
 
-**Which phase should address it:** TTS Fallback phase.
+**Which phase should address it:** Phase 2 (Audio Capture Daemon) -- noise suppression should be part of the audio processing pipeline.
 
----
-
-### Pitfall 12: Opus Encoding Overhead Negates Transfer Savings on Local Network
-
-**What goes wrong:** Encoding WAV to Opus requires CPU cycles on the backend. For a 3-second sentence WAV (~265KB at 22050Hz mono 16-bit), Opus encoding adds 50-200ms of CPU time. The encoded Opus file is ~15-30KB (10x smaller). But on a local gigabit network (192.168.1.x), the WAV transfer takes <3ms. The encoding overhead (50-200ms) is 15-60x larger than the transfer savings (~2.5ms). Net result: Opus makes the pipeline slower, not faster.
-
-**Prevention:** Calculate the breakeven point. Opus encoding is beneficial only when: `encoding_time < (wav_transfer_time - opus_transfer_time)`. On a local network, this equation never favors Opus. Opus makes sense only for remote access (e.g., via Twingate VPN with limited bandwidth). Consider making Opus encoding conditional on network latency, not default.
-
-**Which phase should address it:** Opus Codec phase -- include a network bandwidth analysis step before implementing encoding.
+**Confidence:** MEDIUM -- Fan noise from this specific laptop is assumed but not measured. The i5-13500HX is a 55W TDP mobile chip that will have significant cooling under load.
 
 ---
 
-### Pitfall 13: Sentence Accumulator Edge Cases With Summarization Content
+### Pitfall 11: Speaker Playback Volume Control Missing on Headless ALSA
 
-**What goes wrong:** The `SentenceAccumulator` (sentence-stream.ts) uses a 20-character minimum sentence length and detects boundaries at `.!?` followed by whitespace. When the LLM generates a conversation summary (for the sliding window), the summary may contain abbreviated text ("User asked about VM 103. Admin confirmed. Restart was successful.") where each "sentence" is exactly at or near the minimum length. This produces many small TTS synthesis requests, each with high per-request overhead from the XTTS model, and the audio sounds choppy due to frequent starts and stops.
+**What goes wrong:** Without PulseAudio, there is no graphical or easy command-line volume control. ALSA mixer controls depend on the codec and SOF topology. The mixer control names are not standardized -- one card might use "Master," another uses "Speaker," another uses "DAC" or "PGA." If the wrong mixer control is adjusted, or if the mixer is muted by default after driver initialization, there is no audio output even though ALSA playback "succeeds" (no errors, but silence).
 
-**Prevention:** Increase the minimum sentence length for TTS (not for display) to 40-50 characters, or batch consecutive short sentences into a single TTS request. Alternatively, summarization should produce flowing prose, not telegraphic bullet points.
+**Prevention:**
+1. **Enumerate all mixer controls on first setup.** Run `amixer -c 0 contents` to list all controls, their ranges, and current values. Document which control affects the actual speaker output.
+2. **Set volume in the audio daemon startup.** Use `amixer set 'Speaker' 80% unmute` (or whatever the correct control name is) as part of the systemd service ExecStartPre. This ensures volume is set correctly even after reboot.
+3. **Verify with a test tone.** Play `speaker-test -c 2 -t wav -l 1` and physically verify sound comes out of the speaker. No amount of software testing replaces listening.
+4. **Store ALSA state for persistence.** Run `alsactl store` after configuring mixer levels. This saves to `/var/lib/alsa/asound.state` and is restored on boot by the `alsa-restore` systemd service.
 
-**Which phase should address it:** Conversation Windowing phase -- the summary format should be designed with TTS compatibility in mind.
+**Which phase should address it:** Phase 1 (Audio Hardware Foundation), during initial hardware verification.
 
----
-
-### Pitfall 14: Health Monitoring Storage Bloat From Trace and Metrics Data
-
-**What goes wrong:** Persistent storage of latency traces, health check history, and metrics fills the root partition. The Home node's root disk is 112GB with 52% usage (58GB free). If each response generates 1KB of trace data, and there are 50 responses/day, that's only 50KB/day -- negligible. But if health checks run every 30 seconds and store results, that's 2,880 records/day. Over months without cleanup, the SQLite database or log files grow silently.
-
-**Prevention:** Use in-memory ring buffers for recent metrics (last 100 responses, last 1000 health checks). Only persist summary statistics (daily averages, P95 latencies) to SQLite. Set log rotation on trace files. Add a cron job or timer to clean old metrics.
-
-**Which phase should address it:** Health Monitoring phase -- define retention policy as part of the design, not an afterthought.
+**Confidence:** HIGH -- ALSA mixer naming inconsistency is a well-known Linux audio issue.
 
 ---
 
-### Pitfall 15: Fallback Cache Invalidation When Switching TTS Engines
+### Pitfall 12: Socket.IO Base64 Audio Encoding Wastes Bandwidth and CPU
 
-**What goes wrong:** The sentence cache (tts.ts, `sentenceCache` Map) stores `CachedAudio` entries with a `contentType` and `provider` field. If the system falls back from XTTS to Piper, cached entries are still tagged as `provider: 'local'` with `contentType: 'audio/wav'`. When XTTS recovers and the system switches back, the cache may still contain Piper-generated audio. If both engines produce WAV at different sample rates (XTTS: 22050Hz or 24000Hz, Piper: varies by model), the cached Piper audio will play back at the wrong speed when XTTS is active, or the AudioContext may reject it due to sample rate mismatch.
+**What goes wrong:** The existing voice.ts handler receives audio as base64-encoded strings in Socket.IO events (`voice:audio_chunk` with `audio` field as base64). Base64 encoding inflates binary data by 33%. For 500ms audio chunks at 16kHz/16-bit (16KB raw), each chunk becomes ~21KB base64. At continuous streaming rates, this adds unnecessary CPU overhead for encoding/decoding on both sides. For server-side voice (daemon to backend on the same machine or localhost), this overhead is wasteful.
 
-**Prevention:** Include the TTS engine identifier in the cache key. When the active engine changes, either invalidate the entire cache or tag entries with the engine that produced them and only serve cache hits from the currently active engine.
+**Prevention:**
+1. **For localhost communication (daemon on host to backend in Docker), use binary Socket.IO events.** Socket.IO supports Buffer/ArrayBuffer natively. Send raw PCM bytes instead of base64. The existing protocol already handles binary in `chat:audio_chunk` (which sends Buffer directly as seen in chat.ts line 372).
+2. **If base64 is kept for protocol compatibility, accept the 33% overhead.** At LAN speeds (1Gbps), the extra ~5KB per chunk is negligible. Optimize only if CPU profiling shows encoding as a bottleneck.
+3. **Consider using a Unix socket instead of TCP for host-to-container communication.** Mount a Unix socket file into the Docker container. This eliminates TCP overhead for localhost communication. However, Socket.IO does not natively support Unix sockets as transport.
 
-**Which phase should address it:** TTS Fallback phase -- cache invalidation must be part of the fallback design.
+**Which phase should address it:** Phase 4 (Backend Integration). Low priority optimization.
+
+**Confidence:** HIGH -- Base64 overhead is well-understood. The existing voice.ts code using base64 is visible in the codebase (voice.ts line 127).
 
 ---
 
-### Pitfall 16: Conversation Window Token Counter Diverges From Actual Provider Usage
+### Pitfall 13: systemd Service Order and Audio Device Availability
 
-**What goes wrong:** Client-side token counting (using `tiktoken` or approximation) for window management diverges from the actual token count the LLM provider charges for. Claude uses a BPE tokenizer with specific vocabulary; Qwen uses a different tokenizer. The `chatHistoryLimit` is currently message-count-based (20 messages), which is a proxy for token count but not accurate. Switching to token-based windowing requires per-provider tokenizer implementations.
+**What goes wrong:** The audio capture daemon (systemd service) starts before the ALSA devices are fully initialized. SOF firmware loading and codec initialization can take 5-15 seconds after boot. If the daemon starts in the default `multi-user.target` timeframe, it may try to open ALSA devices that do not exist yet, fail, and either crash or enter a retry loop.
 
-**Prevention:** For Qwen (local), query the tokenizer endpoint or use the model's tokenizer directly. For Claude, use the official `tiktoken` with `cl100k_base` encoding. Always leave 25% headroom: if the context window is 4096 tokens (Qwen), target 3072 tokens for history. The current Qwen configuration already has a separate `qwenHistoryLimit` of 10 messages (config.ts line 52), which is conservative enough that token overflow is unlikely.
+**Prevention:**
+1. **Add `After=sound.target` to the systemd unit.** This ensures the service starts after the ALSA subsystem is initialized. Also add `Wants=sound.target`.
+2. **Implement a startup retry with backoff.** The daemon should attempt to open ALSA devices, and if they fail, wait 2 seconds and retry. Give up after 30 seconds and log an error.
+3. **Add a `ConditionPathExists=/dev/snd/controlC0` to the systemd unit.** This prevents the service from even starting if no sound card is present.
+4. **Start Docker containers after the audio daemon is healthy.** If any Docker container needs audio access, add a dependency: the container waits for the audio daemon systemd service to report healthy via sd_notify.
 
-**Which phase should address it:** Conversation Windowing phase.
+**Which phase should address it:** Phase 2 (Audio Capture Daemon), specifically the systemd unit file design.
+
+**Confidence:** HIGH -- systemd ordering with hardware devices is a common embedded Linux challenge.
 
 ---
 
 ## Phase-Specific Warnings
 
-| Phase Topic | Likely Pitfall | Severity | Mitigation |
-|-------------|---------------|----------|------------|
-| TTS Fallback | Voice mismatch between engines (Pitfall 1) | Critical | Never mix engines within a response; test voice similarity pre-deploy |
-| TTS Fallback | Timeout too short triggers fallback during normal XTTS load (Pitfall 11) | Minor | Use health check failure, not timeout, as fallback trigger |
-| TTS Fallback | Cache entries from wrong engine served (Pitfall 15) | Minor | Include engine ID in cache key |
-| Parallel TTS | CPU starvation of LLM inference (Pitfall 2) | Critical | Benchmark before committing; limit to 2 concurrent max |
-| Parallel TTS | Audio plays out of order (Pitfall 8) | Moderate | Track expected index; add audio_skip event; buffer before play |
-| Opus Codec | Safari decodeAudioData failure (Pitfall 3) | Critical | Keep WAV for decode; use Opus only for transfer if at all |
-| Opus Codec | Encoding overhead exceeds transfer savings on LAN (Pitfall 12) | Minor | Calculate breakeven; likely unnecessary for local network |
-| Conversation Window | Summary loses critical context for tool calls (Pitfall 4) | Critical | Extract structured facts; don't summarize tool call data |
-| Conversation Window | Token counter inaccuracy across providers (Pitfall 16) | Minor | Per-provider tokenizer; 25% headroom |
-| Conversation Window | Short summary sentences cause choppy TTS (Pitfall 13) | Minor | Batch short sentences; design summary for TTS compatibility |
-| Latency Tracing | Overhead slows the system (Pitfall 5) | Moderate | Lightweight timestamps only; batch emit; make opt-in |
-| Latency Tracing | Clock skew produces wrong numbers (Pitfall 6) | Moderate | Measure server-side only; use performance.now() for frontend |
-| Health Monitoring | Health checks create startup deadlock (Pitfall 7) | Moderate | Separate liveness from readiness; no circular deps |
-| Health Monitoring | Metrics storage bloat (Pitfall 14) | Minor | In-memory ring buffers; daily summary persistence only |
-| Cache Pre-Warming | Blocks startup, delays readiness (Pitfall 9) | Moderate | Warm async after server starts; analyze cache hit rates first |
-| Web Worker Audio | AudioContext unavailable in Workers (Pitfall 10) | Moderate | Keep decode on main thread; profile before assuming bottleneck |
+| Phase Topic | Likely Pitfall | Mitigation |
+|-------------|---------------|------------|
+| Audio Hardware Foundation (Phase 1) | SOF fails to probe; no ALSA devices appear after reboot | Have USB audio fallback ready. Check dmesg immediately after reboot. Test `aplay -l` and `arecord -l` before writing any code. |
+| Audio Hardware Foundation (Phase 1) | ALSA mixer is muted by default; speaker test produces silence | Run `amixer -c 0 contents` to find correct control. Set volume in ExecStartPre of systemd service. |
+| Audio Capture Daemon (Phase 2) | Buffer overflows in long-running capture | Use callback-mode PortAudio, bounded queue, `exception_on_overflow=False`, systemd watchdog. |
+| Audio Capture Daemon (Phase 2) | Fan noise causes constant false VAD triggers | Apply RNNoise preprocessing. Record noise profile for spectral subtraction. Consider external USB mic. |
+| Wake Word & VAD (Phase 3) | Wake word fires on TV/music audio containing "Jarvis" | Two-stage pipeline (VAD -> wake word). Add post-trigger speech confirmation window. |
+| Wake Word & VAD (Phase 3) | openWakeWord uses excessive CPU on continuous audio | Use Silero VAD as first gate. Only run wake word model when VAD detects speech. |
+| Backend Integration (Phase 4) | Browser voice and server voice produce duplicate responses | Add voice source mutex. Priority system: server-side voice takes precedence. |
+| Backend Integration (Phase 4) | Speaking state lock not properly synchronized | Use a file-based or socket-based flag. Post-playback silence window of 500-1000ms. |
+| Echo Cancellation (Phase 5) | SpeexDSP AEC takes seconds to converge; does not attenuate enough | AEC supplements but does not replace speaking state lock. Test attenuation empirically in the actual room. |
+| Echo Cancellation (Phase 5) | Named pipe architecture of voice-engine/ec is fragile | Pipes can break (SIGPIPE). Implement monitoring and auto-restart of ec process. |
 
 ---
 
-## Integration Pitfalls: Interaction Between Features
+## Integration Warnings Specific to This System
 
-These pitfalls emerge from the interaction between multiple optimization features, not from any single feature in isolation.
+### Existing Docker Stack Interaction
 
----
+The docker-compose.yml defines a `jarvis-net` bridge network. The audio daemon (running on the host) needs to reach the jarvis-backend container. Options:
+- Connect to `localhost:4000` (backend port is published to host)
+- Connect to the container IP on the jarvis-net bridge (requires knowing the IP)
 
-### Integration Pitfall A: Parallel TTS + Fallback = Complex State Machine
+**Recommendation:** Use `localhost:4000` for simplicity. The port is already published.
 
-**What goes wrong:** When parallel TTS is running 2 synthesis requests and XTTS becomes unhealthy, the fallback logic must handle: (1) the in-flight XTTS requests that may or may not complete, (2) switching to Piper for remaining sentences, (3) deciding whether to wait for in-flight XTTS or cancel them, (4) maintaining audio ordering across the engine transition.
+### Whisper Container Resource Contention
 
-**Prevention:** Design the fallback as a response-level decision, not a per-request decision. At the start of each response, check XTTS health. If healthy, use XTTS for the entire response (with timeouts for individual sentences that skip silently). If unhealthy, use Piper for the entire response. Never switch engines mid-response.
+The jarvis-whisper container (cpuset 10-13, 4 CPU limit) is shared between browser voice and server-side voice. If both submit audio simultaneously, one request will queue behind the other. The Whisper medium.en model takes 2-5 seconds per transcription on 4 cores. Two concurrent transcriptions could take 10+ seconds.
 
----
+**Recommendation:** The audio daemon should check if Whisper is busy before submitting. Implement a simple semaphore or use the existing health endpoint to check Whisper load.
 
-### Integration Pitfall B: Conversation Window + Latency Tracing = Feedback Loop
+### TTS Container is Already Overloaded
 
-**What goes wrong:** Latency tracing reveals that summarization adds 2-3 seconds of overhead per conversation turn (LLM generating the summary). Developers then try to optimize the summary step, adding caching of summaries, batching summarization, etc. This creates complexity that itself needs tracing, leading to a spiraling instrumentation-optimization loop.
+The XTTS v2 container already struggles with CPU inference (3-10s per sentence). Adding server-side TTS playback means the TTS container must synthesize for BOTH browser playback and physical speaker playback. These may happen concurrently if a browser session and server-side session overlap.
 
-**Prevention:** Define acceptable latency budgets upfront. If summarization adds 2 seconds and the total pipeline is 15 seconds, that's 13% overhead -- probably acceptable. Set thresholds and only optimize when exceeded, not continuously.
+**Recommendation:** The Piper TTS fallback (fast, <500ms per sentence) should be the default for server-side voice output. XTTS should be reserved for browser sessions where the user explicitly expects the custom Jarvis voice. This reduces TTS contention.
 
----
+### llama-server Interference
 
-### Integration Pitfall C: Opus + Web Workers = Wrong Architecture
+The llama-server systemd service uses 16 threads with no cpuset restriction. During LLM inference, it can saturate all 20 threads. The audio capture daemon must be resilient to CPU starvation during LLM bursts.
 
-**What goes wrong:** A design that says "decode Opus in a Web Worker, then play on main thread" hits both limitations: AudioContext isn't available in Workers, and WASM-based Opus decoding is 2x slower than native. The result is slower than the current approach (native WAV decoding on main thread).
-
-**Prevention:** Choose one codec strategy. Either: (a) send WAV, decode natively on main thread (simplest, fastest on LAN), or (b) send Opus, decode natively using `decodeAudioData` on main thread (if browser supports it). Never route through a Worker for audio decoding.
-
----
-
-### Integration Pitfall D: Cache Pre-Warming + Parallel TTS = Startup Resource Contention
-
-**What goes wrong:** Cache warming sends multiple TTS synthesis requests during startup. If parallel TTS is enabled, warming might use the full parallelism budget, causing the TTS container to be fully loaded during startup. If a user sends a message during this window, their request is either queued behind warming requests or the warming gets cancelled but has wasted CPU.
-
-**Prevention:** Cache warming (if implemented) should use a single serial request with lower priority than user requests. Never use the parallel synthesis path for warming.
+**Recommendation:** Set the audio daemon's CPU affinity to cores 18-19 (same as Piper TTS cpuset 14-19 but higher priority via `nice -n -5`). Audio capture is real-time and more latency-sensitive than TTS synthesis.
 
 ---
 
 ## Sources
 
-- [Inferless: 12 Best Open-Source TTS Models Compared (2025)](https://www.inferless.com/learn/comparing-different-text-to-speech---tts--models-part-2) -- XTTS vs Piper quality comparison
-- [WebKit Bug 226922: Safari 15 breaks all Web Audio content using WebM Opus](https://bugs.webkit.org/show_bug.cgi?id=226922) -- Safari Opus decoding failures
-- [WebKit Bug 238546: WebM Opus support still inconsistent in Safari 15.4](https://bugs.webkit.org/show_bug.cgi?id=238546)
-- [WebKit Bug 245428: Safari 16 cannot play WebM Opus from blob URL](https://bugs.webkit.org/show_bug.cgi?id=245428)
-- [Chrome Status: OPUS codec support in WebAudio decodeAudioData()](https://chromestatus.com/feature/5649634416394240) -- Chrome Opus support
-- [Interop Issue #484: WebM Opus audio codec](https://github.com/web-platform-tests/interop/issues/484) -- Cross-browser Opus standardization
-- [W3C WebCodecs #366: Decoding mp3/ogg/aac to fix Web Audio API shortcomings](https://github.com/w3c/webcodecs/issues/366)
-- [WebAudio/web-audio-api Issue #16: Enable AudioContext in Workers](https://github.com/WebAudio/web-audio-api/issues/16) -- AudioContext in Workers (open since 2013)
-- [HuggingFace XTTS-v2 Discussion #107: CUDA Assertion Errors with Concurrent Requests](https://huggingface.co/coqui/XTTS-v2/discussions/107) -- XTTS concurrency issues
-- [coqui-ai/TTS Issue #3976: XTTS RAM usage during inference](https://github.com/coqui-ai/TTS/issues/3976) -- XTTS memory consumption
-- [OpenTelemetry OTEP #154: Reduce clock-skew issues in client-side traces](https://github.com/open-telemetry/oteps/issues/154) -- Clock skew problem definition
-- [OpenTelemetry JS Issue #1728: Add clock skew compensation](https://github.com/open-telemetry/opentelemetry-js/issues/1728)
-- [Chroma Research: Context Rot](https://research.trychroma.com/context-rot) -- LLM context window degradation
-- [Agenta: Top techniques to Manage Context Lengths in LLMs](https://agenta.ai/blog/top-6-techniques-to-manage-context-length-in-llms) -- Sliding window and summarization patterns
-- [Getmaxim: Context Window Management Strategies](https://www.getmaxim.ai/articles/context-window-management-strategies-for-long-context-ai-agents-and-chatbots/) -- Lost in the middle effect, token counting
-- [OpenAI Community: TTS-HD failing with multiple parallel requests](https://community.openai.com/t/tts-hd-failing-with-multiple-parallel-requests/1284908) -- Parallel TTS failure patterns
-- [Deepgram Discussion #791: TTS concurrency limit](https://github.com/orgs/deepgram/discussions/791) -- TTS rate limiting patterns
-- [Aerospike: Cache Warming Explained - Pitfalls and Alternatives](https://aerospike.com/blog/cache-warming-explained) -- Cache warming anti-patterns
-- [Last9: Docker Compose Health Checks Guide](https://last9.io/blog/docker-compose-health-checks/) -- Health check timing and cascading failures
-- [Andrew Klotz: API Health checks for cascading failure](https://klotzandrew.com/blog/api-health-checks-for-cascading-or-cascading-failure/) -- Liveness vs. readiness separation
+- [SOF Project: Suggestions Before Filing a Bug](https://thesofproject.github.io/latest/getting_started/intel_debug/suggestions.html) -- SOF debugging, i915 dependency, legacy HDA fallback
+- [SOF Driver Architecture](https://thesofproject.github.io/latest/architectures/host/linux_driver/architecture/sof_driver_arch.html) -- How SOF manages audio on Intel platforms
+- [Docker/moby Issue #36457](https://github.com/moby/moby/issues/36457) -- /dev/snd device permissions broken in Docker
+- [x11docker: Container Sound ALSA or Pulseaudio](https://github.com/mviereck/x11docker/wiki/Container-sound:-ALSA-or-Pulseaudio) -- Docker ALSA device sharing guide
+- [voice-engine/ec: Echo Canceller](https://github.com/voice-engine/ec) -- SpeexDSP AEC for ALSA without PulseAudio
+- [Silero VAD GitHub](https://github.com/snakers4/silero-vad) -- VAD performance benchmarks (RTF 0.004, <1% CPU)
+- [openWakeWord GitHub](https://github.com/dscripka/openWakeWord) -- Pre-trained wake word models including "hey jarvis"
+- [Proxmox Forum: Audio on Proxmox Host](https://forum.proxmox.com/threads/audio-on-proxmox-host.135564/) -- Audio on headless Proxmox
+- [Proxmox Forum: Forward ALSA to LXC](https://forum.proxmox.com/threads/forward-alsa-audio-to-lxc-container.45310/) -- ALSA device passthrough in Proxmox
+- [ALSA Project: Asoundrc](https://www.alsa-project.org/wiki/Asoundrc) -- dmix/dsnoop configuration reference
+- [ALSA Project: snd-aloop](https://www.alsa-project.org/wiki/Matrix:Module-aloop) -- Virtual loopback device for echo cancellation
+- [Rhasspy Wake Word Documentation](https://rhasspy.readthedocs.io/en/latest/wake-word/) -- Wake word detection approaches
+- [PyAudio Input Overflow Issues](https://github.com/Uberi/speech_recognition/issues/51) -- Buffer overflow in long-running audio capture
+- [systemd.service Documentation](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) -- WatchdogSec, Restart, sd_notify
+- [sdnotify Python Package](https://github.com/bb4242/sdnotify) -- systemd watchdog integration for Python daemons
+- [Picovoice VAD Comparison 2026](https://picovoice.ai/blog/best-voice-activity-detection-vad/) -- Silero vs Cobra vs WebRTC VAD benchmarks
