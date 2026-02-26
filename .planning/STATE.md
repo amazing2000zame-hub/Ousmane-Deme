@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-02-26T06:38:28Z
+**Last Updated:** 2026-02-26T06:50:00Z
 **Current Milestone:** v1.8 Always-On Voice Assistant
 
 ---
@@ -8,7 +8,7 @@
 ## Project Reference
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
-**Current Focus:** Phase 35 -- Backend Integration (Plan 1 of 2 complete)
+**Current Focus:** Phase 35 -- Backend Integration (Complete, 2/2 plans done)
 
 **Active Files:**
 - `/root/.planning/PROJECT.md` - Project context
@@ -20,12 +20,12 @@
 ## Current Position
 
 **Milestone:** v1.8 Always-On Voice Assistant (Phases 33-38)
-**Phase:** 35 of 38 (Backend Integration)
-**Plan:** 1 of 2 complete
-**Status:** Plan 35-01 complete -- BackendClient module with JWT auth and voice protocol
-**Last activity:** 2026-02-26 -- Plan 35-01 executed (BackendClient, config, main loop wiring)
+**Phase:** 35 of 38 (Backend Integration) -- COMPLETE
+**Plan:** 2 of 2 complete
+**Status:** Phase 35 complete -- BackendClient with reconnection resilience, health monitoring, token refresh
+**Last activity:** 2026-02-26 -- Plan 35-02 executed (connection resilience, health ping, non-blocking startup)
 
-Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete overall)
+Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete overall)
 
 ---
 
@@ -35,7 +35,7 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 |-------|------|-------|--------|
 | 33 | Audio Hardware Foundation | 2/2 | Complete |
 | 34 | Audio Capture Daemon Core | 3/3 | Complete |
-| 35 | Backend Integration | 1/2 | In Progress |
+| 35 | Backend Integration | 2/2 | Complete |
 | 36 | Speaker Output & Loop | 0/2 | Not Started |
 | 37 | Display Control | 0/3 | Not Started |
 | 38 | Service Management | 0/2 | Not Started |
@@ -63,6 +63,9 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 | Sync socketio.Client over AsyncClient | Daemon uses sync main loop; sync Client handles threading internally | 2026-02-26 |
 | Single WAV chunk per utterance | Backend Buffer.concat breaks multi-WAV-header concatenation | 2026-02-26 |
 | 6-day JWT token refresh interval | Token valid 7 days; lazy refresh in _get_token() before expiry | 2026-02-26 |
+| threading.Event for health monitor shutdown | Clean signal handling vs blocking time.sleep | 2026-02-26 |
+| Token refresh on reconnect event | Simpler than callable auth; refresh in _on_connect handler | 2026-02-26 |
+| Non-blocking start() for backend connection | Main audio loop never blocked by Socket.IO connection | 2026-02-26 |
 
 ### Technical Notes
 
@@ -73,6 +76,8 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 - **Speaker situation**: Only HDMI output currently; may need USB speaker
 - **BackendClient**: backend.py manages Socket.IO connection, JWT auth, voice protocol; thread-safe via Lock
 - **python-socketio[client]**: Declared in deps but must be pip-installed into venv (sandbox blocked install)
+- **BackendClient resilience**: Non-blocking start(), auto-reconnect with backoff, voice:ping/pong health monitoring, token refresh on reconnect
+- **Backend connection tested live**: Daemon connects to backend, receives JWT, disconnects cleanly -- verified 2026-02-26
 
 ### Blockers
 
@@ -82,6 +87,6 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-26T06:38:28Z
-**Stopped at:** Completed 35-01-PLAN.md (BackendClient module)
-**Resume:** Execute 35-02-PLAN.md (connection resilience) or install python-socketio[client] dependency first
+**Last session:** 2026-02-26T06:50:00Z
+**Stopped at:** Completed 35-02-PLAN.md (connection resilience, health monitoring)
+**Resume:** Phase 35 complete. Next: Phase 36 (Speaker Output & Loop)
