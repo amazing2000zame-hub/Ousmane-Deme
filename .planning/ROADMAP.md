@@ -449,7 +449,7 @@ Phases 37 and 38 are independent of each other but both depend on Phase 36.
 **Goal**: Physical microphone and speaker hardware works on the Home node, verified with ALSA tools, with automatic fallback to USB mic if built-in Intel SOF mics fail
 **Depends on**: Phase 31 (v1.7 complete)
 **Requirements**: AUDIO-01, AUDIO-02, AUDIO-03
-**Status**: Not Started
+**Status**: Complete (2026-02-26)
 
 **Success Criteria** (what must be TRUE when this phase completes):
 1. `arecord -d 5 test.wav` captures audible speech from a physical microphone on the Home node
@@ -461,14 +461,14 @@ Phases 37 and 38 are independent of each other but both depend on Phase 36.
 **Plans:** 2 plans
 
 Plans:
-- [ ] 33-01-PLAN.md -- Remove orphaned VFIO iGPU passthrough, reboot Home node, verify SOF audio driver activation
-- [ ] 33-02-PLAN.md -- USB mic fallback if SOF failed, ALSA dmix/dsnoop multi-process sharing, speaker output verification
+- [x] 33-01-PLAN.md -- Remove orphaned VFIO iGPU passthrough, reboot Home node, verify SOF audio driver activation
+- [x] 33-02-PLAN.md -- USB mic fallback if SOF failed, ALSA dmix/dsnoop multi-process sharing, speaker output verification
 
 #### Phase 34: Audio Capture Daemon Core
 **Goal**: A Python daemon continuously listens on the microphone, filters silence via VAD, and detects the "Hey Jarvis" wake word to trigger audio capture of the user's spoken command
 **Depends on**: Phase 33 (working ALSA capture device)
 **Requirements**: VOICE-01, VOICE-02, VOICE-03
-**Status**: Planned
+**Status**: Complete (2026-02-26) — human verification needed (4 live acoustic tests)
 **Plans:** 3 plans (2 waves)
 
 **Success Criteria** (what must be TRUE when this phase completes):
@@ -479,9 +479,9 @@ Plans:
 5. A 500ms pre-roll buffer preserves audio context immediately before the wake word so the first words of the command are not lost
 
 Plans:
-- [ ] 34-01-PLAN.md -- Python project scaffold, pyalsaaudio continuous capture, ring buffer (wave 1)
-- [ ] 34-02-PLAN.md -- Silero VAD integration with ONNX Runtime, two-stage pipeline (wave 1)
-- [ ] 34-03-PLAN.md -- openWakeWord "hey_jarvis" detection, state machine (IDLE/CAPTURING), silence timeout (wave 2)
+- [x] 34-01-PLAN.md -- Python project scaffold, pyalsaaudio continuous capture, ring buffer (wave 1)
+- [x] 34-02-PLAN.md -- Silero VAD integration with ONNX Runtime, two-stage pipeline (wave 1)
+- [x] 34-03-PLAN.md -- openWakeWord "hey_jarvis" detection, state machine (IDLE/CAPTURING), silence timeout (wave 2)
 
 #### Phase 35: Backend Integration
 **Goal**: The capture daemon connects to the existing Jarvis backend via Socket.IO and streams captured audio through the working STT/LLM/TTS pipeline with zero backend modifications
