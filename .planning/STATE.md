@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-02-26T08:13:00Z
+**Last Updated:** 2026-02-26T08:27:07Z
 **Current Milestone:** v1.8 Always-On Voice Assistant
 
 ---
@@ -20,12 +20,12 @@
 ## Current Position
 
 **Milestone:** v1.8 Always-On Voice Assistant (Phases 33-38)
-**Phase:** 37 of 38 (Display Control) -- IN PROGRESS
-**Plan:** 3 of 4 complete
-**Status:** Plan 37-03 complete -- Animated arc reactor HUD with SSE state push
-**Last activity:** 2026-02-26 -- Plan 37-03 deployed animated HUD page and SSE endpoint to management VM
+**Phase:** 37 of 38 (Display Control) -- COMPLETE
+**Plan:** 4 of 4 complete
+**Status:** Phase 37 complete -- All 4 display control plans done (daemon, integration, HUD, Home node)
+**Last activity:** 2026-02-26 -- Plan 37-04 deployed Home node eDP-1 display with multi-target routing
 
-Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete overall)
+Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete overall)
 
 ---
 
@@ -37,7 +37,7 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 | 34 | Audio Capture Daemon Core | 3/3 | Complete |
 | 35 | Backend Integration | 2/2 | Complete |
 | 36 | Speaker Output & Loop | 0/2 | Not Started |
-| 37 | Display Control | 3/4 | In Progress |
+| 37 | Display Control | 4/4 | Complete |
 | 38 | Service Management | 0/2 | Not Started |
 
 ---
@@ -75,6 +75,10 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 | Fire-and-forget daemon threads for display calls | Never block audio capture main loop; display is non-critical | 2026-02-26 |
 | First TTS chunk triggers display talking state | Definitive signal that audio playback begins; no separate event needed | 2026-02-26 |
 | Camera name mapping in TypeScript const object | Easy to extend with new cameras, compile-time type safety | 2026-02-26 |
+| X11 as root on Home node (no kiosk user) | Simpler for headless Proxmox host; no security concern for single-user | 2026-02-26 |
+| On-demand Chromium (not permanent kiosk) | Home display returns to blank desktop when idle; Chromium closes on restore | 2026-02-26 |
+| Multi-display target routing in MCP tool | 'kiosk' and 'home' targets resolve to different daemon URLs | 2026-02-26 |
+| jarvis-ear defaults to localhost:8766 | Home node eDP-1 is natural target since jarvis-ear runs on Home | 2026-02-26 |
 
 ### Technical Notes
 
@@ -94,6 +98,11 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 - **Camera URLs**: go2rtc stream.html on agent1:1984 (front_door, side_house, birdseye)
 - **HUD SSE**: GET /display/events streams JSON state updates; 30s keepalive; auto-reconnect in JS
 - **HUD states**: idle (3s pulse, dim), listening (1.2s pulse, ripples), talking (0.5s pulse, flicker)
+- **Home node display**: X11 :1 on eDP-1, root-owned, xinit+openbox, Chromium Debian package, display daemon at localhost:8766
+- **Two-display architecture**: kiosk (management VM 192.168.1.65:8765, DP-3, camera feeds) + home (Home node localhost:8766, eDP-1, on-demand HUD)
+- **MCP target routing**: control_display accepts 'target' param ('kiosk'|'home'), defaults to 'kiosk' for backward compat
+- **jarvis-ear default display**: localhost:8766 (Home eDP-1) since jarvis-ear runs on Home node
+- **Home display on-demand**: Chromium launches for HUD/URL, closes on restore; blank black desktop when idle
 
 ### Blockers
 
@@ -103,6 +112,6 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-26T08:13:00Z
-**Stopped at:** Completed 37-03-PLAN.md (Animated HUD Page)
-**Resume:** Execute 37-04-PLAN.md (final display control plan -- integration test)
+**Last session:** 2026-02-26T08:27:07Z
+**Stopped at:** Completed 37-04-PLAN.md (Home Node Display Setup) -- Phase 37 COMPLETE
+**Resume:** Phase 36 (Speaker Output & Loop) or Phase 38 (Service Management)
