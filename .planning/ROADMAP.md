@@ -14,7 +14,7 @@ Jarvis 3.1 v1.1 transforms the working v1.0 prototype into a production-ready AI
 - **v1.5 Optimization & Latency Reduction** - Phases 21-25 (shipped 2026-01-28)
 - **v1.6 Smart Home Intelligence** - Phases 26-30 (in progress)
 - **v1.7 UI Polish & Camera Integration** - Phase 31 (complete)
-- **v1.8 Always-On Voice Assistant** - Phases 33-38 (planned)
+- **v1.8 Always-On Voice Assistant** - Phases 33-38 (shipped 2026-02-26)
 
 ## Phases
 
@@ -487,7 +487,7 @@ Plans:
 **Goal**: The capture daemon connects to the existing Jarvis backend via Socket.IO and streams captured audio through the working STT/LLM/TTS pipeline with zero backend modifications
 **Depends on**: Phase 34 (captured audio ready to send)
 **Requirements**: VOICE-04
-**Status**: Not Started
+**Status**: Complete (2026-02-26)
 
 **Success Criteria** (what must be TRUE when this phase completes):
 1. The daemon connects to the `/voice` Socket.IO namespace on localhost:4000 and maintains a persistent connection (verified by backend connection log)
@@ -496,14 +496,14 @@ Plans:
 4. After a backend restart or network disconnect, the daemon automatically reconnects with exponential backoff (verified by stopping and restarting the backend Docker container)
 
 Plans:
-- [ ] 35-01-PLAN.md -- python-socketio client, JWT auth, voice protocol (audio_start/chunk/end), WAV format compliance
-- [ ] 35-02-PLAN.md -- Auto-reconnection with exponential backoff, connection health monitoring
+- [x] 35-01-PLAN.md -- python-socketio client, JWT auth, voice protocol (audio_start/chunk/end), WAV format compliance
+- [x] 35-02-PLAN.md -- Auto-reconnection with exponential backoff, connection health monitoring
 
 #### Phase 36: Speaker Output & Complete Voice Loop
 **Goal**: Users hear Jarvis respond through physical speakers after speaking a command, with echo prevention and conversation continuity -- completing the full hands-free voice loop
 **Depends on**: Phase 35 (backend integration delivering TTS chunks)
 **Requirements**: SPEAK-01, SPEAK-02, SPEAK-03, SPEAK-04
-**Status**: Planned
+**Status**: Complete (2026-02-26)
 **Plans:** 2 plans (2 waves)
 
 **Success Criteria** (what must be TRUE when this phase completes):
@@ -513,14 +513,14 @@ Plans:
 4. A short audio chime plays immediately when "Hey Jarvis" is detected, confirming the system heard the wake word before the user finishes speaking
 
 Plans:
-- [ ] 36-01-PLAN.md -- AudioPlayer class with ordered TTS chunk playback, ffmpeg decode, ALSA output, speaker enable
-- [ ] 36-02-PLAN.md -- Mic mute during playback, wake word chime, CONVERSATION state with 15s follow-up window
+- [x] 36-01-PLAN.md -- AudioPlayer class with ordered TTS chunk playback, ffmpeg decode, ALSA output, speaker enable
+- [x] 36-02-PLAN.md -- Mic mute during playback, wake word chime, CONVERSATION state with 15s follow-up window
 
 #### Phase 37: Display Control
 **Goal**: Users can control a physical display via voice commands -- showing camera feeds, opening dashboards, navigating to URLs, and displaying a Jarvis HUD/face when idle
 **Depends on**: Phase 36 (working voice loop for command input)
 **Requirements**: DISP-01, DISP-02, DISP-03, DISP-04, DISP-05
-**Status**: Not Started
+**Status**: Complete (2026-02-26)
 
 **Success Criteria** (what must be TRUE when this phase completes):
 1. Saying "Jarvis, show me the front door camera" opens the Frigate camera feed in a Chromium kiosk window on the physical display
@@ -532,16 +532,16 @@ Plans:
 **Plans:** 4 plans (3 waves)
 
 Plans:
-- [ ] 37-01-PLAN.md -- Flask display daemon on management VM with Chromium CDP, mpv window management, systemd service
-- [ ] 37-02-PLAN.md -- Backend control_display MCP tool and jarvis-ear DisplayClient for automatic HUD on voice events
-- [ ] 37-03-PLAN.md -- Jarvis HUD/face animation page with arc reactor, state-driven animations, SSE state updates
-- [ ] 37-04-PLAN.md -- Home node eDP-1 display setup (X11 kiosk, second display daemon, target routing)
+- [x] 37-01-PLAN.md -- Flask display daemon on management VM with Chromium CDP, mpv window management, systemd service
+- [x] 37-02-PLAN.md -- Backend control_display MCP tool and jarvis-ear DisplayClient for automatic HUD on voice events
+- [x] 37-03-PLAN.md -- Jarvis HUD/face animation page with arc reactor, state-driven animations, SSE state updates
+- [x] 37-04-PLAN.md -- Home node eDP-1 display setup (X11 kiosk, second display daemon, target routing)
 
 #### Phase 38: Service Management & Reliability
 **Goal**: The voice agent daemon runs reliably as a production service that survives reboots, reconnects after failures, and reports its status to the Jarvis dashboard
 **Depends on**: Phase 36 (working daemon to productionize)
 **Requirements**: SVC-01, SVC-02, SVC-03
-**Status**: Not Started
+**Status**: Complete (2026-02-26)
 
 **Success Criteria** (what must be TRUE when this phase completes):
 1. The voice agent runs as a systemd service (`jarvis-ear.service`) that starts on boot and auto-restarts within 5 seconds after a crash (verified by `kill -9` and observing restart)
@@ -550,8 +550,8 @@ Plans:
 4. `systemctl status jarvis-ear` shows the service as active with recent log output confirming successful audio capture and backend connection
 
 Plans:
-- [ ] 38-01-PLAN.md -- systemd service unit (Type=notify, Restart=always), install script, log rotation
-- [ ] 38-02-PLAN.md -- Status reporting to dashboard via Socket.IO, health heartbeat, dashboard UI component
+- [x] 38-01-PLAN.md -- systemd service (Restart=always, ONNX thread limit, startup announcement, log rotation)
+- [x] 38-02-PLAN.md -- Voice agent status tracking, Socket.IO emission, VoiceAgentPanel dashboard component
 
 ---
 
@@ -676,13 +676,13 @@ Phase 29 depends on Phase 28 (camera infrastructure). Phases 33-38 execute seque
 | 29. Proactive Alerts | v1.6 | 0/2 | Planning | - |
 | 30. MCP Reliability | v1.6 | 2/2 | Complete | 2026-01-30 |
 | 31. Web UI Redesign | v1.7 | 2/2 | Complete | 2026-01-30 |
-| 33. Audio Hardware | v1.8 | 0/2 | Not Started | - |
-| 34. Capture Daemon Core | v1.8 | 0/3 | Planned | - |
-| 35. Backend Integration | v1.8 | 0/2 | Planned | - |
-| 36. Speaker Output & Loop | v1.8 | 0/2 | Not Started | - |
-| 37. Display Control | v1.8 | 0/4 | Not Started | - |
-| 38. Service Management | v1.8 | 0/2 | Not Started | - |
+| 33. Audio Hardware | v1.8 | 2/2 | Complete | 2026-02-26 |
+| 34. Capture Daemon Core | v1.8 | 3/3 | Complete | 2026-02-26 |
+| 35. Backend Integration | v1.8 | 2/2 | Complete | 2026-02-26 |
+| 36. Speaker Output & Loop | v1.8 | 2/2 | Complete | 2026-02-26 |
+| 37. Display Control | v1.8 | 4/4 | Complete | 2026-02-26 |
+| 38. Service Management | v1.8 | 2/2 | Complete | 2026-02-26 |
 
 ---
 
-Last updated: 2026-02-25 (v1.8 Always-On Voice Assistant roadmap created)
+Last updated: 2026-02-26 (v1.8 Always-On Voice Assistant milestone complete)
