@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-02-25
+**Last Updated:** 2026-02-26
 **Current Milestone:** v1.8 Always-On Voice Assistant
 
 ---
@@ -8,7 +8,7 @@
 ## Project Reference
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
-**Current Focus:** Phase 33 -- Audio Hardware Foundation
+**Current Focus:** Phase 34 -- Audio Capture Daemon Core
 
 **Active Files:**
 - `/root/.planning/PROJECT.md` - Project context
@@ -20,10 +20,10 @@
 ## Current Position
 
 **Milestone:** v1.8 Always-On Voice Assistant (Phases 33-38)
-**Phase:** 33 of 38 (Audio Hardware Foundation)
-**Plan:** Ready to plan
-**Status:** Ready to plan Phase 33
-**Last activity:** 2026-02-25 -- v1.8 roadmap created (6 phases, 19 requirements mapped)
+**Phase:** 34 of 38 (Audio Capture Daemon Core)
+**Plan:** 2 of 3 complete
+**Status:** Executing Phase 34 plans
+**Last activity:** 2026-02-26 -- Completed 34-02 (Silero VAD integration)
 
 Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete overall)
 
@@ -34,7 +34,7 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 | Phase | Name | Plans | Status |
 |-------|------|-------|--------|
 | 33 | Audio Hardware Foundation | 0/2 | Not Started |
-| 34 | Audio Capture Daemon Core | 0/3 | Not Started |
+| 34 | Audio Capture Daemon Core | 1/3 | In Progress |
 | 35 | Backend Integration | 0/2 | Not Started |
 | 36 | Speaker Output & Loop | 0/2 | Not Started |
 | 37 | Display Control | 0/3 | Not Started |
@@ -53,6 +53,8 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 | ONNX Runtime over PyTorch | ~50MB vs ~2GB, sufficient for VAD + wake word | 2026-02-25 |
 | Two-stage pipeline (VAD then wake word) | Saves CPU by only running wake word on speech frames | 2026-02-25 |
 | USB mic fallback strategy | SOF firmware may not work after reboot | 2026-02-25 |
+| Raw ONNX inference over silero-vad package | silero-vad pulls PyTorch (~2GB); raw onnxruntime avoids it | 2026-02-26 |
+| Bundled VAD model in repo | Ensures offline operation, no runtime downloads | 2026-02-26 |
 
 ### Technical Notes
 
@@ -70,6 +72,6 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-25
-**Stopped at:** v1.8 roadmap created, ready to plan Phase 33
-**Resume:** `/gsd:plan-phase 33`
+**Last session:** 2026-02-26
+**Stopped at:** Completed 34-02-PLAN.md (Silero VAD integration)
+**Resume:** Continue Phase 34 execution (Plan 03 remaining)
