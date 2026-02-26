@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-02-26T06:50:00Z
+**Last Updated:** 2026-02-26T08:05:00Z
 **Current Milestone:** v1.8 Always-On Voice Assistant
 
 ---
@@ -8,7 +8,7 @@
 ## Project Reference
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
-**Current Focus:** Phase 35 -- Backend Integration (Complete, 2/2 plans done)
+**Current Focus:** Phase 37 -- Display Control (In Progress, 1/4 plans done)
 
 **Active Files:**
 - `/root/.planning/PROJECT.md` - Project context
@@ -20,10 +20,10 @@
 ## Current Position
 
 **Milestone:** v1.8 Always-On Voice Assistant (Phases 33-38)
-**Phase:** 35 of 38 (Backend Integration) -- COMPLETE
-**Plan:** 2 of 2 complete
-**Status:** Phase 35 complete -- BackendClient with reconnection resilience, health monitoring, token refresh
-**Last activity:** 2026-02-26 -- Plan 35-02 executed (connection resilience, health ping, non-blocking startup)
+**Phase:** 37 of 38 (Display Control) -- IN PROGRESS
+**Plan:** 1 of 4 complete
+**Status:** Plan 37-01 complete -- Flask display daemon on management VM with CDP + xdotool
+**Last activity:** 2026-02-26 -- Plan 37-01 deployed and verified on management VM (192.168.1.65:8765)
 
 Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete overall)
 
@@ -37,7 +37,7 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 | 34 | Audio Capture Daemon Core | 3/3 | Complete |
 | 35 | Backend Integration | 2/2 | Complete |
 | 36 | Speaker Output & Loop | 0/2 | Not Started |
-| 37 | Display Control | 0/3 | Not Started |
+| 37 | Display Control | 1/4 | In Progress |
 | 38 | Service Management | 0/2 | Not Started |
 
 ---
@@ -66,6 +66,9 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 | threading.Event for health monitor shutdown | Clean signal handling vs blocking time.sleep | 2026-02-26 |
 | Token refresh on reconnect event | Simpler than callable auth; refresh in _on_connect handler | 2026-02-26 |
 | Non-blocking start() for backend connection | Main audio loop never blocked by Socket.IO connection | 2026-02-26 |
+| xhost +local: for Chromium snap X11 access | Snap refuses Xauthority not owned by current user; xhost bypass | 2026-02-26 |
+| Flask dev server for kiosk display daemon | Single-client kiosk, no need for gunicorn/uwsgi | 2026-02-26 |
+| Chromium CDP via raw websockets (not selenium) | 20 lines vs 100MB install, websockets 10.4 already present | 2026-02-26 |
 
 ### Technical Notes
 
@@ -78,6 +81,8 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 - **python-socketio[client]**: Declared in deps but must be pip-installed into venv (sandbox blocked install)
 - **BackendClient resilience**: Non-blocking start(), auto-reconnect with backoff, voice:ping/pong health monitoring, token refresh on reconnect
 - **Backend connection tested live**: Daemon connects to backend, receives JWT, disconnects cleanly -- verified 2026-02-26
+- **Display daemon**: Flask HTTP API at 192.168.1.65:8765, controls DP-3 display via Chromium CDP and xdotool
+- **Management VM display**: X11 :0, kiosk user, 2 mpv RTSP streams, Chromium 145 snap, xdotool, Python 3.12
 
 ### Blockers
 
@@ -87,6 +92,6 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-26T06:50:00Z
-**Stopped at:** Completed 35-02-PLAN.md (connection resilience, health monitoring)
-**Resume:** Phase 35 complete. Next: Phase 36 (Speaker Output & Loop)
+**Last session:** 2026-02-26T08:05:00Z
+**Stopped at:** Completed 37-01-PLAN.md (Display Control Daemon)
+**Resume:** Execute 37-02-PLAN.md (next display control plan)
