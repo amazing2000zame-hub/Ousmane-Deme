@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-02-26
+**Last Updated:** 2026-02-26T05:45:01Z
 **Current Milestone:** v1.8 Always-On Voice Assistant
 
 ---
@@ -8,7 +8,7 @@
 ## Project Reference
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
-**Current Focus:** Phase 34 -- Audio Capture Daemon Core
+**Current Focus:** Phase 34 -- Audio Capture Daemon Core (Plan 01 complete)
 
 **Active Files:**
 - `/root/.planning/PROJECT.md` - Project context
@@ -34,7 +34,7 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 | Phase | Name | Plans | Status |
 |-------|------|-------|--------|
 | 33 | Audio Hardware Foundation | 0/2 | Not Started |
-| 34 | Audio Capture Daemon Core | 1/3 | In Progress |
+| 34 | Audio Capture Daemon Core | 2/3 | In Progress |
 | 35 | Backend Integration | 0/2 | Not Started |
 | 36 | Speaker Output & Loop | 0/2 | Not Started |
 | 37 | Display Control | 0/3 | Not Started |
@@ -55,6 +55,8 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 | USB mic fallback strategy | SOF firmware may not work after reboot | 2026-02-25 |
 | Raw ONNX inference over silero-vad package | silero-vad pulls PyTorch (~2GB); raw onnxruntime avoids it | 2026-02-26 |
 | Bundled VAD model in repo | Ensures offline operation, no runtime downloads | 2026-02-26 |
+| openwakeword pinned to >=0.4 | >=0.6 requires tflite-runtime unavailable on Python 3.13 | 2026-02-26 |
+| Frame accumulation in capture loop | dsnoop period_size=256 returns 256-sample chunks; accumulate to 512 for VAD | 2026-02-26 |
 
 ### Technical Notes
 
@@ -72,6 +74,6 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-26
-**Stopped at:** Completed 34-02-PLAN.md (Silero VAD integration)
-**Resume:** Continue Phase 34 execution (Plan 03 remaining)
+**Last session:** 2026-02-26T05:45:01Z
+**Stopped at:** Completed 34-01-PLAN.md (Audio Capture Foundation)
+**Resume:** Execute 34-03-PLAN.md (Wake Word + State Machine)
