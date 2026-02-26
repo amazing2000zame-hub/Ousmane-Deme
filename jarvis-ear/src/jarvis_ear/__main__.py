@@ -8,8 +8,7 @@ Two-stage audio pipeline:
 3. Only speech frames go to WakeWordDetector (saves CPU)
 4. When wake word fires, StateMachine transitions to CAPTURING
 5. During CAPTURING, all frames (speech + silence) are buffered
-6. After 2s silence, captured audio is finalized (logged for now,
-   sent via Socket.IO in Phase 35)
+6. After 2s silence, captured audio is sent to backend via Socket.IO
 """
 
 import logging
@@ -18,6 +17,7 @@ import sys
 import time
 
 from jarvis_ear.audio import AudioCapture
+from jarvis_ear.backend import BackendClient
 from jarvis_ear.config import CHANNELS, SAMPLE_RATE, SAMPLE_WIDTH, VAD_THRESHOLD
 from jarvis_ear.state_machine import CaptureStateMachine, State
 from jarvis_ear.vad import VoiceActivityDetector
@@ -58,6 +58,14 @@ def main() -> None:
     capture = AudioCapture()
     capture.start()
     logger.info("Audio capture started")
+
+    # Connect to backend (non-blocking -- daemon works without backend)
+    logger.info("Connecting to backend...")
+    backend = BackendClient()
+    if backend.connect():
+        logger.info("Backend connected")
+    else:
+        logger.warning("Backend not available -- will reconnect automatically")
 
     # Handle graceful shutdown
     shutdown = False
@@ -119,8 +127,7 @@ def main() -> None:
                         duration_s,
                         len(captured_audio),
                     )
-                    # TODO (Phase 35): Send captured_audio to backend via Socket.IO
-                    # For now, just log it
+                    backend.send_audio(captured_audio)
                     vad.reset()
 
             # Periodic stats
@@ -149,6 +156,8 @@ def main() -> None:
         logger.error("Fatal error in main loop: %s", e, exc_info=True)
         sys.exit(1)
     finally:
+        logger.info("Disconnecting from backend...")
+        backend.disconnect()
         logger.info("Stopping audio capture...")
         capture.stop()
         logger.info("=== jarvis-ear stopped ===")

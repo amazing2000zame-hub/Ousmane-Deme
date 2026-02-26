@@ -2,3 +2,4 @@ pyalsaaudio>=0.11
 onnxruntime>=1.19
 openwakeword>=0.4
 silero-vad>=5.1
+python-socketio[client]>=5.16

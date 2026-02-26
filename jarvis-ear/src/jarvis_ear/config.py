@@ -26,3 +26,8 @@ VAD_THRESHOLD = 0.15         # Lower than Silero default (0.5) because DMIC sign
 ALSA_DEVICE = "default"      # Uses the plug->dsnoop->hw:sofhdadsp,7 chain from /etc/asound.conf
 ALSA_PERIOD_SIZE = 512       # One frame worth of samples, aligned to Silero VAD
 ALSA_PERIODS = 4             # 4 periods in ALSA buffer = ~128ms, enough headroom
+
+# Backend connection (Phase 35)
+BACKEND_URL = "http://localhost:4000"   # Jarvis backend Docker container mapped to host port
+JARVIS_PASSWORD = "jarvis"              # Login password (matches backend .env JARVIS_PASSWORD)
+AGENT_ID = "jarvis-ear"                 # Unique agent identifier for voice sessions

@@ -12,6 +12,7 @@ dependencies = [
     "onnxruntime>=1.19",
     "openwakeword>=0.4",
     "silero-vad>=5.1",
+    "python-socketio[client]>=5.16",
 ]
 
 [project.scripts]
