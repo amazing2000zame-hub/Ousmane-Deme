@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-02-26T08:17:00Z
+**Last Updated:** 2026-02-26T08:13:00Z
 **Current Milestone:** v1.8 Always-On Voice Assistant
 
 ---
@@ -8,7 +8,7 @@
 ## Project Reference
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
-**Current Focus:** Phase 37 -- Display Control (In Progress, 2/4 plans done)
+**Current Focus:** Phase 37 -- Display Control (In Progress, 3/4 plans done)
 
 **Active Files:**
 - `/root/.planning/PROJECT.md` - Project context
@@ -21,9 +21,9 @@
 
 **Milestone:** v1.8 Always-On Voice Assistant (Phases 33-38)
 **Phase:** 37 of 38 (Display Control) -- IN PROGRESS
-**Plan:** 2 of 4 complete
-**Status:** Plan 37-02 complete -- control_display MCP tool + DisplayClient in jarvis-ear
-**Last activity:** 2026-02-26 -- Plan 37-02 wired display control into backend MCP and jarvis-ear daemon
+**Plan:** 3 of 4 complete
+**Status:** Plan 37-03 complete -- Animated arc reactor HUD with SSE state push
+**Last activity:** 2026-02-26 -- Plan 37-03 deployed animated HUD page and SSE endpoint to management VM
 
 Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete overall)
 
@@ -37,7 +37,7 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 | 34 | Audio Capture Daemon Core | 3/3 | Complete |
 | 35 | Backend Integration | 2/2 | Complete |
 | 36 | Speaker Output & Loop | 0/2 | Not Started |
-| 37 | Display Control | 2/4 | In Progress |
+| 37 | Display Control | 3/4 | In Progress |
 | 38 | Service Management | 0/2 | Not Started |
 
 ---
@@ -69,6 +69,9 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 | xhost +local: for Chromium snap X11 access | Snap refuses Xauthority not owned by current user; xhost bypass | 2026-02-26 |
 | Flask dev server for kiosk display daemon | Single-client kiosk, no need for gunicorn/uwsgi | 2026-02-26 |
 | Chromium CDP via raw websockets (not selenium) | 20 lines vs 100MB install, websockets 10.4 already present | 2026-02-26 |
+| SSE-only state updates when in HUD mode | CDP Page.navigate destroys EventSource; SSE preserves connection | 2026-02-26 |
+| CSS custom properties for HUD animation control | State classes set variables; CSS/JS reads them for animations | 2026-02-26 |
+| Flask threaded=True for SSE + HTTP concurrency | SSE generator blocks thread; threaded mode handles concurrent requests | 2026-02-26 |
 | Fire-and-forget daemon threads for display calls | Never block audio capture main loop; display is non-critical | 2026-02-26 |
 | First TTS chunk triggers display talking state | Definitive signal that audio playback begins; no separate event needed | 2026-02-26 |
 | Camera name mapping in TypeScript const object | Easy to extend with new cameras, compile-time type safety | 2026-02-26 |
@@ -89,6 +92,8 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 - **control_display MCP tool**: YELLOW tier, proxies to Flask daemon at 192.168.1.65:8765 via fetch()
 - **DisplayClient**: fire-and-forget daemon threads, hooks into wake word / TTS start / TTS done
 - **Camera URLs**: go2rtc stream.html on agent1:1984 (front_door, side_house, birdseye)
+- **HUD SSE**: GET /display/events streams JSON state updates; 30s keepalive; auto-reconnect in JS
+- **HUD states**: idle (3s pulse, dim), listening (1.2s pulse, ripples), talking (0.5s pulse, flicker)
 
 ### Blockers
 
@@ -98,6 +103,6 @@ Progress: [||||||||||||||||||||||||||||||||........] 82% (32/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-26T08:17:00Z
-**Stopped at:** Completed 37-02-PLAN.md (Display Integration)
-**Resume:** Execute 37-03-PLAN.md (next display control plan -- animated HUD)
+**Last session:** 2026-02-26T08:13:00Z
+**Stopped at:** Completed 37-03-PLAN.md (Animated HUD Page)
+**Resume:** Execute 37-04-PLAN.md (final display control plan -- integration test)
