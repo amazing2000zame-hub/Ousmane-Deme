@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS HUD</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #00d4ff;
+    font-family: monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .title {
+    font-size: 120px;
+    font-weight: bold;
+    letter-spacing: 20px;
+    text-shadow: 0 0 20px rgba(0, 212, 255, 0.5), 0 0 40px rgba(0, 212, 255, 0.3);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .state {
+    font-size: 36px;
+    margin-top: 30px;
+    text-transform: uppercase;
+    letter-spacing: 10px;
+    opacity: 0.7;
+  }
+  .indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #00d4ff;
+    margin-top: 40px;
+    animation: blink 1s ease-in-out infinite;
+  }
+  .state-listening .indicator { animation: blink 0.5s ease-in-out infinite; }
+  .state-talking .indicator { background: #00ff88; animation: blink 0.3s ease-in-out infinite; }
+  .state-idle .indicator { animation: none; opacity: 0.3; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+</style>
+</head>
+<body>
+<div class="title">JARVIS</div>
+<div class="state" id="stateText">ACTIVE</div>
+<div class="indicator"></div>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const displayState = params.get('state') || 'idle';
+  document.getElementById('stateText').textContent = displayState;
+  document.body.classList.add('state-' + displayState);
+</script>
+</body>
+</html>
