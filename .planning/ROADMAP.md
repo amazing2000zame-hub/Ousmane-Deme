@@ -468,7 +468,7 @@ Plans:
 **Goal**: A Python daemon continuously listens on the microphone, filters silence via VAD, and detects the "Hey Jarvis" wake word to trigger audio capture of the user's spoken command
 **Depends on**: Phase 33 (working ALSA capture device)
 **Requirements**: VOICE-01, VOICE-02, VOICE-03
-**Status**: Complete (2026-02-26) — human verification needed (4 live acoustic tests)
+**Status**: Complete (2026-02-26)
 **Plans:** 3 plans (2 waves)
 
 **Success Criteria** (what must be TRUE when this phase completes):

@@ -1,7 +1,7 @@
 ---
 phase: 34-audio-capture-daemon-core
 verified: 2026-02-26
-status: human_needed
+status: passed
 score: 11/11
 human_verification:
   - "Run daemon 60s in quiet room — VAD speech_pct < 10%"
@@ -13,7 +13,7 @@ human_verification:
 # Phase 34: Audio Capture Daemon Core — Verification
 
 **Score:** 11/11 must-haves verified at code level
-**Status:** human_needed — all code checks pass, 4 live acoustic tests required
+**Status:** passed — all code checks pass, all 4 live acoustic tests passed after DMIC fixes
 
 ## Observable Truths
 
