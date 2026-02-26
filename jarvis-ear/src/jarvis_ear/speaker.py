@@ -138,8 +138,36 @@ class AudioPlayer:
         is still open.  The chime frequencies (C5+E5) are non-speech and
         will not trigger the wake word model.
         """
-        logger.debug("Playing wake word chime")
+        logger.info("Playing wake word chime")
         self._write_pcm(self._chime_pcm)
+
+    def play_wav_file(self, path: str) -> None:
+        """Play a WAV file through the speakers using ffmpeg decode.
+
+        Used for startup announcements and other pre-recorded audio.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", path,
+                    "-ar", str(SPEAKER_SAMPLE_RATE),
+                    "-ac", str(SPEAKER_CHANNELS),
+                    "-f", "s16le",
+                    "-loglevel", "error",
+                    "pipe:1",
+                ],
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                logger.warning("ffmpeg decode failed for %s: %s", path, result.stderr.decode()[:200])
+                return
+            pcm = result.stdout
+            if pcm:
+                logger.info("Playing WAV file: %s (%d bytes PCM)", path, len(pcm))
+                self._write_pcm(pcm)
+        except Exception as exc:
+            logger.warning("Failed to play WAV file %s: %s", path, exc)
 
     def stop(self) -> None:
         """Stop the playback thread and close the ALSA device.

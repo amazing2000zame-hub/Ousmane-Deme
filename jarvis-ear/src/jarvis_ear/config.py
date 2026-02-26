@@ -41,7 +41,7 @@ SPEAKER_SAMPLE_RATE = 48000      # Must match dmix slave rate in /etc/asound.con
 SPEAKER_CHANNELS = 2             # Must match dmix slave channels (stereo)
 SPEAKER_PERIOD_SIZE = 1024       # Must match dmix period_size
 SPEAKER_DEVICE = "default"       # plug -> dmix -> hw:1,0 (HDA Analog via asound.conf)
-SPEAKER_VOLUME_PCT = 60          # Initial master volume percentage
+SPEAKER_VOLUME_PCT = 100         # Initial master volume percentage (100% for built-in speakers)
 
 # Mic mute during TTS playback (Phase 36 Plan 02)
 CONVERSATION_TIMEOUT_S = 15.0       # Follow-up window duration after TTS playback

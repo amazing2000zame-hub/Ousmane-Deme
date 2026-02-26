@@ -5,7 +5,6 @@
  */
 
 import { config } from '../config.js';
-import FormData from 'form-data';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,12 +89,14 @@ export async function transcribeAudio(
     throw new Error('Whisper STT service not available');
   }
 
-  // Build multipart form data
+  // Build multipart form data using native FormData (compatible with fetch)
+  // Use Uint8Array copy to avoid issues with Node.js pooled Buffer.buffer
   const form = new FormData();
-  form.append('audio', audio, {
-    filename: options?.filename || 'audio.wav',
-    contentType: 'audio/wav',
-  });
+  form.append(
+    'audio',
+    new Blob([new Uint8Array(audio)], { type: 'audio/wav' }),
+    options?.filename || 'audio.wav',
+  );
 
   if (options?.language) {
     form.append('language', options.language);
@@ -103,8 +104,7 @@ export async function transcribeAudio(
 
   const response = await fetch(`${config.whisperEndpoint}/transcribe`, {
     method: 'POST',
-    body: form as unknown as BodyInit,
-    headers: form.getHeaders(),
+    body: form,
     signal: AbortSignal.timeout(30_000), // 30s timeout for transcription
   });
 
@@ -154,15 +154,15 @@ export async function transcribeRaw(audio: Buffer): Promise<string> {
   }
 
   const form = new FormData();
-  form.append('audio', audio, {
-    filename: 'audio.wav',
-    contentType: 'audio/wav',
-  });
+  form.append(
+    'audio',
+    new Blob([new Uint8Array(audio)], { type: 'audio/wav' }),
+    'audio.wav',
+  );
 
   const response = await fetch(`${config.whisperEndpoint}/transcribe/raw`, {
     method: 'POST',
-    body: form as unknown as BodyInit,
-    headers: form.getHeaders(),
+    body: form,
     signal: AbortSignal.timeout(30_000),
   });
 

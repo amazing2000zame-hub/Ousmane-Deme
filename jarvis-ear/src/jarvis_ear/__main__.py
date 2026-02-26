@@ -12,6 +12,7 @@ Two-stage audio pipeline:
 """
 
 import logging
+import os
 import signal
 import sys
 import time
@@ -96,6 +97,18 @@ def main() -> None:
     STATS_INTERVAL = 30.0  # Log stats every 30 seconds
 
     logger.info("=== Listening for 'Hey Jarvis' ===")
+
+    # Play startup announcement if WAV file exists
+    startup_wav = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "assets", "startup.wav")
+    startup_wav = os.path.normpath(startup_wav)
+    if not os.path.exists(startup_wav):
+        # Also check relative to working directory
+        startup_wav = os.path.join(os.getcwd(), "assets", "startup.wav")
+    if os.path.exists(startup_wav):
+        logger.info("Playing startup announcement...")
+        speaker.play_wav_file(startup_wav)
+    else:
+        logger.debug("No startup WAV found at %s", startup_wav)
 
     try:
         while not shutdown:
