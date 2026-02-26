@@ -43,6 +43,16 @@ SPEAKER_PERIOD_SIZE = 1024       # Must match dmix period_size
 SPEAKER_DEVICE = "default"       # plug -> dmix -> hw:1,0 (HDA Analog via asound.conf)
 SPEAKER_VOLUME_PCT = 60          # Initial master volume percentage
 
+# Mic mute during TTS playback (Phase 36 Plan 02)
+CONVERSATION_TIMEOUT_S = 15.0       # Follow-up window duration after TTS playback
+MIC_MUTE_SAFETY_TIMEOUT_S = 60.0    # Force unmute if mic stuck muted longer than this
+
+# Wake word chime (Phase 36 Plan 02)
+CHIME_AMPLITUDE = 12000             # ~37% of int16 max, avoids clipping
+CHIME_TONE_DURATION_S = 0.15        # 150ms per tone
+CHIME_GAP_DURATION_S = 0.05         # 50ms gap between tones
+CHIME_FREQUENCIES = (523, 659)      # C5 and E5 (ascending two-tone)
+
 # Display daemons (Phase 37)
 DISPLAY_DAEMON_URL = "http://localhost:8766"            # Home node eDP-1 (default for jarvis-ear)
 DISPLAY_DAEMON_KIOSK_URL = "http://192.168.1.65:8765"  # Management VM kiosk
