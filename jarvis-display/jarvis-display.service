@@ -1,0 +1,15 @@
+[Unit]
+Description=Jarvis Display Control Daemon
+After=network-online.target kiosk.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/jarvis-display/display_daemon.py
+WorkingDirectory=/opt/jarvis-display
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
