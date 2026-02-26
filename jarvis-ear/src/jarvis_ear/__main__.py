@@ -66,8 +66,9 @@ def main() -> None:
     logger.info("Display client initialized (target: %s)", display._url)
 
     # Initialize audio player for TTS output through built-in speakers
-    speaker = AudioPlayer()
-    logger.info("Audio player initialized (48kHz stereo, ALSA dmix)")
+    # on_playback_done callback transitions state machine to CONVERSATION mode
+    speaker = AudioPlayer(on_playback_done=state_machine.on_tts_done)
+    logger.info("Audio player initialized (48kHz stereo, ALSA dmix, conversation callback wired)")
 
     # Start backend connection (non-blocking -- daemon works without backend)
     logger.info("Starting backend connection...")
@@ -90,6 +91,7 @@ def main() -> None:
     speech_frames = 0
     wake_detections = 0
     captures_completed = 0
+    conversation_followups = 0
     last_stats_time = time.monotonic()
     STATS_INTERVAL = 30.0  # Log stats every 30 seconds
 
@@ -118,7 +120,8 @@ def main() -> None:
                         preroll = capture.drain_preroll()
                         state_machine.on_wake_word(preroll)
                         display.on_wake_word()
-                        wakeword.reset()
+                        speaker.play_chime()
+                        wakeword.reset()  # Discard frames captured during chime
                         vad.reset()
 
             elif state_machine.state == State.CAPTURING:
@@ -138,6 +141,18 @@ def main() -> None:
                     backend.send_audio(captured_audio)
                     vad.reset()
 
+            elif state_machine.state == State.CONVERSATION:
+                # 15-second follow-up window after TTS playback
+                if state_machine.check_conversation_timeout():
+                    # Window expired, back to IDLE
+                    wakeword.reset()
+                    vad.reset()
+                elif is_speech:
+                    # Follow-up speech detected -- start capturing without wake word
+                    state_machine.on_conversation_speech()
+                    conversation_followups += 1
+                    logger.info("Follow-up question detected in conversation mode")
+
             # Periodic stats
             now = time.monotonic()
             if now - last_stats_time >= STATS_INTERVAL:
@@ -153,11 +168,12 @@ def main() -> None:
                 if status["reconnect_count"] > 0:
                     backend_str += f" (reconnects: {status['reconnect_count']})"
                 logger.info(
-                    "Stats: %.0f fps, %.1f%% speech, %d wakes, %d captures, backend=%s (last %ds)",
+                    "Stats: %.0f fps, %.1f%% speech, %d wakes, %d captures, %d followups, backend=%s (last %ds)",
                     fps,
                     speech_pct,
                     wake_detections,
                     captures_completed,
+                    conversation_followups,
                     backend_str,
                     int(elapsed),
                 )
