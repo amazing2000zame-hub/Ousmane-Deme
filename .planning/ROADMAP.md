@@ -674,7 +674,7 @@ Phase 29 depends on Phase 28 (camera infrastructure). Phases 33-38 execute seque
 | 31. Web UI Redesign | v1.7 | 2/2 | Complete | 2026-01-30 |
 | 33. Audio Hardware | v1.8 | 0/2 | Not Started | - |
 | 34. Capture Daemon Core | v1.8 | 0/3 | Planned | - |
-| 35. Backend Integration | v1.8 | 0/2 | Not Started | - |
+| 35. Backend Integration | v1.8 | 0/2 | Planned | - |
 | 36. Speaker Output & Loop | v1.8 | 0/2 | Not Started | - |
 | 37. Display Control | v1.8 | 0/3 | Not Started | - |
 | 38. Service Management | v1.8 | 0/2 | Not Started | - |
