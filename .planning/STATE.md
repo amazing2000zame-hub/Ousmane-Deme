@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-02-26T05:45:01Z
+**Last Updated:** 2026-02-26T05:51:00Z
 **Current Milestone:** v1.8 Always-On Voice Assistant
 
 ---
@@ -8,7 +8,7 @@
 ## Project Reference
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
-**Current Focus:** Phase 34 -- Audio Capture Daemon Core (Plan 01 complete)
+**Current Focus:** Phase 34 -- Audio Capture Daemon Core (COMPLETE)
 
 **Active Files:**
 - `/root/.planning/PROJECT.md` - Project context
@@ -21,9 +21,9 @@
 
 **Milestone:** v1.8 Always-On Voice Assistant (Phases 33-38)
 **Phase:** 34 of 38 (Audio Capture Daemon Core)
-**Plan:** 2 of 3 complete
-**Status:** Executing Phase 34 plans
-**Last activity:** 2026-02-26 -- Completed 34-02 (Silero VAD integration)
+**Plan:** 3 of 3 complete
+**Status:** Phase 34 COMPLETE -- all 3 plans executed
+**Last activity:** 2026-02-26 -- Completed 34-03 (Wake Word + State Machine)
 
 Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete overall)
 
@@ -34,7 +34,7 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 | Phase | Name | Plans | Status |
 |-------|------|-------|--------|
 | 33 | Audio Hardware Foundation | 0/2 | Not Started |
-| 34 | Audio Capture Daemon Core | 2/3 | In Progress |
+| 34 | Audio Capture Daemon Core | 3/3 | Complete |
 | 35 | Backend Integration | 0/2 | Not Started |
 | 36 | Speaker Output & Loop | 0/2 | Not Started |
 | 37 | Display Control | 0/3 | Not Started |
@@ -57,6 +57,9 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 | Bundled VAD model in repo | Ensures offline operation, no runtime downloads | 2026-02-26 |
 | openwakeword pinned to >=0.4 | >=0.6 requires tflite-runtime unavailable on Python 3.13 | 2026-02-26 |
 | Frame accumulation in capture loop | dsnoop period_size=256 returns 256-sample chunks; accumulate to 512 for VAD | 2026-02-26 |
+| openwakeword 0.4.x wakeword_model_paths API | Correct API is wakeword_model_paths (file paths), not wakeword_models | 2026-02-26 |
+| Single-threaded main loop | VAD/wake word/state machine in main thread; audio capture in daemon thread | 2026-02-26 |
+| VAD reset at state transition boundaries | Prevents temporal state leakage between IDLE and CAPTURING phases | 2026-02-26 |
 
 ### Technical Notes
 
@@ -74,6 +77,6 @@ Progress: [||||||||||||||||||||||||||||||..........] 77% (31/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-26T05:45:01Z
-**Stopped at:** Completed 34-01-PLAN.md (Audio Capture Foundation)
-**Resume:** Execute 34-03-PLAN.md (Wake Word + State Machine)
+**Last session:** 2026-02-26T05:51:00Z
+**Stopped at:** Completed 34-03-PLAN.md (Wake Word + State Machine) -- Phase 34 COMPLETE
+**Resume:** Begin Phase 35 (Backend Integration)
