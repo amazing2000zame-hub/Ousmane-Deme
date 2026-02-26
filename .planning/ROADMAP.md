@@ -528,10 +528,12 @@ Plans:
 4. When idle (no active voice interaction or display command), the kiosk shows a Jarvis listening indicator or HUD animation that visually confirms the system is active and listening
 5. During voice interaction, the display shows a Jarvis "face" or HUD animation that reacts to voice activity (distinct from idle state)
 
+**Plans:** 3 plans (2 waves)
+
 Plans:
-- [ ] 37-01-PLAN.md -- Chromium kiosk mode launcher, X11 display control via subprocess, URL navigation
-- [ ] 37-02-PLAN.md -- Camera feed and dashboard MCP tools (voice-to-display command routing)
-- [ ] 37-03-PLAN.md -- Idle HUD page with listening indicator and voice-active animation
+- [ ] 37-01-PLAN.md -- Flask display daemon on management VM with Chromium CDP, mpv window management, systemd service
+- [ ] 37-02-PLAN.md -- Backend control_display MCP tool and jarvis-ear DisplayClient for automatic HUD on voice events
+- [ ] 37-03-PLAN.md -- Jarvis HUD/face animation page with arc reactor, state-driven animations, SSE state updates
 
 #### Phase 38: Service Management & Reliability
 **Goal**: The voice agent daemon runs reliably as a production service that survives reboots, reconnects after failures, and reports its status to the Jarvis dashboard
