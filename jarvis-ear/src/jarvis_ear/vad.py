@@ -101,8 +101,13 @@ class VoiceActivityDetector:
             )
 
         # ONNX Runtime session with CPU execution provider
+        # Limit to 1 thread to avoid 150%+ CPU from default thread pool
+        opts = ort.SessionOptions()
+        opts.inter_op_num_threads = 1
+        opts.intra_op_num_threads = 1
         self._session = ort.InferenceSession(
             str(resolved),
+            sess_options=opts,
             providers=["CPUExecutionProvider"],
         )
         self._threshold = threshold
