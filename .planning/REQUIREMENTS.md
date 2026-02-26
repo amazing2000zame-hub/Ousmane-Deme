@@ -1,102 +1,99 @@
-# Requirements: Jarvis 3.1 -- v1.5 Optimization & Latency Reduction
+# Requirements: Jarvis 3.1 — v1.8 Always-On Voice Assistant
 
-**Defined:** 2026-01-27
-**Core Value:** The dashboard shows everything and Jarvis can act on it -- if you can see a problem on screen, Jarvis can fix it without you touching anything.
+**Defined:** 2026-02-25
+**Core Value:** Walk into the room, speak to Jarvis, see and hear the response — no browser needed.
 
-## v1.5 Requirements
+## v1.8 Requirements
 
-Requirements for this milestone. Each maps to roadmap phases.
+### Audio Hardware
 
-### TTS Reliability & Fallback
+- [ ] **AUDIO-01**: System captures audio from physical microphone on Home node
+- [ ] **AUDIO-02**: Built-in Intel SOF digital mics activated after reboot and tested
+- [ ] **AUDIO-03**: USB microphone works as fallback if built-in mics are insufficient
 
-- [x] **TTS-01**: Piper TTS deployed as Docker container providing <200ms CPU-based speech synthesis as fallback engine
-- [x] **TTS-02**: Per-sentence 3-second timeout triggers automatic Piper fallback instead of skipping audio
-- [x] **TTS-03**: Health-aware TTS routing skips XTTS when recent health check indicates failure
-- [x] **TTS-04**: TTS engine consistency enforced -- if XTTS fails on any sentence, Piper used for all remaining sentences in that response
+### Voice Detection
 
-### TTS Performance
+- [ ] **VOICE-01**: Voice Activity Detection filters silence and background noise from mic stream
+- [ ] **VOICE-02**: "Hey Jarvis" wake word triggers audio processing pipeline
+- [ ] **VOICE-03**: Silence timeout (2s) detects end of utterance and triggers STT
+- [ ] **VOICE-04**: Detected speech streams to backend via existing Socket.IO /voice namespace
 
-- [x] **PERF-01**: TTS LRU cache expanded to 200+ entries with engine-specific cache keys
-- [x] **PERF-02**: Bounded parallel TTS synthesis with max 2 concurrent workers and CPU affinity separation
-- [x] **PERF-03**: Disk-persistent TTS cache that survives container restarts with startup pre-warming of common JARVIS phrases
-- [x] **PERF-04**: Sentence detection minimum length reduced and TTS health check with automatic container restart on failure
+### Speaker Output
 
-### Audio Encoding
+- [ ] **SPEAK-01**: TTS audio plays through physical speaker on Home node
+- [ ] **SPEAK-02**: Microphone mutes during TTS playback to prevent echo/self-triggering
+- [ ] **SPEAK-03**: Conversation mode allows follow-up questions without repeating wake word (15s window)
+- [ ] **SPEAK-04**: Audio confirmation chime plays when wake word is detected
 
-- [x] **AUDIO-01**: Optional Opus audio codec via FFmpeg encoding (8-10x smaller payloads, configurable flag for LAN vs remote access)
+### Display Control
 
-### Backend Optimization
+- [ ] **DISP-01**: Jarvis can show camera feeds on physical display via voice command
+- [ ] **DISP-02**: Jarvis can open the dashboard on physical display via voice command
+- [ ] **DISP-03**: Jarvis can open any URL in browser on physical display via voice command
+- [ ] **DISP-04**: Kiosk mode shows Jarvis listening/status indicator when idle
+- [ ] **DISP-05**: Display shows Jarvis "face" or HUD animation during voice interaction
 
-- [x] **BACK-01**: SQLite performance PRAGMAs applied (synchronous=NORMAL, cache_size=-64000, temp_store=MEMORY, mmap_size=268435456)
-- [x] **BACK-02**: Conversation sliding window keeping last 20-30 messages in full with token-aware truncation and background Qwen summarization of older context
+### Service Management
 
-### Observability
+- [ ] **SVC-01**: Voice agent runs as systemd service with auto-restart on crash/reboot
+- [ ] **SVC-02**: Auto-reconnects to backend after container restart or network disconnect
+- [ ] **SVC-03**: Voice agent status visible in Jarvis dashboard (connected, listening, last interaction)
 
-- [x] **OBS-01**: Latency tracing pipeline with per-request timing breakdown (t0 message received through t5 audio plays) using performance.now() timestamps
-- [x] **OBS-02**: Expanded /api/health endpoint returning component-level status for TTS engines, LLM, Proxmox API connectivity, and database
+## Future Requirements (v1.9+)
 
-### Frontend
+### Multi-Room
+- **MULTI-01**: Multiple voice agents in different rooms connecting to same backend
+- **MULTI-02**: Room-aware responses ("Jarvis, turn on the kitchen lights" from kitchen agent)
 
-- [ ] **UI-01**: Chat history virtualization using @tanstack/react-virtual for smooth scrolling at 100+ messages
+### Advanced Audio
+- **ADV-01**: Barge-in support (interrupt Jarvis mid-response with new command)
+- **ADV-02**: Speaker diarization (identify who is speaking)
+- **ADV-03**: Echo cancellation via hardware AEC or software DSP
 
-## Future Requirements
-
-Deferred to later milestones.
-
-### Advanced Optimization (v1.6+)
-
-- **ADV-01**: GPU TTS acceleration (if hardware available)
-- **ADV-02**: Distributed component architecture across cluster nodes
-- **ADV-03**: VLAN segmentation for service isolation
-- **ADV-04**: ML-based intent router for LLM request classification
-- **ADV-05**: ElevenLabs cloud TTS fallback (requires API key)
-- **ADV-06**: Summary persistence across sessions for session resume
-
-### Voice Retraining (carried from v1.3)
-
-- **VOICE-13**: Extract clean audio segments from user-provided JARVIS video files using ffmpeg
-- **VOICE-14**: Build training dataset from extracted audio (LJSpeech format)
-- **VOICE-15**: Retrain XTTS v2 GPT decoder with new dataset
-- **VOICE-16**: Update TTS server to use new fine-tuned model weights
+### Display Advanced
+- **DADV-01**: Multi-display routing (show camera on one display, dashboard on another)
+- **DADV-02**: Picture-in-picture mode for camera overlays
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Multiple XTTS worker instances | XTTS v2 batch_size=1 constraint; concurrent requests cause CUDA errors |
-| Voice cloning on Piper fallback | Accept voice change on fallback; complexity not worth it for edge case |
-| RAG-based context retrieval | Overkill for single-user homelab |
-| Always-on Opus encoding | Adds 10-50ms latency with zero benefit on gigabit LAN |
-| Web Worker audio decoding | AudioContext unavailable in Workers (W3C spec issue since 2013) |
-| react-window | Inferior dynamic height support vs @tanstack/react-virtual |
-| OpenTelemetry distributed tracing | performance.now() sufficient for homelab scale |
+| Mobile voice interaction | Browser-based voice already works for mobile |
+| Custom wake word model training | Pre-trained "hey_jarvis" model sufficient for v1 |
+| Multi-room deployment | Get single room working first |
+| Software echo cancellation | Too complex; mic mute during playback is sufficient |
+| Continuous STT (always transcribing) | CPU-intensive, defeats purpose of wake word |
+| Home Assistant voice integration | Separate ecosystem, not needed for cluster management |
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BACK-01 | Phase 21 | Done |
-| PERF-01 | Phase 21 | Done |
-| PERF-04 | Phase 21 | Done |
-| OBS-02 | Phase 21 | Done |
-| TTS-01 | Phase 22 | Done |
-| TTS-02 | Phase 22 | Done |
-| TTS-03 | Phase 22 | Done |
-| TTS-04 | Phase 22 | Done |
-| PERF-02 | Phase 23 | Complete |
-| PERF-03 | Phase 23 | Complete |
-| AUDIO-01 | Phase 23 | Complete |
-| OBS-01 | Phase 24 | Complete |
-| BACK-02 | Phase 24 | Complete |
-| UI-01 | Phase 25 | Pending |
+| AUDIO-01 | — | Pending |
+| AUDIO-02 | — | Pending |
+| AUDIO-03 | — | Pending |
+| VOICE-01 | — | Pending |
+| VOICE-02 | — | Pending |
+| VOICE-03 | — | Pending |
+| VOICE-04 | — | Pending |
+| SPEAK-01 | — | Pending |
+| SPEAK-02 | — | Pending |
+| SPEAK-03 | — | Pending |
+| SPEAK-04 | — | Pending |
+| DISP-01 | — | Pending |
+| DISP-02 | — | Pending |
+| DISP-03 | — | Pending |
+| DISP-04 | — | Pending |
+| DISP-05 | — | Pending |
+| SVC-01 | — | Pending |
+| SVC-02 | — | Pending |
+| SVC-03 | — | Pending |
 
 **Coverage:**
-- v1.5 requirements: 14 total
-- Mapped to phases: 14
-- Unmapped: 0
+- v1.8 requirements: 19 total
+- Mapped to phases: 0
+- Unmapped: 19
 
 ---
-*Requirements defined: 2026-01-27*
-*Traceability updated: 2026-01-27*
+*Requirements defined: 2026-02-25*
+*Last updated: 2026-02-25 after initial definition*
