@@ -1,6 +1,6 @@
 # Jarvis 3.1 Project State
 
-**Last Updated:** 2026-02-26T08:27:07Z
+**Last Updated:** 2026-02-26T14:49:29Z
 **Current Milestone:** v1.8 Always-On Voice Assistant
 
 ---
@@ -8,7 +8,7 @@
 ## Project Reference
 
 **Core Value:** AI-operated Proxmox cluster command center with JARVIS personality
-**Current Focus:** Phase 37 -- Display Control (In Progress, 3/4 plans done)
+**Current Focus:** Phase 36 -- Speaker Output & Loop (In Progress, 1/2 plans done)
 
 **Active Files:**
 - `/root/.planning/PROJECT.md` - Project context
@@ -20,10 +20,10 @@
 ## Current Position
 
 **Milestone:** v1.8 Always-On Voice Assistant (Phases 33-38)
-**Phase:** 37 of 38 (Display Control) -- COMPLETE
-**Plan:** 4 of 4 complete
-**Status:** Phase 37 complete -- All 4 display control plans done (daemon, integration, HUD, Home node)
-**Last activity:** 2026-02-26 -- Plan 37-04 deployed Home node eDP-1 display with multi-target routing
+**Phase:** 36 of 38 (Speaker Output & Loop)
+**Plan:** 1 of 2 complete
+**Status:** Plan 36-01 complete -- AudioPlayer class with ALSA output and BackendClient wiring
+**Last activity:** 2026-02-26 -- Phase 36 Plan 01 executed (AudioPlayer, TTS chunk routing)
 
 Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete overall)
 
@@ -36,7 +36,7 @@ Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete 
 | 33 | Audio Hardware Foundation | 2/2 | Complete |
 | 34 | Audio Capture Daemon Core | 3/3 | Complete |
 | 35 | Backend Integration | 2/2 | Complete |
-| 36 | Speaker Output & Loop | 0/2 | Not Started |
+| 36 | Speaker Output & Loop | 1/2 | In Progress |
 | 37 | Display Control | 4/4 | Complete |
 | 38 | Service Management | 0/2 | Not Started |
 
@@ -79,6 +79,9 @@ Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete 
 | On-demand Chromium (not permanent kiosk) | Home display returns to blank desktop when idle; Chromium closes on restore | 2026-02-26 |
 | Multi-display target routing in MCP tool | 'kiosk' and 'home' targets resolve to different daemon URLs | 2026-02-26 |
 | jarvis-ear defaults to localhost:8766 | Home node eDP-1 is natural target since jarvis-ear runs on Home | 2026-02-26 |
+| ffmpeg subprocess for TTS audio decode | Handles WAV and Opus uniformly; 5ms overhead acceptable | 2026-02-26 |
+| ALSA device kept open for daemon lifetime | No per-chunk open/close overhead (5-10ms saved per chunk) | 2026-02-26 |
+| amixer subprocess for speaker enable | 2ms latency; simpler than C ALSA mixer bindings | 2026-02-26 |
 
 ### Technical Notes
 
@@ -103,6 +106,9 @@ Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete 
 - **MCP target routing**: control_display accepts 'target' param ('kiosk'|'home'), defaults to 'kiosk' for backward compat
 - **jarvis-ear default display**: localhost:8766 (Home eDP-1) since jarvis-ear runs on Home node
 - **Home display on-demand**: Chromium launches for HUD/URL, closes on restore; blank black desktop when idle
+- **AudioPlayer**: speaker.py, ordered PriorityQueue, background daemon thread, ffmpeg decode to 48kHz stereo, ALSA write in period chunks
+- **Speaker output path**: TTS chunk (WAV 24kHz mono) -> b64 decode -> ffmpeg (48kHz stereo S16LE) -> ALSA dmix -> hw:1,0 -> Realtek ALC245 speakers
+- **Speaker enabled at startup**: amixer -c 1 sset Speaker on, Master on, 60% volume
 
 ### Blockers
 
@@ -112,6 +118,7 @@ Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-26T08:27:07Z
-**Stopped at:** Completed 37-04-PLAN.md (Home Node Display Setup) -- Phase 37 COMPLETE
-**Resume:** Phase 36 (Speaker Output & Loop) or Phase 38 (Service Management)
+**Last session:** 2026-02-26T14:49:29Z
+**Stopped at:** Completed 36-01-PLAN.md (AudioPlayer + BackendClient wiring)
+**Resume:** Execute 36-02-PLAN.md (mic mute, conversation mode, wake word chime)
+**Known bug:** Whisper STT returns 400 "error parsing body" -- backend multipart form-data encoding issue (not jarvis-ear)
