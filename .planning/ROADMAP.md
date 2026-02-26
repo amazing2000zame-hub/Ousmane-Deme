@@ -468,7 +468,8 @@ Plans:
 **Goal**: A Python daemon continuously listens on the microphone, filters silence via VAD, and detects the "Hey Jarvis" wake word to trigger audio capture of the user's spoken command
 **Depends on**: Phase 33 (working ALSA capture device)
 **Requirements**: VOICE-01, VOICE-02, VOICE-03
-**Status**: Not Started
+**Status**: Planned
+**Plans:** 3 plans (2 waves)
 
 **Success Criteria** (what must be TRUE when this phase completes):
 1. The daemon runs continuously and captures audio from the ALSA microphone at 16kHz 16-bit mono PCM without buffer overflows or dropped frames
@@ -478,9 +479,9 @@ Plans:
 5. A 500ms pre-roll buffer preserves audio context immediately before the wake word so the first words of the command are not lost
 
 Plans:
-- [ ] 34-01-PLAN.md -- Python project scaffold, pyalsaaudio continuous capture, ring buffer
-- [ ] 34-02-PLAN.md -- Silero VAD integration with two-stage pipeline (VAD gates wake word to save CPU)
-- [ ] 34-03-PLAN.md -- openWakeWord "hey_jarvis" detection, state machine (IDLE/LISTENING/CAPTURING), silence timeout
+- [ ] 34-01-PLAN.md -- Python project scaffold, pyalsaaudio continuous capture, ring buffer (wave 1)
+- [ ] 34-02-PLAN.md -- Silero VAD integration with ONNX Runtime, two-stage pipeline (wave 1)
+- [ ] 34-03-PLAN.md -- openWakeWord "hey_jarvis" detection, state machine (IDLE/CAPTURING), silence timeout (wave 2)
 
 #### Phase 35: Backend Integration
 **Goal**: The capture daemon connects to the existing Jarvis backend via Socket.IO and streams captured audio through the working STT/LLM/TTS pipeline with zero backend modifications
@@ -672,7 +673,7 @@ Phase 29 depends on Phase 28 (camera infrastructure). Phases 33-38 execute seque
 | 30. MCP Reliability | v1.6 | 2/2 | Complete | 2026-01-30 |
 | 31. Web UI Redesign | v1.7 | 2/2 | Complete | 2026-01-30 |
 | 33. Audio Hardware | v1.8 | 0/2 | Not Started | - |
-| 34. Capture Daemon Core | v1.8 | 0/3 | Not Started | - |
+| 34. Capture Daemon Core | v1.8 | 0/3 | Planned | - |
 | 35. Backend Integration | v1.8 | 0/2 | Not Started | - |
 | 36. Speaker Output & Loop | v1.8 | 0/2 | Not Started | - |
 | 37. Display Control | v1.8 | 0/3 | Not Started | - |
