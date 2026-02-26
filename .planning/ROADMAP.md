@@ -503,7 +503,8 @@ Plans:
 **Goal**: Users hear Jarvis respond through physical speakers after speaking a command, with echo prevention and conversation continuity -- completing the full hands-free voice loop
 **Depends on**: Phase 35 (backend integration delivering TTS chunks)
 **Requirements**: SPEAK-01, SPEAK-02, SPEAK-03, SPEAK-04
-**Status**: Not Started
+**Status**: Planned
+**Plans:** 2 plans (2 waves)
 
 **Success Criteria** (what must be TRUE when this phase completes):
 1. After saying "Hey Jarvis, what's the cluster status?", Jarvis's spoken response plays audibly through the physical speaker on the Home node
@@ -512,8 +513,8 @@ Plans:
 4. A short audio chime plays immediately when "Hey Jarvis" is detected, confirming the system heard the wake word before the user finishes speaking
 
 Plans:
-- [ ] 36-01-PLAN.md -- TTS chunk reception, Opus decoding, ordered ALSA playback queue
-- [ ] 36-02-PLAN.md -- Mic mute during playback, wake word chime, conversation mode (15s follow-up window)
+- [ ] 36-01-PLAN.md -- AudioPlayer class with ordered TTS chunk playback, ffmpeg decode, ALSA output, speaker enable
+- [ ] 36-02-PLAN.md -- Mic mute during playback, wake word chime, CONVERSATION state with 15s follow-up window
 
 #### Phase 37: Display Control
 **Goal**: Users can control a physical display via voice commands -- showing camera feeds, opening dashboards, navigating to URLs, and displaying a Jarvis HUD/face when idle
