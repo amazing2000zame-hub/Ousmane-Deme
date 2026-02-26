@@ -90,6 +90,8 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   // ORANGE -- dangerous operations requiring keyword approval
   reboot_node: ActionTier.ORANGE,
   delete_file: ActionTier.ORANGE,
+  create_file: ActionTier.ORANGE,
+  write_file: ActionTier.ORANGE,
   execute_command: ActionTier.ORANGE,
   install_package: ActionTier.ORANGE,
   manage_service: ActionTier.ORANGE,
@@ -135,6 +137,12 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
 
   // YELLOW -- browser launch (executes command on cluster node)
   open_in_browser: ActionTier.YELLOW,
+
+  // YELLOW -- OpenClaw delegation (sends task to Claude Sonnet on agent1)
+  delegate_to_openclaw: ActionTier.YELLOW,
+
+  // YELLOW -- display control (shows URL on physical display)
+  control_display: ActionTier.YELLOW,
 };
 
 // ---------------------------------------------------------------------------

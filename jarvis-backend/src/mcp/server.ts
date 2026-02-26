@@ -1,5 +1,5 @@
 /**
- * MCP server instance with all 32 tools registered.
+ * MCP server instance with all 33 tools registered.
  *
  * Provides executeTool() as the single entry point for all cluster operations.
  * The pipeline: sanitize -> checkSafety -> execute handler -> log to memory store.
@@ -22,6 +22,8 @@ import { registerProjectTools } from './tools/projects.js';
 import { registerVoiceTools } from './tools/voice.js';
 import { registerSmartHomeTools } from './tools/smarthome.js';
 import { registerWebTools } from './tools/web.js';
+import { registerOpenClawTools } from './tools/openclaw.js';
+import { registerDisplayTools } from './tools/display.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -119,6 +121,8 @@ registerProjectTools(mcpServer);
 registerVoiceTools(mcpServer);
 registerSmartHomeTools(mcpServer);
 registerWebTools(mcpServer);
+registerOpenClawTools(mcpServer);
+registerDisplayTools(mcpServer);
 
 // ---------------------------------------------------------------------------
 // executeTool -- the single entry point for all tool invocations
