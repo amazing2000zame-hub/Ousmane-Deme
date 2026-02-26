@@ -2,6 +2,7 @@ import { TopBar } from './TopBar';
 import { NodeGrid } from '../left/NodeGrid';
 import { VMList } from '../left/VMList';
 import { StoragePanel } from '../left/StoragePanel';
+import { VoiceAgentPanel } from '../left/VoiceAgentPanel';
 import { CenterDisplay } from '../center/CenterDisplay';
 import TerminalPanel from '../right/TerminalPanel';
 import { CostPanel } from '../right/CostPanel';
@@ -53,6 +54,7 @@ export function Dashboard() {
           <NodeGrid />
           <VMList />
           <StoragePanel />
+          <VoiceAgentPanel />
         </aside>
 
         {/* Center column: Activity feed */}

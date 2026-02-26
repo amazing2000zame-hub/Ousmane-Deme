@@ -29,6 +29,7 @@ import { routeMessage } from '../ai/router.js';
 import { buildClaudeSystemPrompt, buildQwenSystemPrompt, buildClusterSummary } from '../ai/system-prompt.js';
 import { claudeProvider } from '../ai/providers/claude-provider.js';
 import { qwenProvider } from '../ai/providers/qwen-provider.js';
+import { openaiProvider } from '../ai/providers/openai-provider.js';
 import type { LLMProvider } from '../ai/providers.js';
 import type { StreamCallbacks } from '../ai/loop.js';
 import { synthesizeSentenceWithFallback, ttsAvailable, type TTSEngine } from '../ai/tts.js';
@@ -42,6 +43,7 @@ import { config } from '../config.js';
 const providers: Record<string, LLMProvider> = {
   claude: claudeProvider,
   qwen: qwenProvider,
+  openai: openaiProvider,
 };
 
 // ---------------------------------------------------------------------------
@@ -60,6 +62,35 @@ interface VoiceSession {
 // Active voice sessions by agent ID
 const voiceSessions = new Map<string, VoiceSession>();
 
+// ---------------------------------------------------------------------------
+// Voice agent status tracking (Phase 38)
+// ---------------------------------------------------------------------------
+
+export type VoiceAgentState = 'idle' | 'listening' | 'capturing' | 'processing' | 'speaking';
+
+export interface VoiceAgentStatus {
+  agentId: string;
+  connected: boolean;
+  state: VoiceAgentState;
+  connectedAt: number;
+  lastInteractionAt: number;
+}
+
+const voiceAgents = new Map<string, VoiceAgentStatus>();
+
+function updateAgentState(agentId: string, state: VoiceAgentState): void {
+  const agent = voiceAgents.get(agentId);
+  if (agent) {
+    agent.state = state;
+    if (state !== 'idle') agent.lastInteractionAt = Date.now();
+  }
+}
+
+/** Get all connected voice agents and their status. */
+export function getVoiceAgents(): VoiceAgentStatus[] {
+  return Array.from(voiceAgents.values());
+}
+
 // Silence detection timeout (ms) - end capture after this much silence
 const SILENCE_TIMEOUT_MS = parseInt(process.env.VOICE_SILENCE_TIMEOUT_MS || '2000', 10);
 
@@ -76,6 +107,16 @@ const MAX_RECORDING_MS = 30_000;
 export function setupVoiceHandlers(voiceNs: Namespace, eventsNs: Namespace): void {
   voiceNs.on('connection', (socket: Socket) => {
     console.log(`[Voice] Agent connected: ${socket.id}`);
+
+    // Register agent in tracking map
+    const agentStatus: VoiceAgentStatus = {
+      agentId: socket.id,
+      connected: true,
+      state: 'idle',
+      connectedAt: Date.now(),
+      lastInteractionAt: Date.now(),
+    };
+    voiceAgents.set(socket.id, agentStatus);
 
     // Tell agent we're ready
     socket.emit('voice:listening', {});
@@ -103,6 +144,7 @@ export function setupVoiceHandlers(voiceNs: Namespace, eventsNs: Namespace): voi
       voiceSessions.set(agentId, session);
 
       console.log(`[Voice] Wake word detected from agent ${agentId}, starting capture`);
+      updateAgentState(socket.id, 'capturing');
       socket.emit('voice:listening', { agentId });
     });
 
@@ -156,6 +198,9 @@ export function setupVoiceHandlers(voiceNs: Namespace, eventsNs: Namespace): voi
     socket.on('disconnect', (reason: string) => {
       console.log(`[Voice] Agent disconnected: ${socket.id} (${reason})`);
 
+      // Remove from agent tracking
+      voiceAgents.delete(socket.id);
+
       // Abort any active sessions for this socket
       for (const [agentId, session] of voiceSessions.entries()) {
         if (session.socketId === socket.id) {
@@ -202,6 +247,7 @@ async function processVoiceSession(
   console.log(`[Voice] Processing ${audioBuffer.length} bytes (${durationMs}ms) from ${session.agentId}`);
 
   // Signal processing state
+  updateAgentState(socket.id, 'processing');
   socket.emit('voice:processing', {});
 
   try {
@@ -252,7 +298,7 @@ async function processVoiceSession(
     const provider = providers[decision.provider];
     const summary = await buildClusterSummary();
     const systemPrompt = decision.provider === 'claude'
-      ? buildClaudeSystemPrompt(summary, false, transcript, undefined, true)
+      ? await buildClaudeSystemPrompt(summary, false, transcript, undefined, true)
       : buildQwenSystemPrompt(summary, transcript, undefined, true);
 
     // Build chat messages
@@ -285,6 +331,7 @@ async function processVoiceSession(
       }
 
       if (ttsStreamFinished && activeWorkers === 0 && ttsQueue.length === 0) {
+        updateAgentState(socket.id, 'idle');
         socket.emit('voice:tts_done', { totalChunks: audioChunkIndex });
         // Ready for next wake word
         socket.emit('voice:listening', {});
@@ -311,6 +358,8 @@ async function processVoiceSession(
             }
           }
 
+          // Mark speaking on first TTS chunk
+          if (item.index === 0) updateAgentState(socket.id, 'speaking');
           socket.emit('voice:tts_chunk', {
             index: item.index,
             contentType: emitContentType,
@@ -379,11 +428,13 @@ async function processVoiceSession(
           sentenceAccumulator.flush();
           ttsStreamFinished = true;
           if (activeWorkers === 0 && ttsQueue.length === 0) {
+            updateAgentState(socket.id, 'idle');
             socket.emit('voice:tts_done', { totalChunks: audioChunkIndex });
             socket.emit('voice:listening', {});
           }
         } else {
           // No TTS pipeline - ready for next command
+          updateAgentState(socket.id, 'idle');
           socket.emit('voice:listening', {});
         }
 
@@ -418,6 +469,7 @@ async function processVoiceSession(
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`[Voice] Processing error: ${errorMsg}`);
+    updateAgentState(socket.id, 'idle');
     socket.emit('voice:error', { error: errorMsg });
     socket.emit('voice:listening', {});
   }

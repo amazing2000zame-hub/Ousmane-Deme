@@ -3,7 +3,7 @@ import type { Socket } from 'socket.io-client';
 import { createClusterSocket } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
 import { useClusterStore } from '../stores/cluster';
-import type { NodeData, VMData, StorageData, QuorumData } from '../types/cluster';
+import type { NodeData, VMData, StorageData, QuorumData, VoiceAgentStatus } from '../types/cluster';
 
 /**
  * Hook that manages the Socket.IO /cluster namespace connection.
@@ -21,6 +21,7 @@ export function useClusterSocket(): void {
   const setQuorum = useClusterStore((s) => s.setQuorum);
   const setTemperatures = useClusterStore((s) => s.setTemperatures);
   const setConnected = useClusterStore((s) => s.setConnected);
+  const setVoiceAgents = useClusterStore((s) => s.setVoiceAgents);
 
   useEffect(() => {
     if (!token) return;
@@ -57,6 +58,10 @@ export function useClusterSocket(): void {
       setTemperatures(data);
     }
 
+    function onVoiceAgents(data: { agents: VoiceAgentStatus[] }) {
+      setVoiceAgents(data.agents);
+    }
+
     function onConnectError(err: Error) {
       const msg = err.message.toLowerCase();
       if (msg.includes('token') || msg.includes('expired') || msg.includes('unauthorized')) {
@@ -71,6 +76,7 @@ export function useClusterSocket(): void {
     socket.on('storage', onStorage);
     socket.on('quorum', onQuorum);
     socket.on('temperature', onTemperature);
+    socket.on('voice_agents', onVoiceAgents);
     socket.on('connect_error', onConnectError);
 
     socket.connect();
@@ -83,9 +89,10 @@ export function useClusterSocket(): void {
       socket.off('storage', onStorage);
       socket.off('quorum', onQuorum);
       socket.off('temperature', onTemperature);
+      socket.off('voice_agents', onVoiceAgents);
       socket.off('connect_error', onConnectError);
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [token, logout, setNodes, setVMs, setStorage, setQuorum, setTemperatures, setConnected]);
+  }, [token, logout, setNodes, setVMs, setStorage, setQuorum, setTemperatures, setVoiceAgents, setConnected]);
 }

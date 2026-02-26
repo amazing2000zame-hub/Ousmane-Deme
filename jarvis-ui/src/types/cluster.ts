@@ -52,3 +52,14 @@ export interface ClusterNode {
   name: string;
   host: string;          // IP address
 }
+
+/** Voice agent status from jarvis-ear daemon */
+export type VoiceAgentState = 'idle' | 'listening' | 'capturing' | 'processing' | 'speaking';
+
+export interface VoiceAgentStatus {
+  agentId: string;
+  connected: boolean;
+  state: VoiceAgentState;
+  connectedAt: number;
+  lastInteractionAt: number;
+}

@@ -16,6 +16,7 @@ import type { Namespace } from 'socket.io';
 import { getCachedClusterResources, getCachedClusterStatus } from '../clients/proxmox.js';
 import { execOnNodeByName } from '../clients/ssh.js';
 import { config, type ClusterNode } from '../config.js';
+import { getVoiceAgents } from './voice.js';
 
 // ---------------------------------------------------------------------------
 // Types for emitted data
@@ -268,6 +269,15 @@ export async function emitNodesNow(): Promise<void> {
 /**
  * Immediately poll and emit storage data to the /cluster namespace.
  */
+/**
+ * Emit voice agent status to the /cluster namespace.
+ */
+function emitVoiceAgents(): void {
+  if (!clusterNamespace) return;
+  const agents = getVoiceAgents();
+  clusterNamespace.emit('voice_agents', { agents, timestamp: Date.now() });
+}
+
 export async function emitStorageNow(): Promise<void> {
   await emitStorage();
 }
@@ -319,6 +329,7 @@ export function startEmitter(ns: Namespace): void {
   intervals.push(setInterval(() => { emitStorage().catch(() => {}); }, 30_000));
   intervals.push(setInterval(() => { emitQuorum().catch(() => {}); }, 10_000));
   intervals.push(setInterval(() => { emitTemperature().catch(() => {}); }, 30_000));
+  intervals.push(setInterval(() => { emitVoiceAgents(); }, 10_000));
 
   console.log('[Emitter] Real-time data emitter started');
   console.log('[Emitter]   Nodes:       every 10s');
@@ -326,6 +337,7 @@ export function startEmitter(ns: Namespace): void {
   console.log('[Emitter]   Storage:     every 30s');
   console.log('[Emitter]   Quorum:      every 10s');
   console.log('[Emitter]   Temperature: every 30s');
+  console.log('[Emitter]   Voice:       every 10s');
 }
 
 /**

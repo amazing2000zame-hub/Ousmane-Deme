@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { NodeData, VMData, StorageData, QuorumData } from '../types/cluster';
+import type { NodeData, VMData, StorageData, QuorumData, VoiceAgentStatus } from '../types/cluster';
 import type { JarvisEvent, MonitorStatus } from '../types/events';
 
 // ---------------------------------------------------------------------------
@@ -75,6 +75,7 @@ interface ClusterState {
   connected: boolean;
   lastUpdate: Record<string, number>;
   monitorStatus: MonitorStatus | null;
+  voiceAgents: VoiceAgentStatus[];
 
   setNodes: (nodes: NodeData[]) => void;
   setVMs: (vms: VMData[]) => void;
@@ -87,6 +88,7 @@ interface ClusterState {
   setTemperatures: (temps: Array<{ node: string; zones: Record<string, number> }>) => void;
   setEvents: (events: JarvisEvent[]) => void;
   setKillSwitch: (active: boolean) => void;
+  setVoiceAgents: (agents: VoiceAgentStatus[]) => void;
 }
 
 export const useClusterStore = create<ClusterState>()(
@@ -100,6 +102,7 @@ export const useClusterStore = create<ClusterState>()(
       connected: false,
       lastUpdate: {},
       monitorStatus: null,
+      voiceAgents: [],
 
       /** PERF-17: Only create new node references for nodes with changed data */
       setNodes: (incoming) => {
@@ -205,6 +208,13 @@ export const useClusterStore = create<ClusterState>()(
           }),
           false,
           'cluster/setKillSwitch',
+        ),
+
+      setVoiceAgents: (agents) =>
+        set(
+          { voiceAgents: agents, lastUpdate: { ...get().lastUpdate, voiceAgents: Date.now() } },
+          false,
+          'cluster/setVoiceAgents',
         ),
 
       isStale: (key, maxAgeMs) => {
