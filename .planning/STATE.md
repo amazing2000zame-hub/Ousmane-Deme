@@ -22,8 +22,8 @@
 **Milestone:** v1.8 Always-On Voice Assistant (Phases 33-38)
 **Phase:** 36 of 38 (Speaker Output & Loop)
 **Plan:** 1 of 2 complete
-**Status:** Plan 36-01 complete -- AudioPlayer class with ALSA output and BackendClient wiring
-**Last activity:** 2026-02-26 -- Phase 36 Plan 01 executed (AudioPlayer, TTS chunk routing)
+**Status:** Plan 36-02 Tasks 1-2 complete -- mic mute, chime, conversation mode. Task 3 human-verify checkpoint pending.
+**Last activity:** 2026-02-26 -- Phase 36 Plan 02 Tasks 1-2 executed (mic mute, chime, CONVERSATION state)
 
 Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete overall)
 
@@ -82,6 +82,9 @@ Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete 
 | ffmpeg subprocess for TTS audio decode | Handles WAV and Opus uniformly; 5ms overhead acceptable | 2026-02-26 |
 | ALSA device kept open for daemon lifetime | No per-chunk open/close overhead (5-10ms saved per chunk) | 2026-02-26 |
 | amixer subprocess for speaker enable | 2ms latency; simpler than C ALSA mixer bindings | 2026-02-26 |
+| Mic mute in playback thread (not main loop) | Synchronized with actual ALSA output timing for accurate mute/unmute | 2026-02-26 |
+| Chime before mic mute (non-speech frequencies) | C5+E5 tones won't trigger wake word model; immediate audio feedback | 2026-02-26 |
+| 60s safety timeout force-unmutes mic | Hardware resilience against amixer failures or stuck state | 2026-02-26 |
 
 ### Technical Notes
 
@@ -109,6 +112,10 @@ Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete 
 - **AudioPlayer**: speaker.py, ordered PriorityQueue, background daemon thread, ffmpeg decode to 48kHz stereo, ALSA write in period chunks
 - **Speaker output path**: TTS chunk (WAV 24kHz mono) -> b64 decode -> ffmpeg (48kHz stereo S16LE) -> ALSA dmix -> hw:1,0 -> Realtek ALC245 speakers
 - **Speaker enabled at startup**: amixer -c 1 sset Speaker on, Master on, 60% volume
+- **Mic mute echo prevention**: amixer -c 1 sset Dmic0 nocap/cap during TTS playback; 60s safety timeout
+- **Wake word chime**: C5+E5 ascending two-tone, ~350ms, 67200 bytes PCM at 48kHz stereo
+- **CONVERSATION state**: 15s follow-up window after TTS; speech in window triggers CAPTURING without wake word
+- **Conversation flow**: IDLE -> wake word -> CAPTURING -> silence -> send audio -> TTS playback -> CONVERSATION -> follow-up or timeout -> IDLE
 
 ### Blockers
 
@@ -118,7 +125,7 @@ Progress: [|||||||||||||||||||||||||||||||||.......] 84% (33/38 phases complete 
 
 ## Session Continuity
 
-**Last session:** 2026-02-26T14:49:29Z
-**Stopped at:** Completed 36-01-PLAN.md (AudioPlayer + BackendClient wiring)
-**Resume:** Execute 36-02-PLAN.md (mic mute, conversation mode, wake word chime)
+**Last session:** 2026-02-26T14:56:06.888Z
+**Stopped at:** 36-02 Tasks 1-2 complete, Task 3 checkpoint:human-verify pending
+**Resume:** Run daemon and perform end-to-end voice loop test (Task 3 of 36-02-PLAN.md)
 **Known bug:** Whisper STT returns 400 "error parsing body" -- backend multipart form-data encoding issue (not jarvis-ear)
