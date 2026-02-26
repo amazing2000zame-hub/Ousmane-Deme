@@ -6,10 +6,11 @@ Controls mpv camera feed windows and Chromium kiosk browser via:
   - xdotool for X11 window manipulation (minimize/restore mpv)
   - Chrome DevTools Protocol (CDP) via websockets for Chromium navigation
   - Flask HTTP API for external control
+  - Server-Sent Events (SSE) for pushing state changes to HUD page
 
 State machine: camera <-> hud/browser
   camera: mpv windows visible, Chromium hidden/closed
-  hud:    mpv minimized, Chromium showing HUD page
+  hud:    mpv minimized, Chromium showing HUD page (state updates via SSE)
   browser: mpv minimized, Chromium showing arbitrary URL
 """
 
@@ -19,11 +20,12 @@ import json
 import logging
 import os
 import pwd
+import queue
 import subprocess
 import time
 from datetime import datetime, timezone
 
-from flask import Flask, request, jsonify
+from flask import Flask, Response, request, jsonify
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,7 +36,7 @@ logger = logging.getLogger("jarvis-display")
 app = Flask(__name__, static_folder="/opt/jarvis-display/static", static_url_path="/static")
 
 CHROMIUM_DEBUG_PORT = 9222
-HUD_URL_TEMPLATE = "http://localhost:8765/static/hud.html?state={state}"
+HUD_URL = "http://localhost:8765/static/hud.html"
 
 state = {
     "mode": "camera",
@@ -46,6 +48,26 @@ state = {
 
 _chromium_proc = None
 _cached_xauth = None
+
+# SSE state management
+_sse_clients = []
+_current_hud_state = "idle"
+
+
+def _notify_sse(new_state):
+    """Push a state change to all connected SSE clients."""
+    global _current_hud_state
+    _current_hud_state = new_state
+    dead = []
+    for q in _sse_clients:
+        try:
+            q.put_nowait({"state": new_state})
+        except Exception:
+            dead.append(q)
+    for q in dead:
+        if q in _sse_clients:
+            _sse_clients.remove(q)
+    logger.info("SSE notify: state=%s, clients=%d", new_state, len(_sse_clients))
 
 
 def get_kiosk_xauth():
@@ -77,7 +99,6 @@ def get_display_env():
         "XAUTHORITY": xauth,
         "PATH": os.environ.get("PATH", "/usr/bin:/usr/local/bin:/snap/bin"),
     }
-
 
 
 def enable_xhost_local():
@@ -250,19 +271,33 @@ def _update_state(mode, hud_state=None, chromium_url=None):
 
 
 def transition_to_hud(hud_state="listening"):
-    hud_url = HUD_URL_TEMPLATE.format(state=hud_state)
+    """Transition to HUD mode or update HUD state.
+
+    CRITICAL: When already in HUD mode, only notify SSE clients -- do NOT
+    call navigate_sync() again. CDP Page.navigate causes a full page reload
+    which destroys the SSE EventSource connection. CDP navigation is only
+    used for the initial transition (camera -> hud). Subsequent state changes
+    (idle -> listening -> talking) while in HUD mode go purely via SSE.
+    """
     if state["mode"] == "camera":
+        # Initial transition: launch Chromium with HUD page
         wids = hide_mpv_windows()
         state["mpv_window_ids"] = wids
-        launch_chromium(hud_url)
+        launch_chromium(HUD_URL)
         time.sleep(1.5)
         if is_chromium_running():
-            navigate_sync(hud_url)
+            navigate_sync(HUD_URL)
+        # Notify SSE after page has loaded
+        _notify_sse(hud_state)
     elif state["mode"] == "hud":
-        navigate_sync(hud_url)
+        # Already showing HUD -- only push state via SSE (no CDP navigate!)
+        _notify_sse(hud_state)
     elif state["mode"] == "browser":
-        navigate_sync(hud_url)
-    _update_state("hud", hud_state=hud_state, chromium_url=hud_url)
+        # Transition from arbitrary browser page to HUD
+        navigate_sync(HUD_URL)
+        time.sleep(0.5)
+        _notify_sse(hud_state)
+    _update_state("hud", hud_state=hud_state, chromium_url=HUD_URL)
     return {"ok": True, "mode": "hud_%s" % hud_state}
 
 
@@ -281,6 +316,8 @@ def transition_to_browser(url):
 
 
 def transition_to_camera():
+    """Transition back to camera feeds. Resets HUD state for next use."""
+    global _current_hud_state
     if state["mode"] == "camera":
         return {"ok": True, "mode": "camera", "note": "already in camera mode"}
     close_chromium()
@@ -290,7 +327,39 @@ def transition_to_camera():
     restore_mpv_windows(wids)
     _update_state("camera")
     state["mpv_window_ids"] = []
+    # Reset HUD state for next time
+    _current_hud_state = "idle"
     return {"ok": True, "mode": "camera"}
+
+
+@app.get('/display/events')
+def sse_events():
+    """Server-Sent Events stream for HUD state changes."""
+    q = queue.Queue()
+    _sse_clients.append(q)
+
+    def generate():
+        # Send current state immediately on connect
+        yield "data: %s\n\n" % json.dumps({"state": _current_hud_state})
+        try:
+            while True:
+                try:
+                    data = q.get(timeout=30)
+                    yield "data: %s\n\n" % json.dumps(data)
+                except queue.Empty:
+                    # Keepalive comment to prevent connection timeout
+                    yield ": keepalive\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            if q in _sse_clients:
+                _sse_clients.remove(q)
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
 
 
 @app.post("/display/hud")
@@ -341,4 +410,4 @@ def startup_checks():
 if __name__ == "__main__":
     startup_checks()
     logger.info("Starting Jarvis Display Daemon on 0.0.0.0:8765")
-    app.run(host="0.0.0.0", port=8765, debug=False)
+    app.run(host="0.0.0.0", port=8765, debug=False, threaded=True)

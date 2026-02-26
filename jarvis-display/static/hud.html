@@ -5,62 +5,562 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>JARVIS HUD</title>
 <style>
+  /* ===== RESET & BASE ===== */
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    cursor: none;
     background: #0a0a0f;
     color: #00d4ff;
-    font-family: monospace;
+    font-family: 'Courier New', Courier, monospace;
+  }
+
+  /* ===== LAYOUT ===== */
+  .hud-container {
+    position: relative;
+    width: 100vw; height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100vh;
-    overflow: hidden;
+    /* CSS custom properties for state-driven animation */
+    --pulse-duration: 3s;
+    --pulse-min: 0.35;
+    --pulse-max: 0.7;
+    --rotate-duration: 25s;
+    --ripple-opacity: 0;
+    --particle-speed: 1;
+    --particle-density: 0.4;
+    --core-flicker: 0;
+    transition: all 0.5s ease;
   }
-  .title {
-    font-size: 120px;
-    font-weight: bold;
-    letter-spacing: 20px;
-    text-shadow: 0 0 20px rgba(0, 212, 255, 0.5), 0 0 40px rgba(0, 212, 255, 0.3);
-    animation: pulse 2s ease-in-out infinite;
+
+  /* ===== STATE OVERRIDES ===== */
+  .hud-container.state-idle {
+    --pulse-duration: 3s;
+    --pulse-min: 0.35;
+    --pulse-max: 0.7;
+    --rotate-duration: 25s;
+    --ripple-opacity: 0;
+    --particle-speed: 1;
+    --particle-density: 0.4;
+    --core-flicker: 0;
   }
-  .state {
-    font-size: 36px;
-    margin-top: 30px;
-    text-transform: uppercase;
-    letter-spacing: 10px;
-    opacity: 0.7;
+  .hud-container.state-listening {
+    --pulse-duration: 1.2s;
+    --pulse-min: 0.55;
+    --pulse-max: 1.0;
+    --rotate-duration: 8s;
+    --ripple-opacity: 1;
+    --particle-speed: 2.5;
+    --particle-density: 0.8;
+    --core-flicker: 0;
   }
-  .indicator {
-    width: 12px;
-    height: 12px;
+  .hud-container.state-talking {
+    --pulse-duration: 0.5s;
+    --pulse-min: 0.6;
+    --pulse-max: 1.0;
+    --rotate-duration: 4s;
+    --ripple-opacity: 0.5;
+    --particle-speed: 3;
+    --particle-density: 1.0;
+    --core-flicker: 1;
+  }
+
+  /* ===== BACKGROUND CANVAS ===== */
+  #particleCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* ===== ARC REACTOR ===== */
+  .reactor-wrapper {
+    position: relative;
+    width: 400px; height: 400px;
+    z-index: 1;
+  }
+
+  /* Outer glow halo */
+  .reactor-glow {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 420px; height: 420px;
     border-radius: 50%;
-    background: #00d4ff;
+    background: radial-gradient(circle, rgba(0,212,255,0.15) 0%, rgba(0,212,255,0.05) 40%, transparent 70%);
+    filter: blur(30px);
+    animation: core-pulse var(--pulse-duration) ease-in-out infinite;
+  }
+
+  /* SVG reactor */
+  .reactor-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+
+  /* Rotating outer ring group */
+  .ring-outer {
+    transform-origin: 200px 200px;
+    animation: rotate-cw var(--rotate-duration) linear infinite;
+  }
+  .ring-inner {
+    transform-origin: 200px 200px;
+    animation: rotate-ccw calc(var(--rotate-duration) * 1.5) linear infinite;
+  }
+
+  /* Core pulse */
+  .reactor-core-gradient {
+    animation: core-pulse var(--pulse-duration) ease-in-out infinite;
+  }
+
+  /* Ripple rings (listening / talking) */
+  .ripple-ring {
+    transform-origin: 200px 200px;
+    opacity: 0;
+    animation: ripple-expand 2s ease-out infinite;
+  }
+  .ripple-ring:nth-child(2) { animation-delay: 0.5s; }
+  .ripple-ring:nth-child(3) { animation-delay: 1.0s; }
+  .ripple-ring:nth-child(4) { animation-delay: 1.5s; }
+
+  .ripple-group {
+    opacity: var(--ripple-opacity);
+    transition: opacity 0.5s ease;
+  }
+
+  /* ===== TEXT ELEMENTS ===== */
+  .title-text {
+    position: relative;
+    z-index: 1;
     margin-top: 40px;
-    animation: blink 1s ease-in-out infinite;
+    font-size: 48px;
+    font-weight: bold;
+    letter-spacing: 18px;
+    text-transform: uppercase;
+    color: #00d4ff;
+    text-shadow: 0 0 20px rgba(0,212,255,0.6), 0 0 60px rgba(0,212,255,0.2);
+    animation: core-pulse var(--pulse-duration) ease-in-out infinite;
   }
-  .state-listening .indicator { animation: blink 0.5s ease-in-out infinite; }
-  .state-talking .indicator { background: #00ff88; animation: blink 0.3s ease-in-out infinite; }
-  .state-idle .indicator { animation: none; opacity: 0.3; }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.8; }
+
+  .state-text {
+    position: relative;
+    z-index: 1;
+    margin-top: 16px;
+    font-size: 22px;
+    letter-spacing: 8px;
+    color: rgba(0,212,255,0.65);
+    text-transform: uppercase;
+    transition: color 0.5s ease, opacity 0.5s ease;
   }
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.2; }
+
+  /* ===== CLOCK ===== */
+  .clock {
+    position: absolute;
+    top: 30px; right: 40px;
+    font-size: 28px;
+    letter-spacing: 4px;
+    color: rgba(0,212,255,0.5);
+    z-index: 2;
+  }
+
+  /* ===== CORNER ACCENTS ===== */
+  .corner {
+    position: absolute;
+    width: 80px; height: 80px;
+    z-index: 2;
+  }
+  .corner-tl { top: 20px; left: 20px; border-top: 2px solid rgba(0,212,255,0.3); border-left: 2px solid rgba(0,212,255,0.3); }
+  .corner-tr { top: 20px; right: 20px; border-top: 2px solid rgba(0,212,255,0.3); border-right: 2px solid rgba(0,212,255,0.3); }
+  .corner-bl { bottom: 20px; left: 20px; border-bottom: 2px solid rgba(0,212,255,0.3); border-left: 2px solid rgba(0,212,255,0.3); }
+  .corner-br { bottom: 20px; right: 20px; border-bottom: 2px solid rgba(0,212,255,0.3); border-right: 2px solid rgba(0,212,255,0.3); }
+
+  /* ===== STATUS BAR ===== */
+  .status-bar {
+    position: absolute;
+    bottom: 30px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    letter-spacing: 6px;
+    color: rgba(0,212,255,0.3);
+    z-index: 2;
+    text-transform: uppercase;
+  }
+
+  /* ===== KEYFRAMES ===== */
+  @keyframes core-pulse {
+    0%, 100% { opacity: var(--pulse-min); }
+    50% { opacity: var(--pulse-max); }
+  }
+  @keyframes rotate-cw {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes rotate-ccw {
+    from { transform: rotate(360deg); }
+    to { transform: rotate(0deg); }
+  }
+  @keyframes ripple-expand {
+    0% {
+      r: 80;
+      opacity: 0.6;
+      stroke-width: 2;
+    }
+    100% {
+      r: 200;
+      opacity: 0;
+      stroke-width: 0.5;
+    }
   }
 </style>
 </head>
 <body>
-<div class="title">JARVIS</div>
-<div class="state" id="stateText">ACTIVE</div>
-<div class="indicator"></div>
+
+<div class="hud-container state-idle" id="hudContainer">
+
+  <!-- Background particle canvas -->
+  <canvas id="particleCanvas"></canvas>
+
+  <!-- Corner accents -->
+  <div class="corner corner-tl"></div>
+  <div class="corner corner-tr"></div>
+  <div class="corner corner-bl"></div>
+  <div class="corner corner-br"></div>
+
+  <!-- Clock -->
+  <div class="clock" id="clock">--:--:--</div>
+
+  <!-- Arc Reactor -->
+  <div class="reactor-wrapper">
+    <!-- Outer glow -->
+    <div class="reactor-glow"></div>
+
+    <svg class="reactor-svg" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
+          <stop offset="25%" stop-color="#00d4ff" stop-opacity="0.8"/>
+          <stop offset="60%" stop-color="#0088cc" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="#003355" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.9"/>
+          <stop offset="50%" stop-color="#0088cc" stop-opacity="0.5"/>
+          <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.9"/>
+        </linearGradient>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+
+      <!-- Outer rotating ring: 8 arc segments -->
+      <g class="ring-outer" filter="url(#glow)">
+        <circle cx="200" cy="200" r="180" fill="none" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.15"/>
+        <circle cx="200" cy="200" r="170" fill="none" stroke="#00d4ff" stroke-width="0.5" stroke-opacity="0.1"/>
+        <!-- Arc segments -->
+        <path d="M 200 20 A 180 180 0 0 1 327.3 72.7" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M 348 127 A 180 180 0 0 1 380 200" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M 370 260 A 180 180 0 0 1 327.3 327.3" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M 278 363 A 180 180 0 0 1 200 380" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M 130 370 A 180 180 0 0 1 72.7 327.3" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M 40 278 A 180 180 0 0 1 20 200" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M 28 135 A 180 180 0 0 1 72.7 72.7" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M 120 33 A 180 180 0 0 1 175 21" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round"/>
+      </g>
+
+      <!-- Middle ring (counter-rotating) -->
+      <g class="ring-inner" filter="url(#glow)">
+        <circle cx="200" cy="200" r="140" fill="none" stroke="#00d4ff" stroke-width="1.5" stroke-opacity="0.3"/>
+        <!-- Tick marks -->
+        <line x1="200" y1="62" x2="200" y2="72" stroke="#00d4ff" stroke-width="1.5" stroke-opacity="0.5"/>
+        <line x1="200" y1="328" x2="200" y2="338" stroke="#00d4ff" stroke-width="1.5" stroke-opacity="0.5"/>
+        <line x1="62" y1="200" x2="72" y2="200" stroke="#00d4ff" stroke-width="1.5" stroke-opacity="0.5"/>
+        <line x1="328" y1="200" x2="338" y2="200" stroke="#00d4ff" stroke-width="1.5" stroke-opacity="0.5"/>
+        <!-- Diagonal ticks -->
+        <line x1="103" y1="103" x2="110" y2="110" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.35"/>
+        <line x1="297" y1="103" x2="290" y2="110" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.35"/>
+        <line x1="103" y1="297" x2="110" y2="290" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.35"/>
+        <line x1="297" y1="297" x2="290" y2="290" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.35"/>
+      </g>
+
+      <!-- Inner static ring -->
+      <circle cx="200" cy="200" r="100" fill="none" stroke="#00d4ff" stroke-width="2" stroke-opacity="0.25"/>
+
+      <!-- Triangular core structure -->
+      <polygon points="200,130 260,250 140,250" fill="none" stroke="#00d4ff" stroke-width="1.5" stroke-opacity="0.3"
+        style="transform-origin:200px 200px;" class="ring-inner"/>
+
+      <!-- Core glow circle -->
+      <circle cx="200" cy="200" r="60" fill="url(#coreGrad)" class="reactor-core-gradient"/>
+
+      <!-- Inner core bright spot -->
+      <circle cx="200" cy="200" r="20" fill="#00d4ff" fill-opacity="0.5" class="reactor-core-gradient" filter="url(#glow)"/>
+
+      <!-- Ripple rings (visible in listening/talking states) -->
+      <g class="ripple-group">
+        <circle class="ripple-ring" cx="200" cy="200" r="80" fill="none" stroke="#00d4ff" stroke-width="2"/>
+        <circle class="ripple-ring" cx="200" cy="200" r="80" fill="none" stroke="#00d4ff" stroke-width="2"/>
+        <circle class="ripple-ring" cx="200" cy="200" r="80" fill="none" stroke="#00d4ff" stroke-width="2"/>
+        <circle class="ripple-ring" cx="200" cy="200" r="80" fill="none" stroke="#00d4ff" stroke-width="2"/>
+      </g>
+    </svg>
+  </div>
+
+  <!-- Title -->
+  <div class="title-text">J.A.R.V.I.S.</div>
+
+  <!-- State indicator -->
+  <div class="state-text" id="stateText">SYSTEMS ONLINE</div>
+
+  <!-- Bottom status bar -->
+  <div class="status-bar" id="statusBar">DISPLAY DAEMON CONNECTED</div>
+</div>
+
 <script>
-  const params = new URLSearchParams(window.location.search);
-  const displayState = params.get('state') || 'idle';
-  document.getElementById('stateText').textContent = displayState;
-  document.body.classList.add('state-' + displayState);
+(function() {
+  'use strict';
+
+  /* ===== STATE MANAGEMENT ===== */
+  var currentState = 'idle';
+  var container = document.getElementById('hudContainer');
+  var stateText = document.getElementById('stateText');
+  var statusBar = document.getElementById('statusBar');
+  var clockEl = document.getElementById('clock');
+
+  var STATE_LABELS = {
+    idle: 'SYSTEMS ONLINE',
+    listening: 'LISTENING...',
+    talking: 'SPEAKING...'
+  };
+
+  function setHudState(newState) {
+    if (!STATE_LABELS[newState]) newState = 'idle';
+    currentState = newState;
+
+    /* Update CSS class */
+    container.className = 'hud-container state-' + newState;
+
+    /* Update text */
+    stateText.textContent = STATE_LABELS[newState];
+
+    /* Update particle system parameters (read by animation loop) */
+    particleConfig.speed = parseFloat(getComputedStyle(container).getPropertyValue('--particle-speed')) || 1;
+    particleConfig.density = parseFloat(getComputedStyle(container).getPropertyValue('--particle-density')) || 0.4;
+    particleConfig.flicker = parseFloat(getComputedStyle(container).getPropertyValue('--core-flicker')) || 0;
+
+    /* Voice flicker for talking state */
+    if (newState === 'talking') {
+      startVoiceFlicker();
+    } else {
+      stopVoiceFlicker();
+    }
+  }
+
+
+  /* ===== SSE CONNECTION ===== */
+  var evtSource = null;
+  var reconnectTimer = null;
+
+  function connectSSE() {
+    if (evtSource) {
+      evtSource.close();
+    }
+    evtSource = new EventSource('/display/events');
+
+    evtSource.onmessage = function(event) {
+      try {
+        var data = JSON.parse(event.data);
+        if (data.state) {
+          setHudState(data.state);
+          statusBar.textContent = 'SSE CONNECTED - STATE: ' + data.state.toUpperCase();
+        }
+      } catch(e) {
+        /* ignore parse errors */
+      }
+    };
+
+    evtSource.onopen = function() {
+      statusBar.textContent = 'SSE CONNECTED';
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    };
+
+    evtSource.onerror = function() {
+      statusBar.textContent = 'SSE RECONNECTING...';
+      evtSource.close();
+      evtSource = null;
+      /* Reconnect after 2 seconds */
+      reconnectTimer = setTimeout(connectSSE, 2000);
+    };
+  }
+
+  connectSSE();
+
+
+  /* ===== CLOCK ===== */
+  function updateClock() {
+    var now = new Date();
+    var h = String(now.getHours()).padStart(2, '0');
+    var m = String(now.getMinutes()).padStart(2, '0');
+    var s = String(now.getSeconds()).padStart(2, '0');
+    clockEl.textContent = h + ':' + m + ':' + s;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+
+  /* ===== VOICE FLICKER (talking state) ===== */
+  var flickerInterval = null;
+  var coreElements = document.querySelectorAll('.reactor-core-gradient');
+  var glowEl = document.querySelector('.reactor-glow');
+
+  function startVoiceFlicker() {
+    if (flickerInterval) return;
+    flickerInterval = setInterval(function() {
+      var rand = 0.4 + Math.random() * 0.6;
+      for (var i = 0; i < coreElements.length; i++) {
+        coreElements[i].style.opacity = rand;
+      }
+      if (glowEl) {
+        glowEl.style.opacity = 0.5 + Math.random() * 0.5;
+      }
+    }, 80);
+  }
+
+  function stopVoiceFlicker() {
+    if (flickerInterval) {
+      clearInterval(flickerInterval);
+      flickerInterval = null;
+    }
+    for (var i = 0; i < coreElements.length; i++) {
+      coreElements[i].style.opacity = '';
+    }
+    if (glowEl) {
+      glowEl.style.opacity = '';
+    }
+  }
+
+
+  /* ===== PARTICLE SYSTEM ===== */
+  var canvas = document.getElementById('particleCanvas');
+  var ctx = canvas.getContext('2d');
+  var particles = [];
+  var MAX_PARTICLES = 120;
+
+  var particleConfig = {
+    speed: 1,
+    density: 0.4,
+    flicker: 0
+  };
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  function createParticle() {
+    return {
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5 - 0.2,
+      size: Math.random() * 2 + 0.5,
+      opacity: Math.random() * 0.4 + 0.1,
+      life: Math.random()
+    };
+  }
+
+  /* Initialize particles */
+  for (var i = 0; i < MAX_PARTICLES; i++) {
+    particles.push(createParticle());
+  }
+
+  function drawParticles(time) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    var speed = particleConfig.speed;
+    var density = particleConfig.density;
+    var activeCount = Math.floor(MAX_PARTICLES * density);
+
+    for (var i = 0; i < particles.length; i++) {
+      var p = particles[i];
+
+      /* Only draw up to activeCount */
+      if (i >= activeCount) continue;
+
+      /* Update position */
+      p.x += p.vx * speed;
+      p.y += p.vy * speed;
+      p.life -= 0.002 * speed;
+
+      /* Wrap around edges */
+      if (p.x < 0) p.x = canvas.width;
+      if (p.x > canvas.width) p.x = 0;
+      if (p.y < 0) p.y = canvas.height;
+      if (p.y > canvas.height) {
+        p.y = canvas.height;
+        p.vy = -Math.abs(p.vy);
+      }
+
+      /* Reset dead particles */
+      if (p.life <= 0) {
+        particles[i] = createParticle();
+        p = particles[i];
+      }
+
+      /* Draw */
+      var alpha = p.opacity * p.life;
+      /* In talking mode, occasional bright flash */
+      if (particleConfig.flicker && Math.random() > 0.95) {
+        alpha = 0.8;
+      }
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 212, 255, ' + alpha + ')';
+      ctx.fill();
+    }
+
+    /* Draw faint connecting lines between nearby particles */
+    for (var j = 0; j < activeCount && j < particles.length; j++) {
+      for (var k = j + 1; k < activeCount && k < particles.length; k++) {
+        var dx = particles[j].x - particles[k].x;
+        var dy = particles[j].y - particles[k].y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 100) {
+          ctx.beginPath();
+          ctx.moveTo(particles[j].x, particles[j].y);
+          ctx.lineTo(particles[k].x, particles[k].y);
+          ctx.strokeStyle = 'rgba(0, 212, 255, ' + (0.05 * (1 - dist / 100)) + ')';
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+
+    requestAnimationFrame(drawParticles);
+  }
+
+  requestAnimationFrame(drawParticles);
+
+
+  /* ===== INITIAL STATE ===== */
+  /* Default to idle; SSE will push the real state shortly */
+  setHudState('idle');
+
+})();
 </script>
 </body>
 </html>
