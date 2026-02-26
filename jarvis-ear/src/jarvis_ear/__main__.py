@@ -59,13 +59,10 @@ def main() -> None:
     capture.start()
     logger.info("Audio capture started")
 
-    # Connect to backend (non-blocking -- daemon works without backend)
-    logger.info("Connecting to backend...")
+    # Start backend connection (non-blocking -- daemon works without backend)
+    logger.info("Starting backend connection...")
     backend = BackendClient()
-    if backend.connect():
-        logger.info("Backend connected")
-    else:
-        logger.warning("Backend not available -- will reconnect automatically")
+    backend.start()  # Non-blocking, connects in background thread
 
     # Handle graceful shutdown
     shutdown = False
@@ -140,12 +137,17 @@ def main() -> None:
                     if total_frames > 0
                     else 0
                 )
+                status = backend.status()
+                backend_str = "CONNECTED" if status["connected"] else "DISCONNECTED"
+                if status["reconnect_count"] > 0:
+                    backend_str += f" (reconnects: {status['reconnect_count']})"
                 logger.info(
-                    "Stats: %.0f fps, %.1f%% speech, %d wakes, %d captures (last %ds)",
+                    "Stats: %.0f fps, %.1f%% speech, %d wakes, %d captures, backend=%s (last %ds)",
                     fps,
                     speech_pct,
                     wake_detections,
                     captures_completed,
+                    backend_str,
                     int(elapsed),
                 )
                 total_frames = 0
