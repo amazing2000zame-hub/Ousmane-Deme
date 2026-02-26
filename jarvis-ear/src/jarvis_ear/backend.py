@@ -24,6 +24,7 @@ import socketio
 
 if TYPE_CHECKING:
     from jarvis_ear.display import DisplayClient
+    from jarvis_ear.speaker import AudioPlayer
 
 from jarvis_ear.config import (
     AGENT_ID,
@@ -68,8 +69,13 @@ class BackendClient:
     - Connection state tracking with status() method
     """
 
-    def __init__(self, display: 'DisplayClient | None' = None) -> None:
+    def __init__(
+        self,
+        display: 'DisplayClient | None' = None,
+        speaker: 'AudioPlayer | None' = None,
+    ) -> None:
         self._display = display
+        self._speaker = speaker
         self._token: str | None = None
         self._token_acquired_at: float = 0.0
         self._connected = False
@@ -359,7 +365,6 @@ class BackendClient:
         logger.info("Backend thinking (%s)", provider)
 
     def _on_tts_chunk(self, data: dict | None = None) -> None:
-        # Phase 36 will add actual audio playback; for now just log
         if data:
             idx = data.get("index", -1)
             # Phase 37: trigger display on first TTS chunk
@@ -370,9 +375,22 @@ class BackendClient:
             size = len(audio) if isinstance(audio, (str, bytes)) else 0
             logger.info("TTS chunk #%d received (%s, %d bytes)", idx, ct, size)
 
+            # Phase 36: route audio to speaker for playback
+            if self._speaker is not None and audio and idx >= 0:
+                self._speaker.enqueue(
+                    index=idx,
+                    audio_b64=audio,
+                    content_type=data.get("contentType", "audio/wav"),
+                )
+
     def _on_tts_done(self, data: dict | None = None) -> None:
         total = data.get("totalChunks", 0) if data else 0
         logger.info("TTS complete (%d chunks)", total)
+
+        # Phase 36: signal speaker that all chunks are enqueued
+        if self._speaker is not None and total > 0:
+            self._speaker.signal_done(total)
+
         # Phase 37: restore display after TTS
         if self._display is not None:
             self._display.on_tts_done()

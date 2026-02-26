@@ -20,6 +20,7 @@ from jarvis_ear.audio import AudioCapture
 from jarvis_ear.backend import BackendClient
 from jarvis_ear.config import CHANNELS, SAMPLE_RATE, SAMPLE_WIDTH, VAD_THRESHOLD
 from jarvis_ear.display import DisplayClient
+from jarvis_ear.speaker import AudioPlayer
 from jarvis_ear.state_machine import CaptureStateMachine, State
 from jarvis_ear.vad import VoiceActivityDetector
 from jarvis_ear.wakeword import WakeWordDetector
@@ -64,9 +65,13 @@ def main() -> None:
     display = DisplayClient()
     logger.info("Display client initialized (target: %s)", display._url)
 
+    # Initialize audio player for TTS output through built-in speakers
+    speaker = AudioPlayer()
+    logger.info("Audio player initialized (48kHz stereo, ALSA dmix)")
+
     # Start backend connection (non-blocking -- daemon works without backend)
     logger.info("Starting backend connection...")
-    backend = BackendClient(display=display)
+    backend = BackendClient(display=display, speaker=speaker)
     backend.start()  # Non-blocking, connects in background thread
 
     # Handle graceful shutdown
@@ -164,6 +169,8 @@ def main() -> None:
         logger.error("Fatal error in main loop: %s", e, exc_info=True)
         sys.exit(1)
     finally:
+        logger.info("Stopping audio player...")
+        speaker.stop()
         logger.info("Disconnecting from backend...")
         backend.disconnect()
         logger.info("Stopping audio capture...")
