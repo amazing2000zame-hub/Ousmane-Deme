@@ -458,9 +458,11 @@ Phases 37 and 38 are independent of each other but both depend on Phase 36.
 4. ALSA dmix/dsnoop configuration allows multiple processes to share audio devices simultaneously
 5. `aplay test.wav` plays audio through a physical speaker (HDMI, USB, or Bluetooth)
 
+**Plans:** 2 plans
+
 Plans:
-- [ ] 33-01-PLAN.md -- Reboot Home node, activate SOF firmware, verify ALSA capture devices
-- [ ] 33-02-PLAN.md -- USB mic fallback, ALSA dmix/dsnoop sharing config, speaker output verification
+- [ ] 33-01-PLAN.md -- Remove orphaned VFIO iGPU passthrough, reboot Home node, verify SOF audio driver activation
+- [ ] 33-02-PLAN.md -- USB mic fallback if SOF failed, ALSA dmix/dsnoop multi-process sharing, speaker output verification
 
 #### Phase 34: Audio Capture Daemon Core
 **Goal**: A Python daemon continuously listens on the microphone, filters silence via VAD, and detects the "Hey Jarvis" wake word to trigger audio capture of the user's spoken command
