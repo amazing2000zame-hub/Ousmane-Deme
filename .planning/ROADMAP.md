@@ -528,12 +528,13 @@ Plans:
 4. When idle (no active voice interaction or display command), the kiosk shows a Jarvis listening indicator or HUD animation that visually confirms the system is active and listening
 5. During voice interaction, the display shows a Jarvis "face" or HUD animation that reacts to voice activity (distinct from idle state)
 
-**Plans:** 3 plans (2 waves)
+**Plans:** 4 plans (3 waves)
 
 Plans:
 - [ ] 37-01-PLAN.md -- Flask display daemon on management VM with Chromium CDP, mpv window management, systemd service
 - [ ] 37-02-PLAN.md -- Backend control_display MCP tool and jarvis-ear DisplayClient for automatic HUD on voice events
 - [ ] 37-03-PLAN.md -- Jarvis HUD/face animation page with arc reactor, state-driven animations, SSE state updates
+- [ ] 37-04-PLAN.md -- Home node eDP-1 display setup (X11 kiosk, second display daemon, target routing)
 
 #### Phase 38: Service Management & Reliability
 **Goal**: The voice agent daemon runs reliably as a production service that survives reboots, reconnects after failures, and reports its status to the Jarvis dashboard
@@ -678,7 +679,7 @@ Phase 29 depends on Phase 28 (camera infrastructure). Phases 33-38 execute seque
 | 34. Capture Daemon Core | v1.8 | 0/3 | Planned | - |
 | 35. Backend Integration | v1.8 | 0/2 | Planned | - |
 | 36. Speaker Output & Loop | v1.8 | 0/2 | Not Started | - |
-| 37. Display Control | v1.8 | 0/3 | Not Started | - |
+| 37. Display Control | v1.8 | 0/4 | Not Started | - |
 | 38. Service Management | v1.8 | 0/2 | Not Started | - |
 
 ---
