@@ -18,7 +18,7 @@ import sys
 import time
 
 from jarvis_ear.audio import AudioCapture
-from jarvis_ear.config import CHANNELS, SAMPLE_RATE, SAMPLE_WIDTH
+from jarvis_ear.config import CHANNELS, SAMPLE_RATE, SAMPLE_WIDTH, VAD_THRESHOLD
 from jarvis_ear.state_machine import CaptureStateMachine, State
 from jarvis_ear.vad import VoiceActivityDetector
 from jarvis_ear.wakeword import WakeWordDetector
@@ -44,7 +44,7 @@ def main() -> None:
 
     # Initialize components
     logger.info("Loading VAD model...")
-    vad = VoiceActivityDetector(threshold=0.5)
+    vad = VoiceActivityDetector(threshold=VAD_THRESHOLD)
     logger.info("VAD loaded (Silero ONNX)")
 
     logger.info("Loading wake word model...")

@@ -16,6 +16,12 @@ PREROLL_FRAMES = int(PREROLL_DURATION_MS / FRAME_DURATION_MS)  # 15 frames
 # Silence detection
 SILENCE_TIMEOUT_S = 2.0      # 2 seconds of silence = end of utterance
 
+# VAD tuning for Intel HDA DMIC
+VAD_THRESHOLD = 0.15         # Lower than Silero default (0.5) because DMIC signal
+                             # has heavy low-freq hum that reduces speech probability.
+                             # High-pass filter in vad.py compensates, but peaks at ~0.3-0.9
+                             # for speech vs <0.05 for quiet. 0.15 gives <5% false positives.
+
 # ALSA device configuration
 ALSA_DEVICE = "default"      # Uses the plug->dsnoop->hw:sofhdadsp,7 chain from /etc/asound.conf
 ALSA_PERIOD_SIZE = 512       # One frame worth of samples, aligned to Silero VAD
