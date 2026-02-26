@@ -35,3 +35,6 @@ AGENT_ID = "jarvis-ear"                 # Unique agent identifier for voice sess
 # Health monitoring (Phase 35)
 BACKEND_PING_INTERVAL_S = 60           # Keepalive ping interval
 BACKEND_PING_TIMEOUT_S = 120           # Stale connection warning threshold
+
+# Display daemon (Phase 37)
+DISPLAY_DAEMON_URL = "http://192.168.1.65:8765"

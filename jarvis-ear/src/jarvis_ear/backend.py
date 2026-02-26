@@ -9,15 +9,21 @@ Phase 35 -- backend integration with reconnection resilience, health
 monitoring, token refresh, and non-blocking startup.
 """
 
+from __future__ import annotations
+
 import base64
 import io
 import logging
 import threading
 import time
 import wave
+from typing import TYPE_CHECKING
 
 import requests
 import socketio
+
+if TYPE_CHECKING:
+    from jarvis_ear.display import DisplayClient
 
 from jarvis_ear.config import (
     AGENT_ID,
@@ -62,7 +68,8 @@ class BackendClient:
     - Connection state tracking with status() method
     """
 
-    def __init__(self) -> None:
+    def __init__(self, display: 'DisplayClient | None' = None) -> None:
+        self._display = display
         self._token: str | None = None
         self._token_acquired_at: float = 0.0
         self._connected = False
@@ -355,6 +362,9 @@ class BackendClient:
         # Phase 36 will add actual audio playback; for now just log
         if data:
             idx = data.get("index", -1)
+            # Phase 37: trigger display on first TTS chunk
+            if idx == 0 and self._display is not None:
+                self._display.on_tts_start()
             ct = data.get("contentType", "unknown")
             audio = data.get("audio", "")
             size = len(audio) if isinstance(audio, (str, bytes)) else 0
@@ -363,6 +373,9 @@ class BackendClient:
     def _on_tts_done(self, data: dict | None = None) -> None:
         total = data.get("totalChunks", 0) if data else 0
         logger.info("TTS complete (%d chunks)", total)
+        # Phase 37: restore display after TTS
+        if self._display is not None:
+            self._display.on_tts_done()
 
     def _on_error(self, data: dict | None = None) -> None:
         error = data.get("error", "unknown") if data else "unknown"

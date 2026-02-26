@@ -19,6 +19,7 @@ import time
 from jarvis_ear.audio import AudioCapture
 from jarvis_ear.backend import BackendClient
 from jarvis_ear.config import CHANNELS, SAMPLE_RATE, SAMPLE_WIDTH, VAD_THRESHOLD
+from jarvis_ear.display import DisplayClient
 from jarvis_ear.state_machine import CaptureStateMachine, State
 from jarvis_ear.vad import VoiceActivityDetector
 from jarvis_ear.wakeword import WakeWordDetector
@@ -59,9 +60,13 @@ def main() -> None:
     capture.start()
     logger.info("Audio capture started")
 
+    # Initialize display control (non-critical, works without display daemon)
+    display = DisplayClient()
+    logger.info("Display client initialized (target: %s)", display._url)
+
     # Start backend connection (non-blocking -- daemon works without backend)
     logger.info("Starting backend connection...")
-    backend = BackendClient()
+    backend = BackendClient(display=display)
     backend.start()  # Non-blocking, connects in background thread
 
     # Handle graceful shutdown
@@ -107,6 +112,7 @@ def main() -> None:
                         )
                         preroll = capture.drain_preroll()
                         state_machine.on_wake_word(preroll)
+                        display.on_wake_word()
                         wakeword.reset()
                         vad.reset()
 
