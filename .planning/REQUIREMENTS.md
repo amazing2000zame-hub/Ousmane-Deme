@@ -69,31 +69,31 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUDIO-01 | — | Pending |
-| AUDIO-02 | — | Pending |
-| AUDIO-03 | — | Pending |
-| VOICE-01 | — | Pending |
-| VOICE-02 | — | Pending |
-| VOICE-03 | — | Pending |
-| VOICE-04 | — | Pending |
-| SPEAK-01 | — | Pending |
-| SPEAK-02 | — | Pending |
-| SPEAK-03 | — | Pending |
-| SPEAK-04 | — | Pending |
-| DISP-01 | — | Pending |
-| DISP-02 | — | Pending |
-| DISP-03 | — | Pending |
-| DISP-04 | — | Pending |
-| DISP-05 | — | Pending |
-| SVC-01 | — | Pending |
-| SVC-02 | — | Pending |
-| SVC-03 | — | Pending |
+| AUDIO-01 | Phase 33 | Pending |
+| AUDIO-02 | Phase 33 | Pending |
+| AUDIO-03 | Phase 33 | Pending |
+| VOICE-01 | Phase 34 | Pending |
+| VOICE-02 | Phase 34 | Pending |
+| VOICE-03 | Phase 34 | Pending |
+| VOICE-04 | Phase 35 | Pending |
+| SPEAK-01 | Phase 36 | Pending |
+| SPEAK-02 | Phase 36 | Pending |
+| SPEAK-03 | Phase 36 | Pending |
+| SPEAK-04 | Phase 36 | Pending |
+| DISP-01 | Phase 37 | Pending |
+| DISP-02 | Phase 37 | Pending |
+| DISP-03 | Phase 37 | Pending |
+| DISP-04 | Phase 37 | Pending |
+| DISP-05 | Phase 37 | Pending |
+| SVC-01 | Phase 38 | Pending |
+| SVC-02 | Phase 38 | Pending |
+| SVC-03 | Phase 38 | Pending |
 
 **Coverage:**
 - v1.8 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19
+- Mapped to phases: 19/19
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-25 after initial definition*
+*Last updated: 2026-02-25 after roadmap creation (all 19 requirements mapped to phases 33-38)*
