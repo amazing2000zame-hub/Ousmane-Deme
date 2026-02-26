@@ -1,0 +1,35 @@
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+jarvis-backend/.env
+
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+
+# OS
+.DS_Store
+*.swp
+*.swo
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+jarvis-ui/dist/
+jarvis-ui/node_modules/
+jarvis-backend/dist/
+
+# Backups
+*.backup
+*.bak
