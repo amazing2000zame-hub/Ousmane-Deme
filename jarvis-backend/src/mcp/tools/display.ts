@@ -2,8 +2,9 @@
  * Physical display control MCP tool.
  *
  * Phase 37: Provides the control_display tool that lets the LLM control
- * the physical kiosk display on the management VM (192.168.1.65).
- * Communicates with the Flask display daemon via HTTP POST.
+ * physical kiosk displays. Two targets available:
+ *   - "kiosk" = management VM camera display (192.168.1.65:8765)
+ *   - "home"  = Home node eDP-1 screen (localhost:8766)
  *
  * Tools:
  *  - control_display: Show cameras, dashboards, or URLs on physical display
@@ -16,7 +17,8 @@ import { z } from 'zod';
 // Constants
 // ---------------------------------------------------------------------------
 
-const DISPLAY_DAEMON_URL = 'http://192.168.1.65:8765';
+const DISPLAY_DAEMON_KIOSK = 'http://192.168.1.65:8765';
+const DISPLAY_DAEMON_HOME = 'http://localhost:8766';
 
 /** Camera name -> go2rtc stream viewer URL on agent1 */
 const CAMERA_URLS: Record<string, string> = {
@@ -30,13 +32,36 @@ const AVAILABLE_CAMERAS = Object.keys(CAMERA_URLS).join(', ');
 const DASHBOARD_URL = 'http://192.168.1.50:3004';
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Resolve the display daemon URL based on target and action defaults. */
+function resolveTarget(
+  target: 'kiosk' | 'home' | undefined,
+  action: string,
+): string {
+  if (target === 'home') return DISPLAY_DAEMON_HOME;
+  if (target === 'kiosk') return DISPLAY_DAEMON_KIOSK;
+  // Default routing when target not specified:
+  // Camera/dashboard/URL commands default to kiosk (the camera display)
+  // All actions default to kiosk for backward compatibility
+  return DISPLAY_DAEMON_KIOSK;
+}
+
+/** Human-readable target name for logging. */
+function targetName(url: string): string {
+  if (url === DISPLAY_DAEMON_HOME) return 'home (eDP-1)';
+  return 'kiosk (management VM)';
+}
+
+// ---------------------------------------------------------------------------
 // Tool Registration
 // ---------------------------------------------------------------------------
 
 export function registerDisplayTools(server: McpServer): void {
   server.tool(
     'control_display',
-    'Control the physical kiosk display. Show camera feeds, dashboards, or any URL on the management VM display. Use this when users ask to show something on the screen/display/TV, or want to see a camera feed, dashboard, or webpage on the physical display.',
+    'Control physical kiosk displays. Two displays available: "kiosk" (management VM camera display at 192.168.1.65) and "home" (Home node eDP-1 screen). Show camera feeds, dashboards, or any URL. Use "home" target when user wants to see something on the local screen.',
     {
       action: z.enum(['show_url', 'show_camera', 'show_dashboard', 'restore'])
         .describe('What to show on the display'),
@@ -44,8 +69,13 @@ export function registerDisplayTools(server: McpServer): void {
         .describe('URL to display (required for show_url)'),
       camera: z.string().optional()
         .describe('Camera name for show_camera (e.g., "front_door", "side_house")'),
+      target: z.enum(['kiosk', 'home']).optional()
+        .describe('Which display to control. "kiosk" = management VM camera display (192.168.1.65), "home" = Home node eDP-1 screen. Defaults to "kiosk" for camera/URL commands.'),
     },
-    async ({ action, url, camera }) => {
+    async ({ action, url, camera, target }) => {
+      const daemonUrl = resolveTarget(target, action);
+      const displayName = targetName(daemonUrl);
+
       try {
         let endpoint: string;
         let payload: Record<string, string>;
@@ -61,7 +91,7 @@ export function registerDisplayTools(server: McpServer): void {
             }
             endpoint = '/display/show';
             payload = { url };
-            description = `Showing ${url} on display`;
+            description = `Showing ${url} on ${displayName}`;
             break;
           }
 
@@ -79,21 +109,21 @@ export function registerDisplayTools(server: McpServer): void {
             }
             endpoint = '/display/show';
             payload = { url: cameraUrl };
-            description = `Showing ${cameraName} camera feed on display`;
+            description = `Showing ${cameraName} camera feed on ${displayName}`;
             break;
           }
 
           case 'show_dashboard': {
             endpoint = '/display/show';
             payload = { url: DASHBOARD_URL };
-            description = 'Showing Jarvis dashboard on display';
+            description = `Showing Jarvis dashboard on ${displayName}`;
             break;
           }
 
           case 'restore': {
             endpoint = '/display/restore';
             payload = {};
-            description = 'Restoring camera feeds on display';
+            description = `Restoring ${displayName} to default state`;
             break;
           }
 
@@ -107,7 +137,7 @@ export function registerDisplayTools(server: McpServer): void {
 
         console.log(`[DISPLAY] ${description}`);
 
-        const response = await fetch(`${DISPLAY_DAEMON_URL}${endpoint}`, {
+        const response = await fetch(`${daemonUrl}${endpoint}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -130,7 +160,7 @@ export function registerDisplayTools(server: McpServer): void {
         return {
           content: [{
             type: 'text',
-            text: `Display control failed: ${message}. The display daemon may be unreachable at ${DISPLAY_DAEMON_URL}.`,
+            text: `Display control failed: ${message}. The display daemon may be unreachable at ${daemonUrl} (${displayName}).`,
           }],
           isError: true,
         };

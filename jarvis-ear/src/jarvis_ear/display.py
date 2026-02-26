@@ -1,8 +1,9 @@
 """Non-blocking HTTP client for the Jarvis display daemon.
 
 Calls the display daemon's HTTP API to show/hide the Jarvis HUD
-on the physical kiosk display. All calls are fire-and-forget via
-daemon threads -- they never block the audio capture main loop.
+on the Home node eDP-1 display (localhost:8766). All calls are
+fire-and-forget via daemon threads -- they never block the audio
+capture main loop.
 
 Phase 37 -- Display Control integration.
 """
@@ -60,6 +61,6 @@ class DisplayClient:
         self._fire("/display/hud", {"state": "talking"})
 
     def on_tts_done(self) -> None:
-        """Restore camera feeds when TTS playback is complete."""
-        logger.info("Display: restoring camera feeds")
+        """Restore display to idle when TTS playback is complete."""
+        logger.info("Display: restoring to idle")
         self._fire("/display/restore", {})

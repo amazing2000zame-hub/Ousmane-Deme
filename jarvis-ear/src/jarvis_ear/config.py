@@ -36,5 +36,6 @@ AGENT_ID = "jarvis-ear"                 # Unique agent identifier for voice sess
 BACKEND_PING_INTERVAL_S = 60           # Keepalive ping interval
 BACKEND_PING_TIMEOUT_S = 120           # Stale connection warning threshold
 
-# Display daemon (Phase 37)
-DISPLAY_DAEMON_URL = "http://192.168.1.65:8765"
+# Display daemons (Phase 37)
+DISPLAY_DAEMON_URL = "http://localhost:8766"            # Home node eDP-1 (default for jarvis-ear)
+DISPLAY_DAEMON_KIOSK_URL = "http://192.168.1.65:8765"  # Management VM kiosk
