@@ -31,3 +31,7 @@ ALSA_PERIODS = 4             # 4 periods in ALSA buffer = ~128ms, enough headroo
 BACKEND_URL = "http://localhost:4000"   # Jarvis backend Docker container mapped to host port
 JARVIS_PASSWORD = "jarvis"              # Login password (matches backend .env JARVIS_PASSWORD)
 AGENT_ID = "jarvis-ear"                 # Unique agent identifier for voice sessions
+
+# Health monitoring (Phase 35)
+BACKEND_PING_INTERVAL_S = 60           # Keepalive ping interval
+BACKEND_PING_TIMEOUT_S = 120           # Stale connection warning threshold

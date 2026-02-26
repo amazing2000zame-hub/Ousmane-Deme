@@ -5,7 +5,8 @@ conversion, and the voice protocol (audio_start/chunk/end).  Designed to
 be called from the synchronous main loop -- python-socketio's sync Client
 runs I/O in background threads.
 
-Phase 35 -- backend integration.
+Phase 35 -- backend integration with reconnection resilience, health
+monitoring, token refresh, and non-blocking startup.
 """
 
 import base64
@@ -20,6 +21,8 @@ import socketio
 
 from jarvis_ear.config import (
     AGENT_ID,
+    BACKEND_PING_INTERVAL_S,
+    BACKEND_PING_TIMEOUT_S,
     BACKEND_URL,
     CHANNELS,
     JARVIS_PASSWORD,
@@ -49,13 +52,31 @@ def pcm_to_wav(pcm_bytes: bytes) -> bytes:
 
 
 class BackendClient:
-    """Manages Socket.IO connection to Jarvis backend /voice namespace."""
+    """Manages Socket.IO connection to Jarvis backend /voice namespace.
+
+    Features:
+    - Non-blocking startup via start() method
+    - Automatic reconnection with exponential backoff (python-socketio built-in)
+    - JWT token refresh before expiry (6-day interval, 7-day token lifetime)
+    - Health monitoring with voice:ping / voice:pong keepalive
+    - Connection state tracking with status() method
+    """
 
     def __init__(self) -> None:
         self._token: str | None = None
         self._token_acquired_at: float = 0.0
         self._connected = False
         self._lock = threading.Lock()
+
+        # Connection state tracking
+        self._reconnect_count: int = 0
+        self._last_connected_at: float = 0.0
+        self._last_disconnect_at: float = 0.0
+        self._last_pong_time: float = 0.0
+
+        # Health monitor shutdown control
+        self._shutdown_event = threading.Event()
+        self._health_thread: threading.Thread | None = None
 
         self._sio = socketio.Client(
             reconnection=True,
@@ -77,6 +98,7 @@ class BackendClient:
         self._sio.on("voice:tts_chunk", self._on_tts_chunk, namespace="/voice")
         self._sio.on("voice:tts_done", self._on_tts_done, namespace="/voice")
         self._sio.on("voice:error", self._on_error, namespace="/voice")
+        self._sio.on("voice:pong", self._on_pong, namespace="/voice")
 
     # ------------------------------------------------------------------
     # Public API
@@ -87,10 +109,26 @@ class BackendClient:
         """Whether the client is connected to the backend."""
         return self._connected
 
+    def start(self) -> None:
+        """Non-blocking startup: attempt connection in a background thread.
+
+        The main audio loop is never blocked on startup.  If the initial
+        connection fails, python-socketio's built-in reconnection handles
+        retries with exponential backoff.
+        """
+        t = threading.Thread(
+            target=self._background_connect,
+            name="backend-connect",
+            daemon=True,
+        )
+        t.start()
+        self._start_health_monitor()
+
     def connect(self) -> bool:
-        """Connect to backend /voice namespace.
+        """Connect to backend /voice namespace (synchronous).
 
         Returns True on success, False on failure.  Never raises.
+        Kept for backward compatibility; prefer start() for non-blocking.
         """
         try:
             token = self._get_token()
@@ -108,7 +146,17 @@ class BackendClient:
             return False
 
     def disconnect(self) -> None:
-        """Disconnect from backend.  Safe to call even when not connected."""
+        """Disconnect from backend.  Safe to call even when not connected.
+
+        Stops the health monitor thread, then disconnects Socket.IO.
+        """
+        # Signal health monitor to stop
+        self._shutdown_event.set()
+
+        # Wait for health monitor thread to finish
+        if self._health_thread is not None and self._health_thread.is_alive():
+            self._health_thread.join(timeout=5)
+
         try:
             self._sio.disconnect()
         except Exception:
@@ -154,6 +202,85 @@ class BackendClient:
             len(audio_b64),
         )
 
+    def status(self) -> dict:
+        """Return connection metrics for status reporting."""
+        return {
+            "connected": self._connected,
+            "reconnect_count": self._reconnect_count,
+            "last_connected": self._last_connected_at,
+            "last_disconnect": self._last_disconnect_at,
+            "token_age_hours": (
+                (time.time() - self._token_acquired_at) / 3600
+                if self._token
+                else 0
+            ),
+        }
+
+    # ------------------------------------------------------------------
+    # Background startup
+    # ------------------------------------------------------------------
+
+    def _background_connect(self) -> None:
+        """Attempt initial connection in a background thread."""
+        try:
+            token = self._get_token()
+            self._sio.connect(
+                BACKEND_URL,
+                namespaces=["/voice"],
+                auth={"token": token},
+                transports=["websocket"],
+                wait=True,
+                wait_timeout=10,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Backend not available, will reconnect automatically: %s", exc
+            )
+
+    # ------------------------------------------------------------------
+    # Health monitoring
+    # ------------------------------------------------------------------
+
+    def _start_health_monitor(self) -> None:
+        """Start a background daemon thread that sends keepalive pings."""
+        self._health_thread = threading.Thread(
+            target=self._health_loop,
+            name="backend-health",
+            daemon=True,
+        )
+        self._health_thread.start()
+
+    def _health_loop(self) -> None:
+        """Periodically send voice:ping and check for voice:pong replies."""
+        while not self._shutdown_event.wait(timeout=BACKEND_PING_INTERVAL_S):
+            if not self._connected:
+                continue
+
+            try:
+                self._sio.emit(
+                    "voice:ping",
+                    {"agentId": AGENT_ID},
+                    namespace="/voice",
+                )
+                logger.debug("Ping sent")
+            except Exception as exc:
+                logger.debug("Ping failed: %s", exc)
+
+            # Check for stale connection (no pong within timeout)
+            if self._last_pong_time > 0:
+                since_pong = time.time() - self._last_pong_time
+                if since_pong > BACKEND_PING_TIMEOUT_S:
+                    logger.warning(
+                        "No pong received in %.0fs (threshold %ds) -- possible stale connection",
+                        since_pong,
+                        BACKEND_PING_TIMEOUT_S,
+                    )
+
+    def _on_pong(self, data: dict | None = None) -> None:
+        """Handle voice:pong keepalive reply from backend."""
+        self._last_pong_time = time.time()
+        logger.debug("Pong received")
+
     # ------------------------------------------------------------------
     # Token management
     # ------------------------------------------------------------------
@@ -183,11 +310,26 @@ class BackendClient:
     def _on_connect(self) -> None:
         with self._lock:
             self._connected = True
-        logger.info("Connected to backend /voice namespace")
+            self._last_connected_at = time.time()
+
+        if self._reconnect_count > 0:
+            logger.info(
+                "Reconnected to backend (attempt #%d)", self._reconnect_count
+            )
+            # Refresh token on reconnection if it's old (>6 days)
+            try:
+                self._get_token()
+            except Exception as exc:
+                logger.warning("Token refresh on reconnect failed: %s", exc)
+        else:
+            logger.info("Connected to backend /voice namespace")
+
+        self._reconnect_count += 1
 
     def _on_disconnect(self, reason: str = "") -> None:
         with self._lock:
             self._connected = False
+            self._last_disconnect_at = time.time()
         logger.info("Disconnected from backend: %s", reason)
 
     def _on_connect_error(self, data: object = None) -> None:
