@@ -43,8 +43,20 @@ export function registerSystemTools(server: McpServer): void {
       command: z.string().describe('Shell command to execute (must be in allowlist)'),
       timeout: z.number().optional().describe('Command timeout in ms (default: 30000)'),
     },
-    async ({ node, command, timeout }) => {
+    async (args) => {
       try {
+        // Accept parameter name variations (model may send host/target instead of node)
+        const node = (args as any).node || (args as any).host || (args as any).target || (args as any).hostname;
+        const command = (args as any).command || (args as any).cmd;
+        const timeout = (args as any).timeout;
+
+        if (!node || !command) {
+          return {
+            content: [{ type: 'text' as const, text: `Error: missing required parameters. Got: ${JSON.stringify(args)}` }],
+            isError: true,
+          };
+        }
+
         // Validate node name
         const safeName = sanitizeNodeName(node);
 

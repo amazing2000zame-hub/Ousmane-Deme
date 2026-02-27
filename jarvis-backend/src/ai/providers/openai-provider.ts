@@ -262,6 +262,9 @@ export const openaiProvider: LLMProvider = {
           const tier = getToolTier(toolCall.name);
           const tierStr = tier as string;
 
+          // Log tool invocation for debugging
+          console.log(`[OpenAI Provider] Tool call: ${toolCall.name}(${JSON.stringify(toolCall.arguments).substring(0, 200)})`);
+
           // Notify about tool use
           await callbacks.onToolUse(toolCall.name, toolCall.arguments, toolCall.id, tierStr);
 

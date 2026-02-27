@@ -27,8 +27,20 @@ export function registerOpenClawTools(server: McpServer): void {
       task: z.string().describe('Clear description of what needs to be done. Be specific about which nodes, files, services, or issues are involved.'),
       timeout: z.number().optional().describe('Timeout in seconds (default: 120, max: 300)'),
     },
-    async ({ task, timeout }) => {
+    async (args) => {
       try {
+        // Accept both 'task' and 'message' parameter names (model may use either)
+        const task = (args as any).task || (args as any).message || (args as any).prompt || (args as any).query;
+        const timeout = (args as any).timeout;
+
+        if (!task || typeof task !== 'string') {
+          console.error(`[OpenClaw] Invalid args received:`, JSON.stringify(args));
+          return {
+            content: [{ type: 'text', text: `OpenClaw error: no task provided. Arguments received: ${JSON.stringify(args)}` }],
+            isError: true,
+          };
+        }
+
         const timeoutSec = Math.min(timeout ?? 120, 300);
 
         console.log(`[OpenClaw] Delegating task: ${task.substring(0, 100)}...`);

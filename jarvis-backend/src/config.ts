@@ -34,6 +34,7 @@ export const config = {
     { name: 'pve', host: '192.168.1.74' },
     { name: 'agent1', host: '192.168.1.61' },
     { name: 'agent', host: '192.168.1.62' },
+    { name: 'management', host: '192.168.1.65' },
   ] as ClusterNode[],
 
   // Override passkey for elevated operations
