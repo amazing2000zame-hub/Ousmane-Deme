@@ -94,7 +94,6 @@ const COMMAND_BLOCKLIST: string[] = [
   'mv /* ',
   'cat /dev/urandom >',
   'yes |',
-  'nohup',           // prevent background persistent processes
 ];
 
 /**
@@ -232,21 +231,13 @@ const COMMAND_ALLOWLIST: string[] = [
   'apt-cache',
   'apt-mark',
 
-  // Docker
-  'docker ps',
-  'docker images',
-  'docker logs',
-  'docker inspect',
-  'docker stats',
-  'docker top',
-  'docker exec',
-  'docker compose',
-  'docker volume',
-  'docker network',
-  'docker system',
-  'docker start',
-  'docker stop',
-  'docker restart',
+  // Docker (all subcommands — blocklist handles dangerous patterns)
+  'docker',
+
+  // Package management (all operations)
+  'apt-get',
+  'apt ',
+  'aptitude',
 
   // Proxmox specific configs
   'cat /etc',
@@ -267,6 +258,28 @@ const COMMAND_ALLOWLIST: string[] = [
   'python3',
   'pip',
   'git',
+
+  // Misc utilities
+  'rm ',
+  'chmod',
+  'chown',
+  'screen',
+  'tmux',
+  'nano',
+  'vim',
+  'test',
+  'true',
+  'false',
+  'sleep',
+  'kill',
+  'killall',
+  'nice',
+  'ionice',
+  'env',
+  'export',
+  'which',
+  'type',
+  'whereis',
 ];
 
 export interface CommandSafetyResult {
