@@ -315,17 +315,17 @@ export function getClaudeTools(): Anthropic.Tool[] {
     {
       name: 'execute_ssh',
       description:
-        'Execute a safe read-only SSH command on a cluster node. Only allowlisted commands are permitted. Use for diagnostics, checking logs, or gathering system info.',
+        'Execute a shell command on any cluster node via SSH. Use for diagnostics, checking logs, system info, docker commands, git operations, package management, and more. Most common commands are allowed.',
       input_schema: {
         type: 'object' as const,
         properties: {
           node: {
             type: 'string',
-            description: 'Node name to execute on (e.g., "Home", "pve", "agent1", "agent")',
+            description: 'Node name: "Home", "pve", "agent1", "agent", or "management" (VM 103 at 192.168.1.65)',
           },
           command: {
             type: 'string',
-            description: 'Shell command to execute (must be in the allowlist)',
+            description: 'Shell command to execute. Pipes, $(), and && are supported.',
           },
         },
         required: ['node', 'command'],
