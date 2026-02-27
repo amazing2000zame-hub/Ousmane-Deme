@@ -94,6 +94,23 @@ export const autonomyActions = sqliteTable('autonomy_actions', {
 });
 
 // ---------------------------------------------------------------------------
+// Reminders -- cross-platform reminders with scheduler (Phase 40)
+// ---------------------------------------------------------------------------
+export const reminders = sqliteTable('reminders', {
+  id: text('id').primaryKey(),
+  task: text('task').notNull(),
+  fireAt: integer('fire_at').notNull(),           // Unix timestamp ms
+  createdAt: integer('created_at').notNull(),
+  source: text('source').notNull().default('api'),  // 'voice' | 'web' | 'telegram' | 'api'
+  delivery: text('delivery').notNull().default('telegram'),
+  chatId: text('chat_id'),
+  status: text('status').notNull().default('pending'),  // 'pending' | 'fired' | 'cancelled' | 'snoozed' | 'expired'
+  firedAt: integer('fired_at'),
+  snoozeCount: integer('snooze_count').notNull().default(0),
+  nextSnoozeAt: integer('next_snooze_at'),        // Unix timestamp ms for next nag
+});
+
+// ---------------------------------------------------------------------------
 // Presence Logs -- arrival/departure event history (Phase 27)
 // ---------------------------------------------------------------------------
 export const presenceLogs = sqliteTable('presence_logs', {

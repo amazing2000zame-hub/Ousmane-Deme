@@ -150,5 +150,33 @@ export async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_presence_state ON presence_logs(new_state);
   `);
 
+  // Phase 40: Reminders table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS reminders (
+      id TEXT PRIMARY KEY,
+      task TEXT NOT NULL,
+      fire_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      source TEXT NOT NULL DEFAULT 'api',
+      delivery TEXT NOT NULL DEFAULT 'telegram',
+      chat_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      fired_at INTEGER,
+      snooze_count INTEGER NOT NULL DEFAULT 0,
+      next_snooze_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reminders_fire ON reminders(fire_at);
+    CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status);
+  `);
+
+  // Phase 40+: Snooze columns (add to existing databases)
+  try {
+    sqlite.exec(`ALTER TABLE reminders ADD COLUMN snooze_count INTEGER NOT NULL DEFAULT 0;`);
+  } catch { /* column already exists */ }
+  try {
+    sqlite.exec(`ALTER TABLE reminders ADD COLUMN next_snooze_at INTEGER;`);
+  } catch { /* column already exists */ }
+
   console.log('Database migrations applied (direct SQL)');
 }

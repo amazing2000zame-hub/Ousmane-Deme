@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import type { Namespace } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import { healthRouter } from './health.js';
+import { chatApiRouter } from './chat-api.js';
 import { cameraRouter } from './camera.js';
 import { authMiddleware, handleLogin } from '../auth/jwt.js';
 import { memoryStore } from '../db/memory.js';
@@ -15,6 +16,9 @@ const router = Router();
 // Public routes (no auth required)
 router.use('/api/health', healthRouter);
 router.post('/api/auth/login', handleLogin);
+
+// Chat API (API key auth, not JWT -- used by Telegram bot and external callers)
+router.use('/api/chat', chatApiRouter);
 
 // Public image routes (browser <img> tags don't send auth headers)
 // These proxy to Frigate which is already on internal network only

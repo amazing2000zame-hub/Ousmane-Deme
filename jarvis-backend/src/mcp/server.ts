@@ -24,6 +24,8 @@ import { registerSmartHomeTools } from './tools/smarthome.js';
 import { registerWebTools } from './tools/web.js';
 import { registerOpenClawTools } from './tools/openclaw.js';
 import { registerDisplayTools } from './tools/display.js';
+import { registerTelegramTools } from './tools/telegram.js';
+import { registerReminderTools } from './tools/reminders.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,6 +125,8 @@ registerSmartHomeTools(mcpServer);
 registerWebTools(mcpServer);
 registerOpenClawTools(mcpServer);
 registerDisplayTools(mcpServer);
+registerTelegramTools(mcpServer);
+registerReminderTools(mcpServer);
 
 // ---------------------------------------------------------------------------
 // executeTool -- the single entry point for all tool invocations

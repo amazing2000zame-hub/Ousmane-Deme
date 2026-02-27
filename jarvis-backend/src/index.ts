@@ -22,6 +22,8 @@ import { memoryStore } from './db/memory.js';
 import { startMemoryCleanup, stopMemoryCleanup } from './services/memory-cleanup.js';
 import { startAlertMonitor, stopAlertMonitor } from './services/alert-monitor.js';
 import { startMqttAlertService, stopMqttAlertService, isMqttConnected } from './services/mqtt-alert-service.js';
+import { startReminderScheduler, stopReminderScheduler } from './services/reminders.js';
+import { startTelegramListener, stopTelegramListener } from './services/telegram-listener.js';
 
 // Create Express app and HTTP server
 const app = express();
@@ -95,6 +97,12 @@ if (mqttConnected) {
   console.log('[Alert] Using REST polling fallback (5s latency)');
 }
 
+// Start reminder scheduler (Phase 40: polls every 30s, delivers via Telegram)
+startReminderScheduler();
+
+// Start Telegram polling listener (two-way messaging)
+startTelegramListener();
+
 // Start listening -- IMPORTANT: listen on `server`, not `app` (Socket.IO requirement)
 server.listen(config.port, () => {
   console.log(`Jarvis backend running on port ${config.port}`);
@@ -132,6 +140,8 @@ server.listen(config.port, () => {
 function shutdown(signal: string) {
   console.log(`\n[${signal}] Shutting down gracefully...`);
   stopMemoryCleanup();
+  stopTelegramListener();
+  stopReminderScheduler();
   stopMqttAlertService();
   stopAlertMonitor();
   stopMonitor();

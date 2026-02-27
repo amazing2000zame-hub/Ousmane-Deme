@@ -39,6 +39,15 @@ export const config = {
   // Override passkey for elevated operations
   overrideKey: process.env.JARVIS_OVERRIDE_KEY || '',
 
+  // API key for REST /api/chat endpoint (Telegram bot, external callers)
+  jarvisApiKey: process.env.JARVIS_API_KEY || '',
+
+  // Telegram integration
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramChatId: process.env.TELEGRAM_CHAT_ID || '',
+  telegramPollingInterval: parseInt(process.env.TELEGRAM_POLLING_INTERVAL || '2000', 10),
+  telegramListenerEnabled: process.env.TELEGRAM_LISTENER_ENABLED !== 'false', // default true
+
   // Keyword for ORANGE tier approval (dangerous operations)
   approvalKeyword: process.env.JARVIS_APPROVAL_KEYWORD || 'JARVIS-EXECUTE',
 
@@ -137,6 +146,11 @@ export const config = {
   whisperEndpoint: process.env.WHISPER_ENDPOINT || 'http://jarvis-whisper:5051',
   voiceSilenceThresholdMs: parseInt(process.env.VOICE_SILENCE_THRESHOLD_MS || '1500', 10),
   voiceMaxRecordingMs: parseInt(process.env.VOICE_MAX_RECORDING_MS || '30000', 10),
+
+  // Phase 40+: Reminder snooze / timezone
+  timezone: process.env.TIMEZONE || 'America/New_York',
+  reminderSnoozeIntervalMs: parseInt(process.env.REMINDER_SNOOZE_INTERVAL_MS || '900000', 10),   // 15 min
+  reminderEscalatedIntervalMs: parseInt(process.env.REMINDER_ESCALATED_INTERVAL_MS || '1800000', 10), // 30 min
 
   // CORS
   corsOrigins: [

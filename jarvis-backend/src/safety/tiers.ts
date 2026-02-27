@@ -143,6 +143,16 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
 
   // YELLOW -- display control (shows URL on physical display)
   control_display: ActionTier.YELLOW,
+
+  // Phase 39: Telegram integration
+  send_telegram_message: ActionTier.GREEN,
+
+  // Phase 40: Reminders
+  set_reminder: ActionTier.GREEN,
+  list_reminders: ActionTier.GREEN,
+  cancel_reminder: ActionTier.GREEN,
+  dismiss_reminder: ActionTier.GREEN,
+  dismiss_all_reminders: ActionTier.GREEN,
 };
 
 // ---------------------------------------------------------------------------

@@ -17,10 +17,14 @@
  */
 
 import { claudeAvailable } from './claude.js';
+import { openaiAvailable } from './providers/openai-provider.js';
 import { checkDailyBudget } from './cost-tracker.js';
 
+/** Whether any Claude-capable provider is available (direct API or Max proxy) */
+const smartProviderAvailable = claudeAvailable || openaiAvailable;
+
 export interface RoutingDecision {
-  provider: 'claude' | 'qwen';
+  provider: 'claude' | 'openai' | 'qwen';
   reason: string;
 }
 
@@ -87,17 +91,27 @@ const QUERY_KEYWORDS = [
  * @param message     - The user's raw message text
  * @param override    - Whether the override passkey was detected
  * @param lastProvider - The provider used for the previous message in this session (for follow-up detection)
+ * @param source      - Message source (e.g. 'telegram', 'voice', 'web')
  */
 export function routeMessage(
   message: string,
   override: boolean,
   lastProvider?: string,
+  source?: string,
 ): RoutingDecision {
   const lower = message.toLowerCase();
 
-  // Stage 1: Override passkey always routes to Claude (bypasses budget check)
+  // Stage 0: Telegram messages always route to Claude (Qwen has no tool access)
+  if (source === 'telegram') {
+    if (!smartProviderAvailable) {
+      return { provider: 'qwen', reason: 'telegram source but Claude unavailable, Qwen fallback' };
+    }
+    return { provider: pickSmartProvider(), reason: 'telegram source — requires tool access' };
+  }
+
+  // Stage 1: Override passkey always routes to smart provider (bypasses budget check)
   if (override) {
-    return { provider: 'claude', reason: 'override passkey detected' };
+    return { provider: pickSmartProvider(), reason: 'override passkey detected' };
   }
 
   // Compute intent-based routing decision
@@ -105,30 +119,42 @@ export function routeMessage(
 
   // If intent says Claude, apply budget and availability checks
   if (intentDecision) {
-    // Stage 5: Budget cap enforcement
-    try {
-      const budget = checkDailyBudget();
-      if (budget.exceeded) {
-        console.log(`[Router] Budget exceeded: $${budget.spent.toFixed(4)}/$${budget.limit}`);
-        return {
-          provider: 'qwen',
-          reason: `daily budget cap reached ($${budget.spent.toFixed(2)}/$${budget.limit})`,
-        };
+    // Stage 5: Budget cap enforcement (only for direct Claude API — Max sub is flat-rate)
+    if (claudeAvailable) {
+      try {
+        const budget = checkDailyBudget();
+        if (budget.exceeded) {
+          console.log(`[Router] Budget exceeded: $${budget.spent.toFixed(4)}/$${budget.limit}`);
+          return {
+            provider: 'qwen',
+            reason: `daily budget cap reached ($${budget.spent.toFixed(2)}/$${budget.limit})`,
+          };
+        }
+      } catch {
+        // If budget check fails, don't block routing
       }
-    } catch {
-      // If budget check fails, don't block routing
     }
 
-    // Stage 6: Claude unavailable → Qwen fallback
-    if (!claudeAvailable) {
+    // Stage 6: No smart provider available → Qwen fallback
+    if (!smartProviderAvailable) {
       return { provider: 'qwen', reason: 'Claude API unavailable, using local fallback' };
     }
 
-    return intentDecision;
+    // Use whichever smart provider is available (prefer openai = Claude Max proxy)
+    return { ...intentDecision, provider: pickSmartProvider() };
   }
 
   // Stage 7: Default conversational → Qwen
   return { provider: 'qwen', reason: 'conversational message' };
+}
+
+/**
+ * Pick the best Claude-capable provider.
+ * Prefers openai (Claude Max proxy) since it's flat-rate; falls back to direct Claude API.
+ */
+function pickSmartProvider(): 'openai' | 'claude' {
+  if (openaiAvailable) return 'openai';
+  return 'claude';
 }
 
 /**
@@ -158,8 +184,8 @@ function resolveIntent(lower: string, lastProvider?: string): RoutingDecision | 
     }
   }
 
-  // Stage 4: Follow-up to a tool conversation → Claude
-  if (lastProvider === 'claude') {
+  // Stage 4: Follow-up to a tool conversation → Claude/OpenAI (smart provider)
+  if (lastProvider === 'claude' || lastProvider === 'openai') {
     const followUpPatterns = [
       /^(yes|no|ok|okay|sure|do it|go ahead|proceed|confirm|deny|cancel)/i,
       /^(and |also |what about |how about |now |then )/i,
