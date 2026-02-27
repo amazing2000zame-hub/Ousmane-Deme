@@ -908,5 +908,152 @@ export function getClaudeTools(): Anthropic.Tool[] {
         required: ['url'],
       },
     },
+
+    // -----------------------------------------------------------------------
+    // GREEN tier -- Telegram messaging
+    // -----------------------------------------------------------------------
+    {
+      name: 'send_telegram_message',
+      description:
+        'Send a text message to the operator via Telegram. Use when asked to "text me", "send me a Telegram message", "message me", or for delivering notifications and summaries.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          message: {
+            type: 'string',
+            description: 'The message text to send',
+          },
+        },
+        required: ['message'],
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // GREEN tier -- Reminders
+    // -----------------------------------------------------------------------
+    {
+      name: 'set_reminder',
+      description:
+        'Set a reminder that will nag via Telegram until dismissed. Accepts natural time: "in 30 minutes", "at 3pm", "tomorrow at 9am", "tonight", "next Monday at 3pm", "in 2 weeks". Use when the user asks to be reminded about something.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          task: {
+            type: 'string',
+            description: 'What to remind about',
+          },
+          fire_at: {
+            type: 'string',
+            description: 'When to fire: natural time ("in 30 minutes", "at 3pm", "tomorrow at 9am") or Unix timestamp in ms',
+          },
+          source: {
+            type: 'string',
+            description: 'Source interface (voice, web, telegram, api)',
+          },
+        },
+        required: ['task', 'fire_at'],
+      },
+    },
+    {
+      name: 'list_reminders',
+      description:
+        'List reminders. Shows pending and snoozed reminders by default. Use when the user asks "what reminders do I have?", "show my reminders", or wants to check upcoming reminders.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          status: {
+            type: 'string',
+            description: 'Filter by status: "pending", "snoozed", "fired", "cancelled", "expired", or omit for all active',
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'cancel_reminder',
+      description:
+        'Cancel a pending or snoozed reminder by its ID.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Reminder ID to cancel',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'dismiss_reminder',
+      description:
+        'Dismiss (acknowledge) a nagging reminder. Stops it from repeating. Use "latest" to dismiss the most recent one.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Reminder ID to dismiss, or "latest" for the most recent snoozed reminder',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'dismiss_all_reminders',
+      description:
+        'Dismiss all active (pending and snoozed) reminders at once. Stops all nagging.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // GREEN tier -- Camera AI analysis
+    // -----------------------------------------------------------------------
+    {
+      name: 'analyze_camera_snapshot',
+      description:
+        'Analyze a camera snapshot using AI vision to count and identify objects. ALWAYS use this when asked "how many cars", "count vehicles", "what\'s in the driveway", or any question requiring visual analysis of camera images. Cameras: "side_house" (driveway), "front_door" (entrance).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          camera: {
+            type: 'string',
+            description: 'Camera name: "side_house" (driveway) or "front_door" (entrance)',
+          },
+          question: {
+            type: 'string',
+            description: 'What to analyze in the image (e.g., "how many cars are in the driveway?", "is anyone at the door?")',
+          },
+        },
+        required: ['camera'],
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // YELLOW tier -- OpenClaw delegation
+    // -----------------------------------------------------------------------
+    {
+      name: 'delegate_to_openclaw',
+      description:
+        'Delegate a complex task to OpenClaw, an AI agent (Claude Sonnet 4.5) with full shell access on agent1. Use for server operations, fixing issues, installing software, editing configs, debugging problems, or any task requiring command execution beyond built-in tools.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          task: {
+            type: 'string',
+            description: 'Clear description of what needs to be done. Be specific about nodes, files, services, or issues involved.',
+          },
+          timeout: {
+            type: 'number',
+            description: 'Timeout in seconds (default: 120, max: 300)',
+          },
+        },
+        required: ['task'],
+      },
+    },
   ];
 }

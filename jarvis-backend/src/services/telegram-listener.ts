@@ -71,7 +71,7 @@ async function getUpdates(): Promise<TelegramUpdate[]> {
     const url = `https://api.telegram.org/bot${token}/getUpdates`;
     const body: Record<string, unknown> = {
       offset,
-      timeout: 1, // short poll (we manage our own interval)
+      timeout: 25, // long poll: Telegram holds connection up to 25s, returns instantly on new message
       allowed_updates: ['message'],
     };
 
@@ -79,7 +79,7 @@ async function getUpdates(): Promise<TelegramUpdate[]> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(35_000), // 25s Telegram timeout + 10s buffer
     });
 
     const data = (await res.json()) as GetUpdatesResponse;
@@ -159,6 +159,33 @@ async function handleCommand(
 }
 
 // ---------------------------------------------------------------------------
+// Telegram formatting: strip markdown for clean plain text
+// ---------------------------------------------------------------------------
+
+function stripMarkdown(text: string): string {
+  return text
+    // Remove bold/italic markers
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    // Remove headers
+    .replace(/^#{1,6}\s+/gm, '')
+    // Remove markdown links, keep text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    // Remove inline code backticks (keep content)
+    .replace(/`([^`]+)`/g, '$1')
+    // Remove horizontal rules
+    .replace(/^[-*_]{3,}\s*$/gm, '')
+    // Convert markdown tables to plain text
+    .replace(/\|/g, ' ')
+    .replace(/^[\s-]+$/gm, '')
+    // Clean up extra whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// ---------------------------------------------------------------------------
 // Message processing
 // ---------------------------------------------------------------------------
 
@@ -214,13 +241,10 @@ async function handleMessage(update: TelegramUpdate): Promise<void> {
     // Use persistent session per chat (not per-message) so conversation history works
     const sessionId = `telegram_${chatId}`;
 
-    // Send a progress update if the AI takes more than 8 seconds
-    const progressTimer = setTimeout(async () => {
-      try {
-        await sendChatAction(chatId, 'typing');
-        await sendTelegramMessage('Still working on it — running some checks...', chatId);
-      } catch { /* best effort */ }
-    }, 8_000);
+    // Keep refreshing the typing indicator while the AI works (Telegram typing expires after 5s)
+    const typingInterval = setInterval(async () => {
+      try { await sendChatAction(chatId, 'typing'); } catch { /* best effort */ }
+    }, 4_000);
 
     let result;
     try {
@@ -230,11 +254,11 @@ async function handleMessage(update: TelegramUpdate): Promise<void> {
         source: 'telegram',
       });
     } finally {
-      clearTimeout(progressTimer);
+      clearInterval(typingInterval);
     }
 
-    // Send the response back to Telegram
-    const response = result.response || 'I processed your request but have no text response.';
+    // Strip markdown formatting for Telegram — plain text only
+    const response = stripMarkdown(result.response || 'I processed your request but have no text response.');
 
     // Telegram has a 4096 character limit per message; split if needed
     const chunks = splitMessage(response, 4000);
@@ -305,9 +329,9 @@ async function poll(): Promise<void> {
     console.error(`[TelegramListener] Poll error:`, err);
   }
 
-  // Schedule next poll
+  // Immediately start next long poll (no timer needed — Telegram holds the connection)
   if (running) {
-    pollTimer = setTimeout(poll, config.telegramPollingInterval);
+    pollTimer = setTimeout(poll, 500); // small gap to avoid tight loop on errors
   }
 }
 

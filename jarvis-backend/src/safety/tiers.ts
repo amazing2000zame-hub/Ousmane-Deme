@@ -74,27 +74,25 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   prepare_voice_dataset: ActionTier.YELLOW,
   retrain_voice_model: ActionTier.YELLOW,
 
-  // RED -- voice deployment (changes live TTS service)
-  deploy_voice_model: ActionTier.RED,
+  // YELLOW -- voice deployment (changes live TTS service)
+  deploy_voice_model: ActionTier.YELLOW,
 
-  // YELLOW -- starting VMs/CTs (non-destructive, no confirmation needed)
+  // YELLOW -- VM/CT lifecycle (all auto-execute, no confirmation)
   start_vm: ActionTier.YELLOW,
   start_container: ActionTier.YELLOW,
+  stop_vm: ActionTier.YELLOW,
+  restart_vm: ActionTier.YELLOW,
+  stop_container: ActionTier.YELLOW,
+  restart_container: ActionTier.YELLOW,
 
-  // RED -- stopping/restarting VMs/CTs requires explicit confirmation
-  stop_vm: ActionTier.RED,
-  restart_vm: ActionTier.RED,
-  stop_container: ActionTier.RED,
-  restart_container: ActionTier.RED,
-
-  // ORANGE -- dangerous operations requiring keyword approval
-  reboot_node: ActionTier.ORANGE,
-  delete_file: ActionTier.ORANGE,
-  create_file: ActionTier.ORANGE,
-  write_file: ActionTier.ORANGE,
-  execute_command: ActionTier.ORANGE,
-  install_package: ActionTier.ORANGE,
-  manage_service: ActionTier.ORANGE,
+  // YELLOW -- system operations (auto-execute, blocklist still enforced)
+  reboot_node: ActionTier.YELLOW,
+  delete_file: ActionTier.YELLOW,
+  create_file: ActionTier.YELLOW,
+  write_file: ActionTier.YELLOW,
+  execute_command: ActionTier.YELLOW,
+  install_package: ActionTier.YELLOW,
+  manage_service: ActionTier.YELLOW,
 
   // Phase 25: Smart Home Tools
 
@@ -121,9 +119,9 @@ export const TOOL_TIERS: Record<string, ActionTier> = {
   // YELLOW -- thermostat control (logged, non-destructive)
   set_thermostat: ActionTier.YELLOW,
 
-  // RED -- door lock control (requires confirmation for security)
-  lock_door: ActionTier.RED,
-  unlock_door: ActionTier.RED,
+  // YELLOW -- door lock control (auto-execute)
+  lock_door: ActionTier.YELLOW,
+  unlock_door: ActionTier.YELLOW,
 
   // Phase 32: Web Browsing & Video Tools
 

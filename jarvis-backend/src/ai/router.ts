@@ -99,53 +99,8 @@ export function routeMessage(
   lastProvider?: string,
   source?: string,
 ): RoutingDecision {
-  const lower = message.toLowerCase();
-
-  // Stage 0: Telegram messages always route to Claude (Qwen has no tool access)
-  if (source === 'telegram') {
-    if (!smartProviderAvailable) {
-      return { provider: 'qwen', reason: 'telegram source but Claude unavailable, Qwen fallback' };
-    }
-    return { provider: pickSmartProvider(), reason: 'telegram source — requires tool access' };
-  }
-
-  // Stage 1: Override passkey always routes to smart provider (bypasses budget check)
-  if (override) {
-    return { provider: pickSmartProvider(), reason: 'override passkey detected' };
-  }
-
-  // Compute intent-based routing decision
-  const intentDecision = resolveIntent(lower, lastProvider);
-
-  // If intent says Claude, apply budget and availability checks
-  if (intentDecision) {
-    // Stage 5: Budget cap enforcement (only for direct Claude API — Max sub is flat-rate)
-    if (claudeAvailable) {
-      try {
-        const budget = checkDailyBudget();
-        if (budget.exceeded) {
-          console.log(`[Router] Budget exceeded: $${budget.spent.toFixed(4)}/$${budget.limit}`);
-          return {
-            provider: 'qwen',
-            reason: `daily budget cap reached ($${budget.spent.toFixed(2)}/$${budget.limit})`,
-          };
-        }
-      } catch {
-        // If budget check fails, don't block routing
-      }
-    }
-
-    // Stage 6: No smart provider available → Qwen fallback
-    if (!smartProviderAvailable) {
-      return { provider: 'qwen', reason: 'Claude API unavailable, using local fallback' };
-    }
-
-    // Use whichever smart provider is available (prefer openai = Claude Max proxy)
-    return { ...intentDecision, provider: pickSmartProvider() };
-  }
-
-  // Stage 7: Default conversational → Qwen
-  return { provider: 'qwen', reason: 'conversational message' };
+  // ALL messages go to Claude (via Max proxy). No Qwen, no GPT, Claude only.
+  return { provider: pickSmartProvider(), reason: 'all messages route to Claude' };
 }
 
 /**

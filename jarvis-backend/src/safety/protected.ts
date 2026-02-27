@@ -11,7 +11,16 @@ export const PROTECTED_RESOURCES = {
   vmids: [103] as const,
 
   /** Services whose restart would kill Jarvis itself */
-  services: ['docker.service', 'docker'] as const,
+  services: ['docker.service'] as const,
+
+  /** Commands that specifically manage (stop/restart/kill) the docker daemon */
+  dangerousCommandPatterns: [
+    'systemctl stop docker',
+    'systemctl restart docker',
+    'systemctl disable docker',
+    'service docker stop',
+    'service docker restart',
+  ] as const,
 } as const;
 
 /**
@@ -53,16 +62,16 @@ export function isProtectedResource(args: Record<string, unknown>): {
     }
   }
 
-  // Check command string for protected references
+  // Check command string for dangerous docker daemon operations
   const command = args.command ?? args.cmd;
   if (typeof command === 'string') {
-    // Check if command targets a protected service
-    for (const ps of PROTECTED_RESOURCES.services) {
-      if (command.includes(ps)) {
+    const lower = command.toLowerCase();
+    for (const pattern of PROTECTED_RESOURCES.dangerousCommandPatterns) {
+      if (lower.includes(pattern.toLowerCase())) {
         return {
           protected: true,
-          resource: `service:${ps}`,
-          reason: `Command references protected service "${ps}"`,
+          resource: `command:${pattern}`,
+          reason: `Command would stop/restart the Docker daemon, which would kill Jarvis`,
         };
       }
     }

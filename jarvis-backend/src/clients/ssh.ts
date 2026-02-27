@@ -129,7 +129,7 @@ export async function execOnNodeByName(
   timeout?: number,
 ): Promise<ExecResult> {
   const node = config.clusterNodes.find(
-    (n: ClusterNode) => n.name === nodeName,
+    (n: ClusterNode) => n.name.toLowerCase() === nodeName.toLowerCase(),
   );
   if (!node) {
     const available = config.clusterNodes

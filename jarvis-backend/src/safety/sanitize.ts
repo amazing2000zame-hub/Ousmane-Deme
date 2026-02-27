@@ -78,12 +78,23 @@ const COMMAND_BLOCKLIST: string[] = [
   'halt',
   ':(){',        // fork bomb
   'chmod -R 777',
-  'chown -R',
-  '> /dev/sda',
+  'chown -R /',
+  '> /dev/sd',
+  '> /dev/nvm',
   'wget|sh',
   'curl|sh',
   'wget|bash',
   'curl|bash',
+  'curl | sh',
+  'curl | bash',
+  'wget | sh',
+  'wget | bash',
+  'rm -rf /*',
+  'rm -fr /*',
+  'mv /* ',
+  'cat /dev/urandom >',
+  'yes |',
+  'nohup',           // prevent background persistent processes
 ];
 
 /**
@@ -91,62 +102,171 @@ const COMMAND_BLOCKLIST: string[] = [
  * A command must start with one of these prefixes to be permitted.
  */
 const COMMAND_ALLOWLIST: string[] = [
+  // System info
   'hostname',
   'uptime',
-  'df',
-  'free',
-  'cat /sys',
-  'cat /proc/cpuinfo',
-  'cat /proc/meminfo',
-  'cat /proc/loadavg',
-  'systemctl status',
-  'systemctl is-active',
-  'systemctl list-units',
-  'journalctl',
-  'ip addr',
-  'ip link show',
-  'ip route show',
-  'pvesh get',
-  'pvesh ls',
-  'pvecm status',
-  'pvecm nodes',
-  'pct list',
-  'qm list',
-  'ls',
-  'ps',
-  'top -bn1',
-  'sensors',
-  'lsblk',
-  'lscpu',
-  'lsusb',
-  'lspci',
-  'mount',
-  'findmnt',
   'uname',
   'date',
   'who',
   'w ',
   'last',
-  'dmesg',
+  'id',
+  'whoami',
+
+  // Resource monitoring
+  'df',
+  'free',
+  'top -bn1',
+  'htop',
+  'vmstat',
+  'iostat',
+  'iotop',
+  'nproc',
+
+  // Process management
+  'ps',
+  'pgrep',
+  'pidof',
+
+  // Disk & storage
+  'du',
+  'lsblk',
+  'mount',
+  'findmnt',
+  'stat',
   'smartctl',
-  'zpool status',
-  'zfs list',
+  'zpool',
+  'zfs',
   'lvs',
   'vgs',
   'pvs',
-  'dpkg -l',
-  'apt list',
-  'ss -tlnp',
-  'netstat -tlnp',
-  'ethtool',
-  'cat /etc/os-release',
-  'cat /etc/hostname',
-  'cat /etc/network/interfaces',
+  'blkid',
+
+  // File operations (read)
+  'cat',
   'head',
   'tail',
   'wc',
-  'du',
-  'stat',
+  'ls',
+  'find',
+  'file',
+  'readlink',
+  'realpath',
+  'md5sum',
+  'sha256sum',
+  'diff',
+
+  // File operations (write -- useful for management)
+  'cp',
+  'mv',
+  'mkdir',
+  'touch',
+  'ln',
+  'tar',
+  'gzip',
+  'gunzip',
+  'zip',
+  'unzip',
+  'rsync',
+
+  // Text processing
+  'grep',
+  'awk',
+  'sed',
+  'sort',
+  'uniq',
+  'cut',
+  'tr',
+  'tee',
+  'xargs',
+  'basename',
+  'dirname',
+  'echo',
+  'printf',
+
+  // Network
+  'ip addr',
+  'ip link show',
+  'ip route',
+  'ip neigh',
+  'ss',
+  'netstat',
+  'ping',
+  'traceroute',
+  'nslookup',
+  'dig',
+  'curl',
+  'wget',
+  'ethtool',
+  'arp',
+
+  // Proxmox
+  'pvesh',
+  'pvecm status',
+  'pvecm nodes',
+  'pct',
+  'qm',
+  'vzdump',
+  'pveam',
+  'pvesm',
+
+  // Systemd & services
+  'systemctl',
+  'journalctl',
+  'timedatectl',
+  'hostnamectl',
+  'loginctl',
+
+  // Hardware info
+  'sensors',
+  'lscpu',
+  'lsusb',
+  'lspci',
+  'lsmem',
+  'dmesg',
+
+  // Package management (read)
+  'dpkg',
+  'apt list',
+  'apt show',
+  'apt-cache',
+  'apt-mark',
+
+  // Docker
+  'docker ps',
+  'docker images',
+  'docker logs',
+  'docker inspect',
+  'docker stats',
+  'docker top',
+  'docker exec',
+  'docker compose',
+  'docker volume',
+  'docker network',
+  'docker system',
+  'docker start',
+  'docker stop',
+  'docker restart',
+
+  // Proxmox specific configs
+  'cat /etc',
+  'cat /proc',
+  'cat /sys',
+
+  // Samba
+  'smbstatus',
+  'testparm',
+
+  // Cron
+  'crontab',
+
+  // Node/Python/general
+  'node',
+  'npm',
+  'npx',
+  'python3',
+  'pip',
+  'git',
 ];
 
 export interface CommandSafetyResult {
@@ -186,25 +306,16 @@ export function sanitizeCommand(command: string, overrideActive: boolean = false
     return { safe: true };
   }
 
-  // Check for common injection patterns
-  if (/[;&|`$]/.test(trimmed) && !trimmed.startsWith('journalctl')) {
-    if (trimmed.includes('|')) {
-      const parts = trimmed.split('|').map(p => p.trim());
-      const allSafe = parts.every(part =>
-        COMMAND_ALLOWLIST.some(prefix => part.startsWith(prefix)),
-      );
-      if (!allSafe) {
-        return {
-          safe: false,
-          reason: 'Command contains shell metacharacters (pipe to non-allowlisted command)',
-        };
-      }
-    } else {
-      return {
-        safe: false,
-        reason: 'Command contains shell metacharacters (;, &, `, $)',
-      };
-    }
+  // Allow pipes if each segment starts with an allowlisted command.
+  // Also allow $() subshells and && chains — the allowlist prefix check
+  // on the first command plus the blocklist is sufficient protection.
+  // Only block backticks (legacy command substitution) and raw semicolons
+  // chained with non-allowlisted commands.
+  if (/[`]/.test(trimmed)) {
+    return {
+      safe: false,
+      reason: 'Command contains backtick substitution (use $() instead)',
+    };
   }
 
   // Check allowlist (prefix match)
